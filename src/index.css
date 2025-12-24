@@ -1,0 +1,218 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base theme variables */
+:root {
+  --background: 0 0% 100%;
+  --foreground: 240 10% 10%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 10% 10%;
+  --primary: 38 75% 35%; /* Sophisticated Bronze/Gold */
+  --primary-foreground: 38 100% 98%;
+  --secondary: 240 5% 96%; /* Clean Light Grey Sidebar */
+  --secondary-foreground: 240 10% 10%;
+  --muted: 240 4% 46%;
+  --muted-foreground: 240 4% 35%; /* Darker for legibility */
+  --border: 240 6% 90%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 98%;
+  --input: 240 6% 90%;
+  --ring: 38 75% 35%;
+}
+
+.dark {
+  --background: 240 10% 4%;
+  --foreground: 0 0% 98%;
+  --card: 240 10% 6%;
+  --card-foreground: 0 0% 98%;
+  --primary: 42 80% 60%;
+  --primary-foreground: 240 10% 4%;
+  --secondary: 240 8% 12%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 240 5% 65%;
+  --muted-foreground: 240 5% 75%;
+  --border: 240 6% 16%;
+  --input: 240 6% 16%;
+}
+
+/* Reader Specific Styles - Follow global appTheme but vary typography */
+.original { /* Modern Styles */
+  --font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  --line-height: 1.6;
+}
+
+.quiet { /* Focus Style */
+  --line-height: 1.8;
+  --letter-spacing: 0.02em;
+}
+
+.paper { /* Classic Manuscript */
+  --font-family: "New York", Georgia, serif;
+  --line-height: 1.5;
+}
+
+.bold { /* High Contrast Style */
+  --line-height: 1.4;
+  --font-weight: 600;
+}
+
+.calm { /* Soft Style */
+  --line-height: 1.7;
+  --opacity: 0.9;
+}
+
+.focus { /* Immersive Style */
+  --line-height: 2.0;
+  --max-width: 800px;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer utilities {
+  .bg-background {
+    background-color: hsl(var(--background));
+  }
+  .text-foreground {
+    color: hsl(var(--foreground));
+  }
+  .bg-card {
+    background-color: hsl(var(--card));
+  }
+  .text-card-foreground {
+    color: hsl(var(--card-foreground));
+  }
+  .bg-primary {
+    background-color: hsl(var(--primary));
+  }
+  .text-primary {
+    color: hsl(var(--primary));
+  }
+  .text-primary-foreground {
+    color: hsl(var(--primary-foreground));
+  }
+  .bg-secondary {
+    background-color: hsl(var(--secondary));
+  }
+  .text-secondary-foreground {
+    color: hsl(var(--secondary-foreground));
+  }
+  .text-muted-foreground {
+    color: hsl(var(--muted-foreground));
+  }
+  .border-border {
+    border-color: hsl(var(--border));
+  }
+  .bg-destructive {
+    background-color: hsl(var(--destructive));
+  }
+  .text-destructive {
+    color: hsl(var(--destructive));
+  }
+  .text-destructive-foreground {
+    color: hsl(var(--destructive-foreground));
+  }
+}
+
+/* Selection colors */
+::selection {
+  background: hsla(var(--primary), 0.3);
+}
+
+/* Smooth transitions for theme changes */
+* {
+  transition-property: background-color, border-color, color, opacity;
+  transition-duration: 0.2s;
+  transition-timing-function: ease;
+}
+
+/* Slider styling */
+input[type="range"] {
+  -webkit-appearance: none;
+  background: transparent;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 16px;
+  width: 16px;
+  border-radius: 50%;
+  background: hsl(var(--primary));
+  cursor: pointer;
+  margin-top: -6px;
+  border: 2px solid hsl(var(--background));
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 4px;
+  background: hsl(var(--secondary));
+  border-radius: 2px;
+}
+
+/* Animation utilities */
+@keyframes slide-in-from-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-in {
+  animation-duration: 0.2s;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+}
+
+.slide-in-from-right-4 {
+  animation-name: slide-in-from-right;
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 0.4; transform: scale(0.95); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+@keyframes flow-line {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-flow-line {
+  animation: flow-line 3s linear infinite;
+}
+
+/* Marquee for long titles */
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  display: inline-block;
+  white-space: nowrap;
+  animation: marquee 15s linear infinite;
+  padding-left: 100%; /* Start from outside */
+}
+
+/* Pause on hover */
+.group:hover .animate-marquee {
+  animation-play-state: paused;
+}
