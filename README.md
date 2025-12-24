@@ -1,73 +1,73 @@
-# React + TypeScript + Vite
+# VeloRead
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A modern, fast EPUB reader with Pacer (speed reading) functionality.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- 📖 Clean, distraction-free reading experience
+- ⚡ **Pacer** - Guided speed reading with adjustable WPM
+- 🌓 Light/Dark mode support
+- 📱 Responsive design
+- 💾 Local storage with IndexedDB
 
-## React Compiler
+## Quick Start
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Open http://localhost:5174 in your browser.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Development Environment
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+This project uses **Git Worktree** + **tmux** for a seamless develop/use/test workflow.
+
+### Directory Structure
+
 ```
+/Users/fangwang/project/reading/
+├── VeloRead/           # Main repo (development with Antigravity)
+└── VeloRead-stable/    # Stable worktree (daily reading)
+```
+
+### One-Command Launch
+
+```bash
+./dev.sh
+```
+
+This launches a tmux session with 3 windows:
+
+| Window | Name     | Port | Purpose                                |
+| ------ | -------- | ---- | -------------------------------------- |
+| 1      | `dev`    | 5174 | Development (Antigravity changes here) |
+| 2      | `stable` | 5175 | Stable version for daily reading       |
+| 3      | `test`   | -    | Logs & testing                         |
+
+### tmux Shortcuts
+
+- `Ctrl+b n` - Next window
+- `Ctrl+b p` - Previous window
+- `Ctrl+b d` - Detach session
+- `tmux attach -t veloread` - Reattach session
+
+### Updating Stable Version
+
+When you're happy with development changes:
+
+```bash
+cd VeloRead-stable
+git fetch origin
+git checkout <commit-hash>  # or: git merge origin/main
+npm install  # if dependencies changed
+```
+
+## Tech Stack
+
+- React 19 + TypeScript
+- Vite
+- Tailwind CSS
+- epubjs
+- Zustand (state management)
+- Dexie (IndexedDB wrapper)
