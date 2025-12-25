@@ -10,58 +10,48 @@ A modern, fast EPUB reader with Pacer (speed reading) functionality.
 - 📱 Responsive design
 - 💾 Local storage with IndexedDB
 
-## Quick Start
+## Development Workflow
 
-```bash
-npm install
-npm run dev
-```
-
-Open http://localhost:5174 in your browser.
-
-## Development Environment
-
-This project uses **Git Worktree** + **tmux** for a seamless develop/use/test workflow.
+This project is set up with **Git Worktree** to separate stable code from active development.
 
 ### Directory Structure
 
 ```
-/Users/fangwang/project/reading/
-├── VeloRead/           # Main repo (development with Antigravity)
-└── VeloRead-stable/    # Stable worktree (daily reading)
+VeloReadApp/
+├── main/               # Stable branch (origin/main)
+├── dev/                # Development worktree (origin/dev)
+└── start_work_env.sh   # One-click environment setup script
 ```
 
-### One-Command Launch
+### Quick Start
 
-```bash
-./dev.sh
-```
+1.  **Run the environment script:**
 
-This launches a tmux session with 3 windows:
+    You can run the script directly from the `main` directory:
 
-| Window | Name     | Port | Purpose                                |
-| ------ | -------- | ---- | -------------------------------------- |
-| 1      | `dev`    | 5174 | Development (Antigravity changes here) |
-| 2      | `stable` | 5175 | Stable version for daily reading       |
-| 3      | `test`   | -    | Logs & testing                         |
+    ```bash
+    ./main/start_work_env.sh
+    ```
 
-### tmux Shortcuts
+    (Or copy it to your project root `cp main/start_work_env.sh .` and run `./start_work_env.sh`)
 
-- `Ctrl+b n` - Next window
-- `Ctrl+b p` - Previous window
-- `Ctrl+b d` - Detach session
-- `tmux attach -t veloread` - Reattach session
+    This launches a `tmux` session named `velo-read` with configured windows:
 
-### Updating Stable Version
+    | Window | Name          | Path    | Purpose                                 |
+    | :----- | :------------ | :------ | :-------------------------------------- |
+    | 1      | `dev-code`    | `dev/`  | **Active Development**. Edit code here. |
+    | 2      | `dev-server`  | `dev/`  | Runs `npm run dev` (Port 5174).         |
+    | 3      | `main-stable` | `main/` | Reference or Stable Build.              |
 
-When you're happy with development changes:
+2.  **Open the App:**
+    - Dev: [http://localhost:5174](http://localhost:5174)
 
-```bash
-cd VeloRead-stable
-git fetch origin
-git checkout <commit-hash>  # or: git merge origin/main
-npm install  # if dependencies changed
-```
+### Tmux Cheatsheet
+
+- `Ctrl+b` then `n`: Next window
+- `Ctrl+b` then `p`: Previous window
+- `Ctrl+b` then `d`: Detach (minimize) session
+- To resume: `./start_work_env.sh` (or `tmux attach -t velo-read`)
 
 ## Tech Stack
 
@@ -69,5 +59,4 @@ npm install  # if dependencies changed
 - Vite
 - Tailwind CSS
 - epubjs
-- Zustand (state management)
-- Dexie (IndexedDB wrapper)
+- Zustand, Dexie
