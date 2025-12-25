@@ -35,16 +35,16 @@ VeloReadApp/
 
     (Or copy it to your project root `cp main/start_work_env.sh .` and run `./start_work_env.sh`)
 
-    This launches a `tmux` session named `velo-read` with configured windows:
+    This launches a `tmux` session named `velo-read` with 2 environments:
 
-    | Window | Name          | Path    | Purpose                                 |
-    | :----- | :------------ | :------ | :-------------------------------------- |
-    | 1      | `dev-code`    | `dev/`  | **Active Development**. Edit code here. |
-    | 2      | `dev-server`  | `dev/`  | Runs `npm run dev` (Port 5174).         |
-    | 3      | `main-stable` | `main/` | Reference or Stable Build.              |
+    | Window | Name   | Path    | Purpose                                                 |
+    | :----- | :----- | :------ | :------------------------------------------------------ |
+    | 1      | `dev`  | `dev/`  | **Active Development**. Runs `npm run dev` (Port 5174). |
+    | 2      | `main` | `main/` | **Stable Version**. Runs `npm run preview` (Port 4173). |
 
 2.  **Open the App:**
     - Dev: [http://localhost:5174](http://localhost:5174)
+    - Stable: [http://localhost:4173](http://localhost:4173)
 
 ### Tmux Cheatsheet
 
