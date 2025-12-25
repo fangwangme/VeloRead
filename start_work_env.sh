@@ -22,15 +22,17 @@ SESSION_NAME="velo-read"
 MAIN_DIR="$PROJECT_ROOT/main"
 DEV_DIR="$PROJECT_ROOT/dev"
 
-# Check if session exists
-if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
-    echo "Attaching to existing session '$SESSION_NAME'..."
-    tmux attach-session -t "$SESSION_NAME"
-    exit 0
-fi
+# Helper function to ensure dependencies
+ensure_deps() {
+    local dir="$1"
+    local name="$2"
+    if [ -d "$dir" ] && [ ! -d "$dir/node_modules" ]; then
+        echo "Dependencies missing in $name. Installing..."
+        (cd "$dir" && npm install)
+    fi
+}
 
 echo "Worktree Root: $PROJECT_ROOT"
-echo "Creating new session '$SESSION_NAME'..."
 
 if [ ! -d "$DEV_DIR" ]; then
     echo "Error: Dev directory not found at $DEV_DIR"
@@ -41,6 +43,19 @@ if [ ! -d "$MAIN_DIR" ]; then
     echo "Error: Main directory not found at $MAIN_DIR"
     exit 1
 fi
+
+# Ensure dependencies are installed
+ensure_deps "$DEV_DIR" "dev"
+ensure_deps "$MAIN_DIR" "main"
+
+# Check if session exists
+if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+    echo "Attaching to existing session '$SESSION_NAME'..."
+    tmux attach-session -t "$SESSION_NAME"
+    exit 0
+fi
+
+echo "Creating new session '$SESSION_NAME'..."
 
 # Window 1: Dev Environment (Dev Server)
 tmux new-session -d -s "$SESSION_NAME" -n "dev" -c "$DEV_DIR"
