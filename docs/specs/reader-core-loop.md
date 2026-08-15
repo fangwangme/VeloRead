@@ -144,15 +144,34 @@ IndexedDB（库名 `veloread`，版本 1），四个 object store：
 固定配置：`flow: 'paginated'`、`spread: 'none'`、`allowScriptedContent: false`
 （书页是不可信 HTML，没有理由让它执行脚本）。
 
+### 百分比为什么是 `number | null`
+
 `book.locations.generate()` 在**首页显示之后**异步执行：长书上它很慢，而它只影响进度百分比。
-生成失败时百分比停在 0，阅读位置不受影响。
+
+关键陷阱：epub.js 是**边生成边往 `book.locations` 里塞**的，所以 `locations.length() > 0`
+并不代表当前 CFI 已经被索引 —— 对还没索引到的位置，`percentageFromCfi()` 会返回一个看起来
+完全正常的 `0`。照单全收地存下去，就会出现「打开一本读到 50% 的书，进度被改写成 0%」。
+
+因此：
+
+- 渲染层用一个 `locationsReady` 标志，只有 `generate()` **完成之后**读到的数值才算数，
+  在那之前 `percentage` 一律是 `null`
+- `null` 的含义是「还不知道」，**不是**「在开头」。阅读器收到 `null` 时保留上一个已知值
+  （打开书时用存储里的旧值播种），绝不把它当 0 写回去
+- 生成失败时百分比一直是未知，阅读位置不受影响
 
 ## 6. 阅读器行为契约
 
 - 键盘：`→` / `PageDown` 下一页，`←` / `PageUp` 上一页，`Esc` 返回书库
 - 进度：每次 `relocated` 记录 CFI，防抖 400 ms 落库；离开阅读器时立即冲刷
-- 重排：`ResizeObserver` 监听容器，防抖 150 ms 后按容器像素尺寸重新排版
+- 重排：`ResizeObserver` 监听容器，防抖 150 ms 后按容器像素尺寸重新排版。
+  **必须跳过尺寸没真正变化的那次回调** —— `ResizeObserver` 在 `observe()` 时一定会触发一次，
+  拿刚刚排过版的同一个尺寸再排一次，会让 CFI 恢复差整整一页
 - 重开一本书从存储里的 CFI 恢复；没有记录时 `display(undefined)` 打开第一页
+- 书还没打开完就离开阅读器时，**丢弃**这一轮迟到的 `onLocation`：那是首屏位置，
+  写下去会把存好的阅读位置推回开头
+- 书架顺序依赖 `lastReadAt`，所以是**阅读器在最后一次进度写入落地之后**自己去刷新书库，
+  而不是 `closeBook()` 顺手刷 —— 后者会读到旧顺序
 
 ## 7. 拖拽导入
 
@@ -166,4 +185,8 @@ IndexedDB（库名 `veloread`，版本 1），四个 object store：
   内容放在 `OEBPS/` 下，好让 href 解析真的被覆盖到。
 - `bun run fixture` 把一本 4 章 / 每章 25 段的 fixture 写到 `.local/fixtures/fixture.epub`，
   供浏览器目标手动 smoke 用。
-- 单测跑在 jsdom + `fake-indexeddb` 上，覆盖元数据解析与进度读写一致性。
+- `bun run test` —— jsdom + `fake-indexeddb`，覆盖元数据解析与 web 侧进度读写一致性。
+- `cd src-tauri && cargo test` —— Rust 侧的 SQL 与路径逻辑放在 `library.rs` 的 `store`
+  子模块里，是一组只依赖 `&Connection` / `&Path` 的普通函数，因此不用起 Tauri app 就能测：
+  迁移幂等、进度 upsert、书架顺序与 web 实现一致、删除级联、重复 id 被拒、
+  以及 id 校验挡掉所有可能逃出书库目录的输入。

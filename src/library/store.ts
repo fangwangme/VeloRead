@@ -53,7 +53,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
         const metadata = await parseEpubMetadata(data)
         await storage.addBook({
           record: {
-            id: crypto.randomUUID(),
+            id: newBookId(),
             title: metadata.title || stripExtension(file.name),
             author: metadata.author,
             language: metadata.language,
@@ -89,15 +89,28 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   },
 
   closeBook() {
+    // Only the view changes here. The shelf order depends on lastReadAt, which
+    // the reader stamps on its way out — it reloads the library itself once
+    // that final write has landed, otherwise this would read the old order.
     set({ view: { name: 'library' } })
-    // The shelf order depends on lastReadAt, which the reader just moved.
-    void get().load()
   },
 
   dismissError() {
     set({ error: null })
   },
 }))
+
+/**
+ * `crypto.randomUUID` is only defined in a secure context, and the id ends up
+ * in a filename on the Tauri side, so a failure here would break importing
+ * entirely. `getRandomValues` has no such restriction; both shapes satisfy the
+ * `[A-Za-z0-9-]` check that Rust applies before touching the filesystem.
+ */
+function newBookId(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
 
 function stripExtension(filename: string): string {
   return filename.replace(/\.epub$/i, '')

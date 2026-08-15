@@ -4,8 +4,13 @@ import type { Book, Contents, Rendition } from 'epubjs'
 export interface ReaderLocation {
   /** CFI of the first visible position on the current page. */
   cfi: string
-  /** 0–1. Stays 0 until epub.js finishes generating locations in the background. */
-  percentage: number
+  /**
+   * 0–1, or null while epub.js is still generating locations in the
+   * background. Null means "not known yet", never "at the beginning" — a
+   * caller that persists it as 0 would walk a saved percentage back to zero
+   * every time the book is opened.
+   */
+  percentage: number | null
   atStart: boolean
   atEnd: boolean
 }
@@ -59,10 +64,16 @@ export async function createReader(
     })
   }
 
+  // epub.js fills `book.locations` incrementally, so a non-empty list does not
+  // mean the current CFI is in it yet — `percentageFromCfi` answers a truthful
+  // looking 0 for anything it has not indexed. Only readings taken after
+  // generation has finished can be trusted.
+  let locationsReady = false
+
   rendition.on('relocated', (location: RelocatedEvent) => {
     options.onLocation?.({
       cfi: location.start.cfi,
-      percentage: percentageOf(book, location.start.cfi),
+      percentage: locationsReady ? percentageOf(book, location.start.cfi) : null,
       atStart: Boolean(location.atStart),
       atEnd: Boolean(location.atEnd),
     })
@@ -79,6 +90,7 @@ export async function createReader(
     .generate(1000)
     .then(() => {
       if (destroyed) return
+      locationsReady = true
       const current = rendition.location
       if (current?.start?.cfi) {
         options.onLocation?.({
@@ -90,7 +102,7 @@ export async function createReader(
       }
     })
     .catch(() => {
-      /* percentage stays 0 */
+      // The percentage stays unknown; the reading position is unaffected.
     })
 
   return {
@@ -105,10 +117,10 @@ export async function createReader(
   }
 }
 
-function percentageOf(book: Book, cfi: string): number {
-  if (book.locations.length() === 0) return 0
+function percentageOf(book: Book, cfi: string): number | null {
+  if (book.locations.length() === 0) return null
   const value = book.locations.percentageFromCfi(cfi)
-  return Number.isFinite(value) ? value : 0
+  return Number.isFinite(value) ? value : null
 }
 
 /** epub.js wants a standalone ArrayBuffer, not a view into a shared one. */

@@ -24,6 +24,10 @@ export function Reader({ bookId }: { bookId: string }) {
     let handle: ReaderHandle | null = null
     let saveTimer: ReturnType<typeof setTimeout> | undefined
     let unsaved: ReadingProgress | null = null
+    // Seeded from storage below, then only ever replaced by a real reading of
+    // the percentage — never by the null epub.js reports before its locations
+    // are ready.
+    let lastKnownPercentage = 0
 
     async function flush() {
       clearTimeout(saveTimer)
@@ -36,6 +40,12 @@ export function Reader({ bookId }: { bookId: string }) {
         // Losing one position write is not worth interrupting reading over;
         // the next page turn writes again.
       }
+    }
+
+    /** Refresh the shelf only once the last position write has landed. */
+    async function flushAndRefreshShelf() {
+      await flush()
+      await useLibrary.getState().load()
     }
 
     // epub.js renders pages inside an iframe, so key events raised over the
@@ -64,14 +74,25 @@ export function Reader({ bookId }: { bookId: string }) {
         ])
         if (cancelled || !containerRef.current) return
 
+        // Show the position we already knew about instead of flashing 0%.
+        lastKnownPercentage = saved?.percentage ?? 0
+        setPercentage(lastKnownPercentage)
+
         handle = await createReader(containerRef.current, data, saved?.cfi ?? null, {
           onKeyDown,
           onLocation(location) {
-            setPercentage(location.percentage)
+            // Leaving the reader before the book finished opening still lets
+            // epub.js report its initial position. Writing that would move a
+            // saved position back to wherever the first render landed.
+            if (cancelled) return
+            if (location.percentage !== null) {
+              lastKnownPercentage = location.percentage
+              setPercentage(location.percentage)
+            }
             unsaved = {
               bookId,
               cfi: location.cfi,
-              percentage: location.percentage,
+              percentage: lastKnownPercentage,
               updatedAt: new Date().toISOString(),
             }
             clearTimeout(saveTimer)
@@ -94,7 +115,7 @@ export function Reader({ bookId }: { bookId: string }) {
     return () => {
       cancelled = true
       window.removeEventListener('keydown', onKeyDown)
-      void flush()
+      void flushAndRefreshShelf()
       handleRef.current = null
       handle?.destroy()
     }

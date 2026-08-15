@@ -27,7 +27,13 @@ export function Library() {
         event.preventDefault()
         setDragging(true)
       }}
-      onDragLeave={() => setDragging(false)}
+      onDragLeave={(event) => {
+        // dragleave also fires when the pointer moves onto a child element,
+        // which would flicker the overlay off and on across the whole shelf.
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setDragging(false)
+        }
+      }}
       onDrop={onDrop}
     >
       <header className="flex items-center justify-between gap-4 px-8 pt-12 pb-6">
