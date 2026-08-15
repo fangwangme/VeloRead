@@ -1,0 +1,36 @@
+import type { StoragePort } from './types'
+
+/**
+ * True inside the Tauri webview. Tauri v2 injects `__TAURI_INTERNALS__` before
+ * any app script runs, so this is safe to call at module scope.
+ */
+export function isTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
+let storage: Promise<StoragePort> | null = null
+
+/**
+ * The storage implementation for the current runtime, initialised once.
+ *
+ * The two implementations are behind dynamic imports so the web bundle never
+ * pulls in `@tauri-apps/api` and vice versa.
+ */
+export function getStorage(): Promise<StoragePort> {
+  if (!storage) {
+    storage = (isTauri()
+      ? import('./tauri/storage').then((m) => m.createTauriStorage())
+      : import('./web/storage').then((m) => m.createWebStorage())
+    ).then(async (port) => {
+      await port.init()
+      return port
+    })
+    // Don't cache a failed init: let the next caller retry.
+    storage.catch(() => {
+      storage = null
+    })
+  }
+  return storage
+}
+
+export type { BookRecord, BookImport, ReadingProgress, StoragePort } from './types'
