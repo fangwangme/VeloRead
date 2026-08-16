@@ -20,14 +20,14 @@ export function PositionInfo({ chapterTitle, pagesLeftInChapter, percentage }: P
   }
 
   if (parts.length === 0) {
-    return <span className="text-xs text-neutral-400">正在定位...</span>
+    return <span className="text-[11px] text-neutral-400 font-normal">定位中...</span>
   }
 
   return (
-    <div className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+    <div className="flex items-center gap-2 text-[11px] font-medium opacity-70 tracking-wide">
       {parts.map((part, index) => (
         <span key={index} className="flex items-center gap-2">
-          {index > 0 && <span className="opacity-40">·</span>}
+          {index > 0 && <span className="opacity-30">·</span>}
           <span>{part}</span>
         </span>
       ))}

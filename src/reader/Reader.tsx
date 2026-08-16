@@ -383,36 +383,44 @@ export function Reader({ bookId }: { bookId: string }) {
 
   return (
     <div
-      className="flex h-dvh flex-col select-none transition-colors duration-200"
+      className="flex h-dvh flex-col select-none transition-colors duration-300 font-sans"
       style={{
         backgroundColor: resolvedStyle.palette.background,
         color: resolvedStyle.palette.text,
       }}
     >
-      {/* Top Header Bar */}
-      <header className="flex shrink-0 items-center justify-between gap-4 px-6 pt-6 pb-2 border-b border-black/5 dark:border-white/5">
+      {/* Top Header Bar with Apple Books floating glass aesthetic */}
+      <header className="flex shrink-0 items-center justify-between gap-4 px-6 pt-5 pb-3 border-b border-black/[0.04] dark:border-white/[0.06] backdrop-blur-md">
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="rounded-lg border border-black/10 px-3 py-1.5 text-xs font-medium transition hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
+            className="flex items-center gap-1.5 rounded-full border border-black/10 bg-black/[0.02] px-3.5 py-1.5 text-xs font-medium transition hover:bg-black/5 hover:border-black/20 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/10"
             onClick={closeBook}
           >
-            ← 书库
+            <span>←</span>
+            <span>书库</span>
           </button>
           <button
             type="button"
-            className="rounded-lg border border-black/10 px-3 py-1.5 text-xs font-medium transition hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
+            className={`flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium transition ${
+              showToc
+                ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400'
+                : 'border-black/10 bg-black/[0.02] hover:bg-black/5 hover:border-black/20 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/10'
+            }`}
             onClick={() => setShowToc((v) => !v)}
             title="目录与书签 (T)"
           >
-            ☰ 目录
+            <span>☰</span>
+            <span>目录</span>
           </button>
         </div>
 
-        <div className="min-w-0 flex-1 text-center">
-          <p className="truncate text-xs font-semibold">{book?.title ?? '正在阅读'}</p>
+        <div className="min-w-0 flex-1 text-center px-4">
+          <p className="truncate text-xs font-semibold tracking-tight text-neutral-800 dark:text-neutral-200">
+            {book?.title ?? '正在阅读'}
+          </p>
           {location?.chapterTitle && (
-            <p className="truncate text-[10px] opacity-75">{location.chapterTitle}</p>
+            <p className="truncate text-[10px] opacity-60 tracking-normal mt-0.5">{location.chapterTitle}</p>
           )}
         </div>
 
@@ -421,15 +429,20 @@ export function Reader({ bookId }: { bookId: string }) {
             <button
               type="button"
               onClick={handleJumpBack}
-              className="rounded-lg bg-blue-500/20 px-2.5 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-500/30 transition"
+              className="flex items-center gap-1 rounded-full bg-blue-500/15 px-3 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-500/25 transition active:scale-95"
               title="返回跳转前的位置"
             >
-              ↩ 返回原位
+              <span>↩</span>
+              <span>返回原位</span>
             </button>
           )}
           <button
             type="button"
-            className="rounded-lg border border-black/10 px-3 py-1.5 text-xs font-medium transition hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
+            className={`flex items-center justify-center rounded-full border px-3 py-1.5 text-xs font-serif font-bold transition ${
+              showSettings
+                ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400'
+                : 'border-black/10 bg-black/[0.02] hover:bg-black/5 hover:border-black/20 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/10'
+            }`}
             onClick={() => setShowSettings((v) => !v)}
             title="排版与显示设置 (A)"
           >
@@ -440,14 +453,14 @@ export function Reader({ bookId }: { bookId: string }) {
 
       {/* Main Reader Surface */}
       <div className="relative min-h-0 flex-1 flex justify-center items-center overflow-hidden">
-        {/* Book Container with measure constraint */}
+        {/* Book Container with measure constraint and generous reading margins */}
         <div
           style={{
             maxWidth: `${measureMaxWidthPx}px`,
             width: '100%',
             height: '100%',
           }}
-          className="relative mx-auto h-full w-full px-4 py-2"
+          className="relative mx-auto h-full w-full px-6 py-4"
         >
           <div ref={containerRef} className="relative h-full w-full">
             {/* Pacer Highlight Overlay */}
@@ -466,73 +479,79 @@ export function Reader({ bookId }: { bookId: string }) {
         </div>
 
         {!ready && !error && (
-          <p className="absolute inset-0 flex items-center justify-center text-xs opacity-60">
-            正在载入书籍…
-          </p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-xs opacity-50">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            <span>正在载入排版…</span>
+          </div>
         )}
         {error && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
             <p className="text-xs text-red-600 dark:text-red-400">无法打开此书籍: {error}</p>
-            <button type="button" className="text-xs underline" onClick={closeBook}>
+            <button type="button" className="text-xs underline font-medium" onClick={closeBook}>
               返回书库
             </button>
           </div>
         )}
       </div>
 
-      {/* Bottom Footer with Position Info & Pacer Bar */}
-      <footer className="flex shrink-0 flex-col items-center justify-center gap-2 px-6 pt-2 pb-5 border-t border-black/5 dark:border-white/5 text-xs">
-        {/* Pacer Control Bar */}
-        <div className="flex items-center gap-3 w-full max-w-lg justify-between">
+      {/* Bottom Footer with Apple Books Floating Capsule & Location Info */}
+      <footer className="flex shrink-0 flex-col items-center justify-center gap-2.5 px-6 pt-2 pb-5 border-t border-black/[0.04] dark:border-white/[0.06] backdrop-blur-md">
+        {/* Pacer Control Floating Capsule */}
+        <div className="flex items-center gap-3 w-full max-w-lg justify-between rounded-full border border-black/[0.08] bg-black/[0.02] px-3.5 py-1.5 shadow-xs dark:border-white/[0.08] dark:bg-white/[0.04]">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={pacer.toggle}
-              className="rounded-full bg-blue-600 px-3.5 py-1 text-xs font-medium text-white shadow-sm transition hover:bg-blue-700 flex items-center gap-1"
+              className={`flex items-center gap-1.5 rounded-full px-3.5 py-1 text-xs font-semibold transition active:scale-95 shadow-xs ${
+                pacer.isPlaying
+                  ? 'bg-amber-600 text-white hover:bg-amber-700'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
             >
-              {pacer.isPlaying ? '❚❚ 暂停' : '▶ 自动阅读'}
+              <span>{pacer.isPlaying ? '❚❚' : '▶'}</span>
+              <span>{pacer.isPlaying ? '暂停' : '自动阅读'}</span>
             </button>
 
             <button
               type="button"
               onClick={() => setShowPacerControls((v) => !v)}
-              className="rounded-md border border-black/10 px-2 py-1 text-[11px] hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
+              className="rounded-full border border-black/10 px-2.5 py-1 text-[11px] font-medium hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10 transition"
             >
               {pacerWpm} wpm · {pacerChunkSize}词
             </button>
 
             {pacer.speedWarning && (
-              <span className="text-[10px] text-amber-600 dark:text-amber-400" title="超过 500 wpm 后理解率会显著下降">
-                ⚠️ 极速模式（理解率或下降）
+              <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium" title="超过 500 wpm 后理解率会显著下降">
+                ⚠️ 极速模式
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
-              className="rounded-md px-2.5 py-1 transition hover:bg-black/5 dark:hover:bg-white/5"
+              className="rounded-full p-1.5 text-neutral-600 hover:bg-black/5 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-white/10 dark:hover:text-white transition"
               onClick={() => void handleRef.current?.prev()}
               title="上一页 (←)"
             >
-              ← 上一页
+              ◀
             </button>
             <button
               type="button"
-              className="rounded-md px-2.5 py-1 transition hover:bg-black/5 dark:hover:bg-white/5"
+              className="rounded-full p-1.5 text-neutral-600 hover:bg-black/5 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-white/10 dark:hover:text-white transition"
               onClick={() => void handleRef.current?.next()}
               title="下一页 (→)"
             >
-              下一页 →
+              ▶
             </button>
           </div>
         </div>
 
         {/* Extended Pacer Settings Bar */}
         {showPacerControls && (
-          <div className="flex items-center gap-4 py-2 px-4 rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 text-[11px]">
+          <div className="flex items-center gap-4 py-2 px-4 rounded-2xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-neutral-800/80 shadow-md backdrop-blur-md text-[11px] animate-in fade-in zoom-in-95 duration-100">
             <div className="flex items-center gap-2">
-              <span>速度:</span>
+              <span className="font-medium">速度:</span>
               <input
                 type="range"
                 min={100}
@@ -544,14 +563,16 @@ export function Reader({ bookId }: { bookId: string }) {
                   setPacerWpm(val)
                   void getStorage().then((s) => s.saveAppSettings({ pacerWpm: val }))
                 }}
-                className="w-24 accent-blue-600"
+                className="w-24 accent-blue-600 cursor-pointer"
               />
-              <span className="tabular-nums">{pacerWpm} wpm</span>
+              <span className="tabular-nums font-mono font-semibold">{pacerWpm} wpm</span>
             </div>
 
+            <div className="h-3 w-px bg-black/10 dark:bg-white/10" />
+
             <div className="flex items-center gap-2">
-              <span>词数/块:</span>
-              <div className="flex rounded border border-black/10 dark:border-white/10 overflow-hidden">
+              <span className="font-medium">词数/块:</span>
+              <div className="flex rounded-lg border border-black/10 dark:border-white/10 overflow-hidden bg-black/[0.02] dark:bg-white/[0.02]">
                 {[1, 2, 3, 4, 5].map((size) => (
                   <button
                     key={size}
@@ -560,7 +581,7 @@ export function Reader({ bookId }: { bookId: string }) {
                       setPacerChunkSize(size)
                       void getStorage().then((s) => s.saveAppSettings({ pacerChunkSize: size }))
                     }}
-                    className={`px-2 py-0.5 ${
+                    className={`px-2 py-0.5 transition font-medium ${
                       pacerChunkSize === size
                         ? 'bg-blue-600 text-white font-semibold'
                         : 'hover:bg-black/5 dark:hover:bg-white/5'
@@ -574,7 +595,7 @@ export function Reader({ bookId }: { bookId: string }) {
           </div>
         )}
 
-        {/* Position Info */}
+        {/* Location / Chapter Info */}
         <PositionInfo
           chapterTitle={location?.chapterTitle}
           pagesLeftInChapter={location?.pagesLeftInChapter}

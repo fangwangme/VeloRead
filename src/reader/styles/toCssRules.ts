@@ -12,6 +12,11 @@ export function toCssRules(resolved: ResolvedStyle): Record<string, Record<strin
     'text-align': `${body.align} !important`,
     margin: '0 !important',
     padding: '0 !important',
+    '-webkit-font-smoothing': 'antialiased !important',
+    '-moz-osx-font-smoothing': 'grayscale !important',
+    'text-rendering': 'optimizeLegibility !important',
+    'word-break': isCjk ? 'break-all !important' : 'normal !important',
+    'overflow-wrap': 'break-word !important',
   }
 
   if (body.hyphens) {
@@ -34,6 +39,7 @@ export function toCssRules(resolved: ResolvedStyle): Record<string, Record<strin
     color: `${palette.text} !important`,
     'line-height': `${body.lineHeight} !important`,
     'text-align': `${body.align} !important`,
+    'letter-spacing': isCjk ? '0.04em !important' : 'normal !important',
   }
 
   if (body.fontStack) {
@@ -41,13 +47,13 @@ export function toCssRules(resolved: ResolvedStyle): Record<string, Record<strin
   }
 
   if (body.paragraph === 'indent') {
-    pRules['text-indent'] = `${isCjk ? '2em' : '1.2em'} !important`
+    pRules['text-indent'] = `${isCjk ? '2em' : '1.5em'} !important`
     pRules['margin-top'] = '0 !important'
     pRules['margin-bottom'] = '0 !important'
   } else {
     pRules['text-indent'] = '0 !important'
-    pRules['margin-top'] = '0.75em !important'
-    pRules['margin-bottom'] = '0.75em !important'
+    pRules['margin-top'] = '0.85em !important'
+    pRules['margin-bottom'] = '0.85em !important'
   }
 
   const headingBase: Record<string, string> = {
@@ -55,6 +61,7 @@ export function toCssRules(resolved: ResolvedStyle): Record<string, Record<strin
     'font-weight': `${elements.headingWeight} !important`,
     'text-align': 'start !important',
     'text-indent': '0 !important',
+    'letter-spacing': '-0.02em !important',
     'break-after': 'avoid !important',
     '-webkit-column-break-after': 'avoid !important',
   }
@@ -67,27 +74,53 @@ export function toCssRules(resolved: ResolvedStyle): Record<string, Record<strin
     body: bodyRules,
     p: pRules,
     'h1, h2, h3, h4, h5, h6': headingBase,
-    h1: { 'font-size': `${Math.round(body.fontSizePx * elements.headingScale[0])}px !important`, 'margin-top': '1.2em !important', 'margin-bottom': '0.6em !important' },
-    h2: { 'font-size': `${Math.round(body.fontSizePx * elements.headingScale[1])}px !important`, 'margin-top': '1.1em !important', 'margin-bottom': '0.5em !important' },
-    h3: { 'font-size': `${Math.round(body.fontSizePx * elements.headingScale[2])}px !important`, 'margin-top': '1.0em !important', 'margin-bottom': '0.4em !important' },
+    h1: {
+      'font-size': `${Math.round(body.fontSizePx * elements.headingScale[0])}px !important`,
+      'margin-top': '1.4em !important',
+      'margin-bottom': '0.7em !important',
+      'line-height': '1.25 !important',
+    },
+    h2: {
+      'font-size': `${Math.round(body.fontSizePx * elements.headingScale[1])}px !important`,
+      'margin-top': '1.25em !important',
+      'margin-bottom': '0.6em !important',
+      'line-height': '1.3 !important',
+    },
+    h3: {
+      'font-size': `${Math.round(body.fontSizePx * elements.headingScale[2])}px !important`,
+      'margin-top': '1.1em !important',
+      'margin-bottom': '0.5em !important',
+      'line-height': '1.35 !important',
+    },
     h4: { 'font-size': `${Math.round(body.fontSizePx * elements.headingScale[3])}px !important` },
     h5: { 'font-size': `${Math.round(body.fontSizePx * elements.headingScale[4])}px !important` },
     h6: { 'font-size': `${Math.round(body.fontSizePx * elements.headingScale[5])}px !important` },
     a: {
       color: `${palette.accent} !important`,
       'text-decoration': 'underline !important',
+      'text-underline-offset': '2px !important',
+    },
+    img: {
+      'max-width': '100% !important',
+      height: 'auto !important',
+      'border-radius': '6px !important',
+      margin: '1.2em auto !important',
+      display: 'block !important',
     },
     'code, pre, kbd, samp': {
       'font-family': `${elements.codeFontStack} !important`,
       background: `${palette.codeBackground} !important`,
-      'font-size': '0.9em !important',
+      'font-size': '0.88em !important',
+      'border-radius': '3px !important',
+      padding: '0.15em 0.35em !important',
     },
     pre: {
-      padding: '0.75em 1em !important',
-      'border-radius': '4px !important',
+      padding: '0.85em 1.15em !important',
+      'border-radius': '6px !important',
       'overflow-x': 'auto !important',
       'white-space': 'pre-wrap !important',
       'word-break': 'break-all !important',
+      margin: '1.2em 0 !important',
     },
     'pre code': {
       background: 'transparent !important',
@@ -95,10 +128,11 @@ export function toCssRules(resolved: ResolvedStyle): Record<string, Record<strin
     },
     blockquote: {
       color: `${palette.muted} !important`,
+      'font-style': 'italic !important',
       ...(elements.blockquote === 'rule'
         ? {
-            'border-left': `3px solid ${palette.rule} !important`,
-            'padding-left': '1em !important',
+            'border-left': `3.5px solid ${palette.rule} !important`,
+            'padding-left': '1.2em !important',
             'margin-left': '0 !important',
             'margin-right': '0 !important',
           }
@@ -110,17 +144,19 @@ export function toCssRules(resolved: ResolvedStyle): Record<string, Record<strin
     hr: {
       border: 'none !important',
       'border-top': `1px solid ${palette.rule} !important`,
-      margin: '2em 0 !important',
+      margin: '2.5em auto !important',
+      width: '60% !important',
     },
     'figcaption, .caption': {
       color: `${palette.muted} !important`,
       'font-size': `${elements.figureCaptionScale}em !important`,
       'text-align': 'center !important',
+      'margin-top': '0.5em !important',
     },
     table: {
       'border-collapse': 'collapse !important',
       width: '100% !important',
-      margin: '1em 0 !important',
+      margin: '1.5em 0 !important',
     },
     'th, td': {
       ...(elements.tableBorder === 'horizontal'
@@ -128,13 +164,18 @@ export function toCssRules(resolved: ResolvedStyle): Record<string, Record<strin
         : elements.tableBorder === 'all'
         ? { border: `1px solid ${palette.rule} !important` }
         : {}),
-      padding: '0.5em 0.75em !important',
+      padding: '0.6em 0.85em !important',
     },
     ul: {
       'padding-left': `${elements.listIndentEm}em !important`,
+      margin: '0.8em 0 !important',
     },
     ol: {
       'padding-left': `${elements.listIndentEm}em !important`,
+      margin: '0.8em 0 !important',
+    },
+    li: {
+      'margin-bottom': '0.35em !important',
     },
   }
 }

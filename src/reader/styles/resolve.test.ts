@@ -14,7 +14,7 @@ describe('resolveStyle', () => {
     expect(resolved.body.align).toBe('justify')
     expect(resolved.body.hyphens).toBe(true)
     expect(resolved.body.fontStack).toContain('Georgia')
-    expect(resolved.palette.background).toBe('#FAF7F0')
+    expect(resolved.palette.background).toBe(PRESETS.book.palette.background)
   })
 
   it('applies relative font size, line height, and margin steps', () => {
