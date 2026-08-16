@@ -449,13 +449,20 @@ export function Reader({ bookId }: { bookId: string }) {
           }}
           className="relative mx-auto h-full w-full px-4 py-2"
         >
-          <div ref={containerRef} className="h-full w-full" />
-          {/* Pacer Highlight Overlay */}
-          <Overlay
-            rect={pacer.overlayRect}
-            animMs={pacer.currentChunk?.animMs}
-            accentColor={resolvedStyle.palette.accent}
-          />
+          <div ref={containerRef} className="relative h-full w-full">
+            {/* Pacer Highlight Overlay */}
+            <Overlay
+              rect={pacer.overlayRect}
+              animMs={pacer.currentChunk?.animMs}
+              accentColor={resolvedStyle.palette.accent}
+              isDark={
+                styleId === 'night' ||
+                (autoNightMode &&
+                  typeof window !== 'undefined' &&
+                  window.matchMedia?.('(prefers-color-scheme: dark)')?.matches)
+              }
+            />
+          </div>
         </div>
 
         {!ready && !error && (
