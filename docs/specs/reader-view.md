@@ -38,8 +38,17 @@
 interface ReadingStyle {
   id: StyleId
   name: string
-  palette: { background: string; text: string; muted: string; accent: string }
-  typography: {
+  category: 'reading' | 'academic' | 'focus' | 'cjk'   // 用于选择器分组
+  palette: {
+    background: string
+    text: string
+    muted: string          // 图注、页眉页脚
+    accent: string         // 链接、当前章高亮
+    rule: string           // 分隔线、引用左边框
+    codeBackground: string
+  }
+  /** 正文 */
+  body: {
     fontStack: string
     fontSizePx: number
     lineHeight: number
@@ -47,6 +56,17 @@ interface ReadingStyle {
     align: 'start' | 'justify'
     hyphens: boolean
     paragraph: 'indent' | 'spaced'    // 二选一
+  }
+  /** 正文之外的元素 —— 一本书不只有段落 */
+  elements: {
+    headingFontStack: string          // 可与正文不同（衬线正文 + 无衬线标题很常见）
+    headingScale: number[]            // h1..h6 相对正文的倍数
+    headingWeight: number
+    codeFontStack: string             // 等宽，永远不跟随正文字体
+    blockquote: 'indent' | 'rule'     // 缩进 或 左边线
+    listIndentEm: number
+    tableBorder: 'none' | 'horizontal' | 'all'
+    figureCaptionScale: number
   }
 }
 
@@ -68,28 +88,87 @@ type ResolvedStyle = /* 预设 覆盖以 override 中的非 null 项 */
 
 ### 3.2 预设风格
 
-前四套对应用户要求的「书籍 / 报刊 / 科学杂志」等成套观感：
+按 `category` 分组呈现，共 **8 套**。分组是为了让选择器在数量增长后仍然好用。
 
-| 预设 | 定位 | 字体 | 字号/行高 | 版心 | 对齐 | 段落 |
+**Reading —— 日常长时间阅读**
+
+| 预设 | 定位 | 正文字体 | 字号/行高 | 版心 | 对齐 | 段落 |
 | --- | --- | --- | --- | --- | --- | --- |
 | **书籍 Book** | 默认，暖白纸感 | Georgia / Charter 衬线 | 19px / 1.62 | 66ch | 两端 | 首行缩进 |
-| **报刊 News** | 高密度速览 | Charter / 紧凑衬线 | 17px / 1.45 | 72ch | 两端+断词 | 首行缩进 |
-| **科学杂志 Journal** | 长文精读 | Iowan / Palatino 衬线 | 18px / 1.75 | 62ch | 左对齐 | 段间距 |
-| **素白 Plain** | 无风格基线 | 系统无衬线 | 18px / 1.60 | 68ch | 左对齐 | 段间距 |
-| **夜读 Night** | 暗环境 | Georgia | 19px / 1.68 | 66ch | 左对齐 | 段间距 |
 | **羊皮纸 Sepia** | 暖色护眼 | Georgia | 19px / 1.62 | 66ch | 两端 | 首行缩进 |
+| **夜读 Night** | 暗环境 | Georgia | 19px / 1.68 | 66ch | 左对齐 | 段间距 |
+
+**Academic —— 信息密度优先**
+
+| 预设 | 定位 | 正文字体 | 字号/行高 | 版心 | 对齐 | 段落 |
+| --- | --- | --- | --- | --- | --- | --- |
+| **科学杂志 Journal** | 长文精读 | Palatino / Iowan 衬线 | 18px / 1.75 | 62ch | 左对齐 | 段间距 |
+| **报刊 News** | 高密度速览 | Charter / 紧凑衬线 | 17px / 1.45 | 72ch | 两端+断词 | 首行缩进 |
+
+**Focus —— 去干扰**
+
+| 预设 | 定位 | 正文字体 | 字号/行高 | 版心 | 对齐 | 段落 |
+| --- | --- | --- | --- | --- | --- | --- |
+| **素白 Plain** | 无风格基线 | 系统无衬线 | 18px / 1.60 | 68ch | 左对齐 | 段间距 |
+| **打字稿 Manuscript** | 草稿/剧本观感，天然慢读 | Courier / 等宽 | 17px / 1.70 | 64ch | 左对齐 | 首行缩进 |
+
+**CJK —— 中文排版**
+
+| 预设 | 定位 | 正文字体 | 字号/行高 | 版心 | 对齐 | 段落 |
+| --- | --- | --- | --- | --- | --- | --- |
+| **中文宋体 Song** | 中文正文默认 | 宋体 / Songti SC | 18px / 1.80 | 40ch | 两端 | 首行缩进 2 字 |
 
 约束：
-- **字体栈必须带回退**。Iowan Old Style / Charter 是 macOS 系统字体，
-  浏览器目标会退化到 Georgia。这是刻意接受的差异（打包 Web 字体会显著撑大产物）。
+- **字体栈必须带回退**。Iowan Old Style / Charter / Songti SC 是 macOS 系统字体，
+  浏览器目标会退化到 Georgia / 系统衬线。这是刻意接受的差异（打包 Web 字体会显著撑大产物）。
 - 夜读正文对比度需满足 WCAG AA（≥ 4.5:1），但**不要纯白压纯黑**（眩光）。
 - 「报刊」指高密度、两端对齐、紧凑行距的观感，**不是多栏排版**。
+- **等宽字体永远不跟随正文字体设置** —— 代码块换成衬线体会毁掉对齐。
 
-### 3.3 可调项（对齐 Apple Books 的 Aa 面板）
+### 3.3 CJK 排版的特殊规则
+
+中文排版不是「把英文的字体换掉」那么简单，必须单独处理：
+
+- **不断词**：`hyphens` 对 CJK 无意义，必须关闭
+- **版心按字数算**：中文一行 35–45 字舒适，对应的 `measureCh` 远小于英文的 66
+- **行高更大**：中文方块字没有 x-height 的视觉呼吸，1.75–1.9 才舒服
+- **首行缩进 2 个字**（`text-indent: 2em`），这是中文的惯例，不是 1.2em
+- **标点挤压**：理想情况下开启 `text-spacing` / 标点悬挂，但浏览器支持不一，
+  先不做，也不要假装做了
+- **中英混排**：正文字体栈里英文字体放前面、中文字体放后面，
+  浏览器会按字符逐一回退，这样英文不会被中文字体里的劣质西文字形接管
+
+### 3.4 参考 docu.md 后的取舍
+
+调研了 [docu.md 的主题目录](https://docu.md/features/themes.html)（29 套，分 Classic /
+Reading / Modern / Creative / Chinese / Playful / Nature 七类）。
+
+**采纳：**
+- **分类分组**：主题一多就必须分组，否则选择器不可用。我们采用 4 组。
+- **「每套主题控制什么」的清单**：docu.md 明确覆盖了正文、各级标题、代码块、表格、列表间距。
+  这**暴露了本 spec 原先的一个真实缺口** —— 之前的 `ReadingStyle` 只定义了正文。
+  一本书还有标题、引用、代码、表格、图注，只管正文会让这些元素在换风格后完全失控。
+  §3.1 的 `elements` 字段就是据此补上的。
+- **主题身份**：Academic / Newspaper / Magazine / Manuscript(Palatino) / Typewriter
+  与我们要的观感重合，「打字稿」一套即由此而来。
+- **中文主题**：宋体 / 黑体 / 仿宋的区分提醒我们**必须单独做 CJK 排版**（§3.3）。
+
+**不采纳，及理由：**
+- **29 套太多**。docu.md 是文档导出工具，每份文档挑一次外观；阅读器是配置一次然后长期待在里面的地方。
+  Apple Books 只给 6 套是有道理的。我们定 8 套。
+- **Playful 与 Nature 两类全部不要**（Rainbow / Candy / Dinosaur / Space / Garden / Coral…）。
+  彩色正文用来读小说是**有害**的，这些是给小学生作业和创意文档用的。
+- **Comic Sans / Century Gothic** 不进候选。
+- **pt 单位与印刷尺寸**（12pt/11pt）不适用。那是给纸张排版的；屏幕阅读要 px，
+  而且**docu.md 完全没有版心/页边距的概念** —— 因为对导出工具来说页宽就是纸张大小。
+  但版心恰恰是屏幕阅读**影响最大的单一变量**（实测 141 → 71 字符/行）。
+- **docu.md 没有深色模式**。对文档导出无所谓（要打印），对阅读器是硬需求。
+
+### 3.5 可调项（对齐 Apple Books 的 Aa 面板）
 
 | 项 | 形式 | 说明 |
 | --- | --- | --- |
-| 风格 | 卡片选择 | 上表六套 |
+| 风格 | 卡片选择，按 4 组分区 | 上表 8 套 |
 | 字体 | 列表 | 从内置字体栈里选，含「跟随书籍原字体」 |
 | 字号 | `A-` / `A+` 离散档位 | 不用连续滑杆，档位更好控制 |
 | 行距 | 三档（紧/中/松） | 相对预设的档位 |
@@ -102,7 +181,10 @@ type ResolvedStyle = /* 预设 覆盖以 override 中的非 null 项 */
 **「跟随书籍原字体」很重要**：有些书（诗集、技术书、带代码块的书）自带排版是有意义的，
 强行覆盖反而更糟。Apple Books 的 `Original` 就是这个作用。
 
-### 3.4 覆盖强度
+**首次打开一本书时按语种选默认风格**：`dc:language` 是 `zh*` 则默认「中文宋体」，
+否则默认「书籍」。之后以用户的按书设置为准。
+
+### 3.6 覆盖强度
 
 书自带 CSS，覆盖需要 `!important`；个别书还有内联样式。策略：
 - 默认覆盖 `font-family` / `font-size` / `line-height` / `color` / `background`
