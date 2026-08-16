@@ -11,7 +11,6 @@ import { Toc } from './Toc'
 import { PositionInfo } from './PositionInfo'
 import { Overlay } from './pacer/Overlay'
 import { usePacer } from './pacer/usePacer'
-import { StatsModal } from '../stats/StatsModal'
 import {
   IconArrowLeft,
   IconChevronLeft,
@@ -19,7 +18,6 @@ import {
   IconPause,
   IconPlay,
   IconReturn,
-  IconStats,
   IconToc,
 } from '../ui/icons'
 
@@ -55,7 +53,6 @@ export function Reader({ bookId }: { bookId: string }) {
   // UI Panels
   const [showSettings, setShowSettings] = useState(false)
   const [showToc, setShowToc] = useState(false)
-  const [showStats, setShowStats] = useState(false)
   const [toc, setToc] = useState<TocItem[]>([])
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
 
@@ -108,14 +105,12 @@ export function Reader({ bookId }: { bookId: string }) {
   const pacerRef = useRef(pacer)
   const showSettingsRef = useRef(showSettings)
   const showTocRef = useRef(showToc)
-  const showStatsRef = useRef(showStats)
   const showPacerControlsRef = useRef(showPacerControls)
 
   useEffect(() => {
     pacerRef.current = pacer
     showSettingsRef.current = showSettings
     showTocRef.current = showToc
-    showStatsRef.current = showStats
     showPacerControlsRef.current = showPacerControls
   })
 
@@ -133,11 +128,11 @@ export function Reader({ bookId }: { bookId: string }) {
     if (hideChromeTimerRef.current) {
       clearTimeout(hideChromeTimerRef.current)
     }
-    if (showSettingsRef.current || showTocRef.current || showStatsRef.current || showPacerControlsRef.current) {
+    if (showSettingsRef.current || showTocRef.current || showPacerControlsRef.current) {
       return
     }
     hideChromeTimerRef.current = setTimeout(() => {
-      if (!showSettingsRef.current && !showTocRef.current && !showStatsRef.current && !showPacerControlsRef.current) {
+      if (!showSettingsRef.current && !showTocRef.current && !showPacerControlsRef.current) {
         setChromeVisible(false)
       }
     }, AUTO_HIDE_CHROME_MS)
@@ -179,7 +174,7 @@ export function Reader({ bookId }: { bookId: string }) {
     const interval = setInterval(() => {
       // Pause if tab is hidden or modal is open
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-      if (showSettings || showToc || showStats) return
+      if (showSettings || showToc) return
 
       // Anti-idle check: capped at MAX_PAGE_DWELL_SECONDS per page
       if (pageDwellSecondsRef.current < MAX_PAGE_DWELL_SECONDS) {
@@ -198,7 +193,7 @@ export function Reader({ bookId }: { bookId: string }) {
       clearInterval(flushInterval)
       void flushReadingSessionRef.current()
     }
-  }, [bookId, showSettings, showToc, showStats])
+  }, [bookId, showSettings, showToc])
 
   // Main reader lifecycle
   useEffect(() => {
@@ -256,17 +251,15 @@ export function Reader({ bookId }: { bookId: string }) {
           setShowSettings(false)
         } else if (showTocRef.current) {
           setShowToc(false)
-        } else if (showStatsRef.current) {
-          setShowStats(false)
         } else {
           closeBook()
         }
       } else if (event.key === 't' || event.key === 'T') {
-        if (!showSettingsRef.current && !showStatsRef.current) {
+        if (!showSettingsRef.current) {
           setShowToc((v) => !v)
         }
       } else if (event.key === 'a' || event.key === 'A') {
-        if (!showTocRef.current && !showStatsRef.current) {
+        if (!showTocRef.current) {
           setShowSettings((v) => !v)
         }
       }
@@ -558,18 +551,6 @@ export function Reader({ bookId }: { bookId: string }) {
             <IconToc className="opacity-70" />
             <span>目录</span>
           </button>
-          <button
-            type="button"
-            className="flex items-center gap-1.5 rounded-full border border-black/10 bg-white/60 px-3.5 py-1.5 text-xs font-medium backdrop-blur-md shadow-xs transition hover:bg-white hover:border-black/20 dark:border-white/10 dark:bg-black/40 dark:hover:bg-black/70"
-            onClick={() => {
-              setShowStats(true)
-              setChromeVisible(true)
-            }}
-            title="阅读数据与热力图"
-          >
-            <IconStats className="opacity-70" />
-            <span>统计</span>
-          </button>
         </div>
 
         <div className="min-w-0 flex-1 text-center px-4">
@@ -810,9 +791,6 @@ export function Reader({ bookId }: { bookId: string }) {
           onClose={() => setShowToc(false)}
         />
       )}
-
-      {/* Stats Modal */}
-      {showStats && <StatsModal onClose={() => setShowStats(false)} />}
     </div>
   )
 }
