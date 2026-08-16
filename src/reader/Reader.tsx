@@ -14,6 +14,7 @@ import { usePacer } from './pacer/usePacer'
 
 const SAVE_DEBOUNCE_MS = 400
 const RESIZE_DEBOUNCE_MS = 150
+const AUTO_HIDE_CHROME_MS = 3200
 
 export function Reader({ bookId }: { bookId: string }) {
   const closeBook = useLibrary((s) => s.closeBook)
@@ -28,6 +29,10 @@ export function Reader({ bookId }: { bookId: string }) {
   const [error, setError] = useState<string | null>(null)
   const [location, setLocation] = useState<ReaderLocation | null>(null)
   const [percentage, setPercentage] = useState<number | null>(0)
+
+  // Immersive Chrome / Controls Visibility (Apple Books auto-hiding navigation)
+  const [chromeVisible, setChromeVisible] = useState(true)
+  const hideChromeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Settings & Style
   const [styleId, setStyleId] = useState<StyleId>('book')
@@ -51,7 +56,6 @@ export function Reader({ bookId }: { bookId: string }) {
 
   // Compute resolved style
   const resolvedStyle = useMemo(() => {
-    // If auto night mode enabled and system is dark, force night preset base
     const isSystemDark =
       typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)')?.matches
     const effectiveStyleId = autoNightMode && isSystemDark ? 'night' : styleId
@@ -71,11 +75,13 @@ export function Reader({ bookId }: { bookId: string }) {
   const pacerRef = useRef(pacer)
   const showSettingsRef = useRef(showSettings)
   const showTocRef = useRef(showToc)
+  const showPacerControlsRef = useRef(showPacerControls)
 
   useEffect(() => {
     pacerRef.current = pacer
     showSettingsRef.current = showSettings
     showTocRef.current = showToc
+    showPacerControlsRef.current = showPacerControls
   })
 
   // Measure-based maxWidth calculation
@@ -85,6 +91,23 @@ export function Reader({ bookId }: { bookId: string }) {
     const fontSize = resolvedStyle.body.fontSizePx
     return isCjk ? ch * fontSize : Math.round(ch * fontSize * 0.55)
   }, [resolvedStyle])
+
+  // Auto-hide chrome scheduler
+  const pingActivity = () => {
+    setChromeVisible(true)
+    if (hideChromeTimerRef.current) {
+      clearTimeout(hideChromeTimerRef.current)
+    }
+    // Don't hide if any modal / drawer is open
+    if (showSettingsRef.current || showTocRef.current || showPacerControlsRef.current) {
+      return
+    }
+    hideChromeTimerRef.current = setTimeout(() => {
+      if (!showSettingsRef.current && !showTocRef.current && !showPacerControlsRef.current) {
+        setChromeVisible(false)
+      }
+    }, AUTO_HIDE_CHROME_MS)
+  }
 
   // Main lifecycle
   useEffect(() => {
@@ -112,6 +135,9 @@ export function Reader({ bookId }: { bookId: string }) {
     }
 
     function onKeyDown(event: KeyboardEvent) {
+      // Any keypress reveals navigation
+      pingActivity()
+
       // Space: toggle Pacer (prevent scroll)
       if (event.code === 'Space' || event.key === ' ') {
         event.preventDefault()
@@ -154,6 +180,7 @@ export function Reader({ bookId }: { bookId: string }) {
     }
 
     window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('mousemove', pingActivity)
 
     void (async () => {
       try {
@@ -196,6 +223,9 @@ export function Reader({ bookId }: { bookId: string }) {
           flow: initialFlow,
           style: initialResolved,
           onKeyDown,
+          onClickText() {
+            pingActivity()
+          },
           onLocation(loc) {
             if (cancelled) return
             setLocation(loc)
@@ -212,7 +242,6 @@ export function Reader({ bookId }: { bookId: string }) {
             clearTimeout(saveTimer)
             saveTimer = setTimeout(() => void flush(), SAVE_DEBOUNCE_MS)
 
-            // Recalculate pacer geometry on page turn
             setTimeout(() => {
               pacerRef.current.recalculateGeometry()
             }, 50)
@@ -233,6 +262,7 @@ export function Reader({ bookId }: { bookId: string }) {
         })
 
         setReady(true)
+        pingActivity()
       } catch (cause) {
         if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause))
       }
@@ -241,6 +271,8 @@ export function Reader({ bookId }: { bookId: string }) {
     return () => {
       cancelled = true
       window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('mousemove', pingActivity)
+      if (hideChromeTimerRef.current) clearTimeout(hideChromeTimerRef.current)
       void flushAndRefreshShelf()
       handleRef.current = null
       setHandle(null)
@@ -252,7 +284,6 @@ export function Reader({ bookId }: { bookId: string }) {
   useEffect(() => {
     if (handleRef.current && ready) {
       handleRef.current.applyStyle(resolvedStyle)
-      // Recalculate Pacer positions after style applied
       setTimeout(() => {
         pacerRef.current.recalculateGeometry()
       }, 50)
@@ -381,20 +412,37 @@ export function Reader({ bookId }: { bookId: string }) {
     }
   }, [])
 
+  // Background gradient atmosphere
+  const isDarkTheme =
+    styleId === 'night' ||
+    (autoNightMode &&
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-color-scheme: dark)')?.matches)
+
   return (
     <div
-      className="flex h-dvh flex-col select-none transition-colors duration-300 font-sans"
+      className="relative flex h-dvh flex-col select-none transition-colors duration-300 font-sans overflow-hidden"
       style={{
         backgroundColor: resolvedStyle.palette.background,
         color: resolvedStyle.palette.text,
       }}
+      onMouseMove={pingActivity}
     >
-      {/* Top Header Bar with Apple Books floating glass aesthetic */}
-      <header className="flex shrink-0 items-center justify-between gap-4 px-6 pt-5 pb-3 border-b border-black/[0.04] dark:border-white/[0.06] backdrop-blur-md">
+      {/* Top Header Bar with Apple Books floating glass aesthetic & Auto-hide */}
+      <header
+        className={`fixed top-0 inset-x-0 z-30 flex items-center justify-between gap-4 px-6 pt-5 pb-3 transition-all duration-300 ${
+          chromeVisible
+            ? 'opacity-100 translate-y-0 pointer-events-auto'
+            : 'opacity-0 -translate-y-4 pointer-events-none'
+        }`}
+        style={{
+          background: `linear-gradient(to bottom, ${resolvedStyle.palette.background}F0 70%, transparent 100%)`,
+        }}
+      >
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="flex items-center gap-1.5 rounded-full border border-black/10 bg-black/[0.02] px-3.5 py-1.5 text-xs font-medium transition hover:bg-black/5 hover:border-black/20 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/10"
+            className="flex items-center gap-1.5 rounded-full border border-black/10 bg-white/60 px-3.5 py-1.5 text-xs font-medium backdrop-blur-md shadow-xs transition hover:bg-white hover:border-black/20 dark:border-white/10 dark:bg-black/40 dark:hover:bg-black/70"
             onClick={closeBook}
           >
             <span>←</span>
@@ -402,12 +450,15 @@ export function Reader({ bookId }: { bookId: string }) {
           </button>
           <button
             type="button"
-            className={`flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium transition ${
+            className={`flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium backdrop-blur-md shadow-xs transition ${
               showToc
-                ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400'
-                : 'border-black/10 bg-black/[0.02] hover:bg-black/5 hover:border-black/20 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/10'
+                ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/80 dark:text-blue-400'
+                : 'border-black/10 bg-white/60 hover:bg-white hover:border-black/20 dark:border-white/10 dark:bg-black/40 dark:hover:bg-black/70'
             }`}
-            onClick={() => setShowToc((v) => !v)}
+            onClick={() => {
+              setShowToc((v) => !v)
+              setChromeVisible(true)
+            }}
             title="目录与书签 (T)"
           >
             <span>☰</span>
@@ -416,7 +467,7 @@ export function Reader({ bookId }: { bookId: string }) {
         </div>
 
         <div className="min-w-0 flex-1 text-center px-4">
-          <p className="truncate text-xs font-semibold tracking-tight text-neutral-800 dark:text-neutral-200">
+          <p className="truncate text-xs font-semibold tracking-tight opacity-90">
             {book?.title ?? '正在阅读'}
           </p>
           {location?.chapterTitle && (
@@ -429,7 +480,7 @@ export function Reader({ bookId }: { bookId: string }) {
             <button
               type="button"
               onClick={handleJumpBack}
-              className="flex items-center gap-1 rounded-full bg-blue-500/15 px-3 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-500/25 transition active:scale-95"
+              className="flex items-center gap-1 rounded-full bg-blue-500/15 px-3 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-500/25 transition active:scale-95 shadow-xs backdrop-blur-md"
               title="返回跳转前的位置"
             >
               <span>↩</span>
@@ -438,12 +489,15 @@ export function Reader({ bookId }: { bookId: string }) {
           )}
           <button
             type="button"
-            className={`flex items-center justify-center rounded-full border px-3 py-1.5 text-xs font-serif font-bold transition ${
+            className={`flex items-center justify-center rounded-full border px-3.5 py-1.5 text-xs font-serif font-bold backdrop-blur-md shadow-xs transition ${
               showSettings
-                ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400'
-                : 'border-black/10 bg-black/[0.02] hover:bg-black/5 hover:border-black/20 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/10'
+                ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/80 dark:text-blue-400'
+                : 'border-black/10 bg-white/60 hover:bg-white hover:border-black/20 dark:border-white/10 dark:bg-black/40 dark:hover:bg-black/70'
             }`}
-            onClick={() => setShowSettings((v) => !v)}
+            onClick={() => {
+              setShowSettings((v) => !v)
+              setChromeVisible(true)
+            }}
             title="排版与显示设置 (A)"
           >
             Aa
@@ -451,16 +505,28 @@ export function Reader({ bookId }: { bookId: string }) {
         </div>
       </header>
 
-      {/* Main Reader Surface */}
+      {/* Main Reader Surface with generous reading margins */}
       <div className="relative min-h-0 flex-1 flex justify-center items-center overflow-hidden">
-        {/* Book Container with measure constraint and generous reading margins */}
+        {/* Click zones for page turns (Apple Books side tap) */}
+        <div
+          aria-hidden="true"
+          className="absolute inset-y-0 left-0 w-1/8 z-10 cursor-w-resize"
+          onClick={() => void handleRef.current?.prev()}
+        />
+        <div
+          aria-hidden="true"
+          className="absolute inset-y-0 right-0 w-1/8 z-10 cursor-e-resize"
+          onClick={() => void handleRef.current?.next()}
+        />
+
+        {/* Book Container with measure constraint and generous breathing margins */}
         <div
           style={{
             maxWidth: `${measureMaxWidthPx}px`,
             width: '100%',
             height: '100%',
           }}
-          className="relative mx-auto h-full w-full px-6 py-4"
+          className="relative mx-auto h-full w-full px-8 py-8 md:px-12 md:py-10"
         >
           <div ref={containerRef} className="relative h-full w-full">
             {/* Pacer Highlight Overlay */}
@@ -468,12 +534,7 @@ export function Reader({ bookId }: { bookId: string }) {
               rect={pacer.overlayRect}
               animMs={pacer.currentChunk?.animMs}
               accentColor={resolvedStyle.palette.accent}
-              isDark={
-                styleId === 'night' ||
-                (autoNightMode &&
-                  typeof window !== 'undefined' &&
-                  window.matchMedia?.('(prefers-color-scheme: dark)')?.matches)
-              }
+              isDark={isDarkTheme}
             />
           </div>
         </div>
@@ -494,15 +555,30 @@ export function Reader({ bookId }: { bookId: string }) {
         )}
       </div>
 
-      {/* Bottom Footer with Apple Books Floating Capsule & Location Info */}
-      <footer className="flex shrink-0 flex-col items-center justify-center gap-2.5 px-6 pt-2 pb-5 border-t border-black/[0.04] dark:border-white/[0.06] backdrop-blur-md">
+      {/* Bottom Quiet Footer (Always softly visible at bottom edge) */}
+      <div className="fixed bottom-2 inset-x-0 z-20 flex justify-center pointer-events-none">
+        <PositionInfo
+          chapterTitle={location?.chapterTitle}
+          pagesLeftInChapter={location?.pagesLeftInChapter}
+          percentage={percentage}
+        />
+      </div>
+
+      {/* Bottom Floating Control Bar (Auto-hiding interactive pill) */}
+      <footer
+        className={`fixed bottom-8 inset-x-0 z-30 flex flex-col items-center justify-center gap-2 px-6 transition-all duration-300 ${
+          chromeVisible
+            ? 'opacity-100 translate-y-0 pointer-events-auto'
+            : 'opacity-0 translate-y-4 pointer-events-none'
+        }`}
+      >
         {/* Pacer Control Floating Capsule */}
-        <div className="flex items-center gap-3 w-full max-w-lg justify-between rounded-full border border-black/[0.08] bg-black/[0.02] px-3.5 py-1.5 shadow-xs dark:border-white/[0.08] dark:bg-white/[0.04]">
+        <div className="flex items-center gap-3 rounded-full border border-black/10 bg-white/85 px-4 py-1.5 shadow-[0_8px_30px_rgba(0,0,0,0.12)] backdrop-blur-xl dark:border-white/10 dark:bg-neutral-900/85">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={pacer.toggle}
-              className={`flex items-center gap-1.5 rounded-full px-3.5 py-1 text-xs font-semibold transition active:scale-95 shadow-xs ${
+              className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-semibold transition active:scale-95 shadow-xs ${
                 pacer.isPlaying
                   ? 'bg-amber-600 text-white hover:bg-amber-700'
                   : 'bg-blue-600 text-white hover:bg-blue-700'
@@ -514,8 +590,11 @@ export function Reader({ bookId }: { bookId: string }) {
 
             <button
               type="button"
-              onClick={() => setShowPacerControls((v) => !v)}
-              className="rounded-full border border-black/10 px-2.5 py-1 text-[11px] font-medium hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10 transition"
+              onClick={() => {
+                setShowPacerControls((v) => !v)
+                setChromeVisible(true)
+              }}
+              className="rounded-full border border-black/10 px-3 py-1 text-[11px] font-medium hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10 transition"
             >
               {pacerWpm} wpm · {pacerChunkSize}词
             </button>
@@ -527,7 +606,7 @@ export function Reader({ bookId }: { bookId: string }) {
             )}
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <button
               type="button"
               className="rounded-full p-1.5 text-neutral-600 hover:bg-black/5 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-white/10 dark:hover:text-white transition"
@@ -549,9 +628,9 @@ export function Reader({ bookId }: { bookId: string }) {
 
         {/* Extended Pacer Settings Bar */}
         {showPacerControls && (
-          <div className="flex items-center gap-4 py-2 px-4 rounded-2xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-neutral-800/80 shadow-md backdrop-blur-md text-[11px] animate-in fade-in zoom-in-95 duration-100">
+          <div className="flex items-center gap-4 py-2.5 px-5 rounded-2xl border border-black/10 dark:border-white/10 bg-white/90 dark:bg-neutral-900/90 shadow-xl backdrop-blur-xl text-[11px] animate-in fade-in zoom-in-95 duration-100">
             <div className="flex items-center gap-2">
-              <span className="font-medium">速度:</span>
+              <span className="font-medium opacity-80">速度:</span>
               <input
                 type="range"
                 min={100}
@@ -571,7 +650,7 @@ export function Reader({ bookId }: { bookId: string }) {
             <div className="h-3 w-px bg-black/10 dark:bg-white/10" />
 
             <div className="flex items-center gap-2">
-              <span className="font-medium">词数/块:</span>
+              <span className="font-medium opacity-80">词数/块:</span>
               <div className="flex rounded-lg border border-black/10 dark:border-white/10 overflow-hidden bg-black/[0.02] dark:bg-white/[0.02]">
                 {[1, 2, 3, 4, 5].map((size) => (
                   <button
@@ -581,7 +660,7 @@ export function Reader({ bookId }: { bookId: string }) {
                       setPacerChunkSize(size)
                       void getStorage().then((s) => s.saveAppSettings({ pacerChunkSize: size }))
                     }}
-                    className={`px-2 py-0.5 transition font-medium ${
+                    className={`px-2.5 py-0.5 transition font-medium ${
                       pacerChunkSize === size
                         ? 'bg-blue-600 text-white font-semibold'
                         : 'hover:bg-black/5 dark:hover:bg-white/5'
@@ -594,13 +673,6 @@ export function Reader({ bookId }: { bookId: string }) {
             </div>
           </div>
         )}
-
-        {/* Location / Chapter Info */}
-        <PositionInfo
-          chapterTitle={location?.chapterTitle}
-          pagesLeftInChapter={location?.pagesLeftInChapter}
-          percentage={percentage}
-        />
       </footer>
 
       {/* Settings Modal */}

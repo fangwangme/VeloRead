@@ -1,6 +1,12 @@
 import type { ReadingStyle, StyleId } from './types'
 
 const CODE_FONT_STACK = "'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace"
+const APPLE_SERIF =
+  '-apple-system-ui-serif, "New York", "Iowan Old Style", "Charter", "Georgia", serif'
+const APPLE_SANS =
+  '-apple-system, "SF Pro Text", "SF Pro", "Helvetica Neue", Arial, sans-serif'
+const APPLE_SONG =
+  '-apple-system-ui-serif, "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", serif'
 
 export const PRESETS: Record<StyleId, ReadingStyle> = {
   book: {
@@ -15,16 +21,16 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
       codeBackground: '#EFEAE0',
     },
     body: {
-      fontStack: "'Georgia', 'Iowan Old Style', 'Charter', serif",
+      fontStack: APPLE_SERIF,
       fontSizePx: 19,
-      lineHeight: 1.62,
+      lineHeight: 1.68,
       measureCh: 66,
       align: 'justify',
       hyphens: true,
       paragraph: 'indent',
     },
     elements: {
-      headingFontStack: "'Georgia', 'Iowan Old Style', 'Charter', serif",
+      headingFontStack: APPLE_SERIF,
       headingScale: [1.8, 1.5, 1.3, 1.15, 1.05, 1.0],
       headingWeight: 600,
       codeFontStack: CODE_FONT_STACK,
@@ -46,16 +52,16 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
       codeBackground: '#E8DCBF',
     },
     body: {
-      fontStack: "'Georgia', 'Iowan Old Style', 'Charter', serif",
+      fontStack: APPLE_SERIF,
       fontSizePx: 19,
-      lineHeight: 1.62,
+      lineHeight: 1.68,
       measureCh: 66,
       align: 'justify',
       hyphens: true,
       paragraph: 'indent',
     },
     elements: {
-      headingFontStack: "'Georgia', 'Iowan Old Style', 'Charter', serif",
+      headingFontStack: APPLE_SERIF,
       headingScale: [1.8, 1.5, 1.3, 1.15, 1.05, 1.0],
       headingWeight: 600,
       codeFontStack: CODE_FONT_STACK,
@@ -69,15 +75,15 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
     id: 'night',
     name: '夜读',
     palette: {
-      background: '#18181A',
-      text: '#D4D4D8',
-      muted: '#909096',
+      background: '#161618',
+      text: '#D6D6DA',
+      muted: '#8E8E93',
       accent: '#E2B887',
-      rule: '#2F2F33',
-      codeBackground: '#262629',
+      rule: '#2C2C30',
+      codeBackground: '#242428',
     },
     body: {
-      fontStack: "'Georgia', 'Iowan Old Style', 'Charter', serif",
+      fontStack: APPLE_SERIF,
       fontSizePx: 19,
       lineHeight: 1.72,
       measureCh: 66,
@@ -86,7 +92,7 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
       paragraph: 'spaced',
     },
     elements: {
-      headingFontStack: "'Georgia', 'Iowan Old Style', 'Charter', serif",
+      headingFontStack: APPLE_SERIF,
       headingScale: [1.8, 1.5, 1.3, 1.15, 1.05, 1.0],
       headingWeight: 600,
       codeFontStack: CODE_FONT_STACK,
@@ -108,7 +114,7 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
       codeBackground: '#F0F2F5',
     },
     body: {
-      fontStack: "'Palatino', 'Palatino Linotype', 'Iowan Old Style', 'Georgia', serif",
+      fontStack: '"Palatino", "Palatino Linotype", "Iowan Old Style", ' + APPLE_SERIF,
       fontSizePx: 18,
       lineHeight: 1.75,
       measureCh: 62,
@@ -117,7 +123,7 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
       paragraph: 'spaced',
     },
     elements: {
-      headingFontStack: "'system-ui', -apple-system, sans-serif",
+      headingFontStack: APPLE_SANS,
       headingScale: [1.8, 1.5, 1.3, 1.15, 1.05, 1.0],
       headingWeight: 700,
       codeFontStack: CODE_FONT_STACK,
@@ -139,7 +145,7 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
       codeBackground: '#E8E8E8',
     },
     body: {
-      fontStack: "'Charter', 'Bitstream Charter', 'Georgia', serif",
+      fontStack: '"Charter", "Bitstream Charter", ' + APPLE_SERIF,
       fontSizePx: 17,
       lineHeight: 1.52,
       measureCh: 72,
@@ -148,7 +154,7 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
       paragraph: 'indent',
     },
     elements: {
-      headingFontStack: "'Charter', 'Georgia', serif",
+      headingFontStack: '"Charter", ' + APPLE_SERIF,
       headingScale: [2.0, 1.6, 1.35, 1.2, 1.1, 1.0],
       headingWeight: 700,
       codeFontStack: CODE_FONT_STACK,
@@ -170,7 +176,7 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
       codeBackground: '#EFE8DC',
     },
     body: {
-      fontStack: "'Georgia', 'Songti SC', 'STSong', 'Noto Serif CJK SC', 'Source Han Serif SC', serif",
+      fontStack: APPLE_SONG,
       fontSizePx: 18,
       lineHeight: 1.85,
       measureCh: 40,
@@ -180,7 +186,7 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
       isCjk: true,
     },
     elements: {
-      headingFontStack: "'Georgia', 'Songti SC', 'STSong', 'Noto Serif CJK SC', serif",
+      headingFontStack: APPLE_SONG,
       headingScale: [1.75, 1.45, 1.25, 1.15, 1.05, 1.0],
       headingWeight: 600,
       codeFontStack: CODE_FONT_STACK,

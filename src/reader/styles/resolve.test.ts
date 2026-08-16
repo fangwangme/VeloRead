@@ -9,26 +9,27 @@ describe('resolveStyle', () => {
 
     expect(resolved.id).toBe('book')
     expect(resolved.body.fontSizePx).toBe(19)
-    expect(resolved.body.lineHeight).toBe(1.62)
+    expect(resolved.body.lineHeight).toBe(PRESETS.book.body.lineHeight)
     expect(resolved.body.measureCh).toBe(66)
     expect(resolved.body.align).toBe('justify')
     expect(resolved.body.hyphens).toBe(true)
-    expect(resolved.body.fontStack).toContain('Georgia')
+    expect(resolved.body.fontStack).toContain('Charter')
     expect(resolved.palette.background).toBe(PRESETS.book.palette.background)
   })
 
   it('applies relative font size, line height, and margin steps', () => {
     const style = PRESETS.book
+    const baseLineHeight = PRESETS.book.body.lineHeight
     const resolved = resolveStyle(style, {
       fontSizeStep: 2, // 19 + 4 = 23
-      lineHeightStep: 1, // 1.62 + 0.15 = 1.77
+      lineHeightStep: 1, // base + 0.15
       marginStep: 1, // 66 - 8 = 58
       bold: true,
       justify: false,
     })
 
     expect(resolved.body.fontSizePx).toBe(23)
-    expect(resolved.body.lineHeight).toBe(1.77)
+    expect(resolved.body.lineHeight).toBe(Number((baseLineHeight + 0.15).toFixed(2)))
     expect(resolved.body.measureCh).toBe(58)
     expect(resolved.body.fontWeight).toBe(700)
     expect(resolved.body.align).toBe('start')
