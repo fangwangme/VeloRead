@@ -1,7 +1,10 @@
 # VeloRead
 
-macOS 桌面 EPUB 阅读器，目标是替代 Kindle 成为日常英文阅读主力：速读 Pacer、划线摘抄（对齐
-Kindle 纯文本格式）、划词生词本 → Anki 卡片。产品需求见 `docs/specs/PRD.md`。
+macOS 桌面阅读器（EPUB / TXT / PDF），目标是替代 Kindle 成为日常英文阅读主力：
+自动阅读 Pacer、划线摘抄与生词本（对齐 Kindle 纯文本格式，且**必须能导出**）。
+
+规格从 `docs/specs/overview.md` 读起 —— 它是入口，含模块地图与格式支持矩阵；
+每个模块另有独立 spec。本项目**不使用单一 PRD 文档**。
 
 ## Tech Stack
 
