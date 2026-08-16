@@ -4,7 +4,9 @@ import type {
   BookImport,
   BookRecord,
   BookSettings,
+  OverallReadingStats,
   ReadingProgress,
+  ReadingSession,
   StoragePort,
 } from '../types'
 import { compareBooks } from '../sort'
@@ -19,6 +21,7 @@ const PROGRESS = 'progress'
 const BOOK_SETTINGS = 'book_settings'
 const APP_SETTINGS = 'app_settings'
 const BOOKMARKS = 'bookmarks'
+const READING_SESSIONS = 'reading_sessions'
 
 function request<T>(req: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -50,6 +53,11 @@ function open(): Promise<IDBDatabase> {
         const bookmarksStore = db.createObjectStore(BOOKMARKS, { keyPath: 'id' })
         bookmarksStore.createIndex('by_bookId', 'bookId', { unique: false })
       }
+      if (!db.objectStoreNames.contains(READING_SESSIONS)) {
+        const sessionsStore = db.createObjectStore(READING_SESSIONS, { keyPath: 'id' })
+        sessionsStore.createIndex('by_date', 'date', { unique: false })
+        sessionsStore.createIndex('by_bookId', 'bookId', { unique: false })
+      }
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error ?? new Error('Failed to open IndexedDB'))
@@ -58,22 +66,13 @@ function open(): Promise<IDBDatabase> {
 
 /**
  * Browser implementation of `StoragePort`, backed by IndexedDB.
- *
- * Book bytes and covers are stored as `ArrayBuffer` in their own object stores
- * so that listing the library never deserialises book payloads.
  */
 export function createWebStorage(): StoragePort {
   let db: IDBDatabase | null = null
 
   function handle(): IDBDatabase {
-    if (!db) throw new Error('Web storage used before init()')
+    if (!db) throw new Error('storage port used before init()')
     return db
-  }
-
-  async function readBytes(store: string, id: string): Promise<Uint8Array | null> {
-    const tx = handle().transaction(store, 'readonly')
-    const value = await request<ArrayBuffer | undefined>(tx.objectStore(store).get(id))
-    return value ? new Uint8Array(value) : null
   }
 
   return {
@@ -83,22 +82,26 @@ export function createWebStorage(): StoragePort {
 
     async listBooks() {
       const tx = handle().transaction(BOOKS, 'readonly')
-      const books = await request<BookRecord[]>(tx.objectStore(BOOKS).getAll())
-      return books.sort(compareBooks)
+      const records = await request<BookRecord[]>(tx.objectStore(BOOKS).getAll())
+      return records.sort(compareBooks)
     },
 
     async addBook({ record, data, cover }: BookImport) {
       const tx = handle().transaction([BOOKS, FILES, COVERS], 'readwrite')
-      tx.objectStore(BOOKS).put(record)
+      tx.objectStore(BOOKS).add(record)
       tx.objectStore(FILES).put(toArrayBuffer(data), record.id)
-      if (cover) tx.objectStore(COVERS).put(toArrayBuffer(cover), record.id)
+      if (cover) {
+        tx.objectStore(COVERS).put(toArrayBuffer(cover), record.id)
+      } else {
+        tx.objectStore(COVERS).delete(record.id)
+      }
       await done(tx)
       return record
     },
 
     async deleteBook(id: string) {
       const tx = handle().transaction(
-        [BOOKS, FILES, COVERS, PROGRESS, BOOK_SETTINGS, BOOKMARKS],
+        [BOOKS, FILES, COVERS, PROGRESS, BOOK_SETTINGS, BOOKMARKS, READING_SESSIONS],
         'readwrite',
       )
       tx.objectStore(BOOKS).delete(id)
@@ -107,46 +110,61 @@ export function createWebStorage(): StoragePort {
       tx.objectStore(PROGRESS).delete(id)
       tx.objectStore(BOOK_SETTINGS).delete(id)
 
-      // Delete all bookmarks belonging to this book
+      // Delete bookmarks for this book
       const bookmarksStore = tx.objectStore(BOOKMARKS)
-      const index = bookmarksStore.index('by_bookId')
-      const bookmarks = await request<Bookmark[]>(index.getAll(id))
+      const bmIndex = bookmarksStore.index('by_bookId')
+      const bookmarks = await request<Bookmark[]>(bmIndex.getAll(id))
       for (const bm of bookmarks) {
         bookmarksStore.delete(bm.id)
+      }
+
+      // Delete sessions for this book
+      const sessionsStore = tx.objectStore(READING_SESSIONS)
+      const sessIndex = sessionsStore.index('by_bookId')
+      const sessions = await request<ReadingSession[]>(sessIndex.getAll(id))
+      for (const sess of sessions) {
+        sessionsStore.delete(sess.id)
       }
 
       await done(tx)
     },
 
     async readBookFile(id: string) {
-      const bytes = await readBytes(FILES, id)
-      if (!bytes) throw new Error(`No stored file for book ${id}`)
-      return bytes
+      const tx = handle().transaction(FILES, 'readonly')
+      const buffer = await request<ArrayBuffer | undefined>(tx.objectStore(FILES).get(id))
+      if (!buffer) throw new Error(`book payload for ${id} not found in storage`)
+      return new Uint8Array(buffer)
     },
 
-    readCover(id: string) {
-      return readBytes(COVERS, id)
+    async readCover(id: string) {
+      const tx = handle().transaction(COVERS, 'readonly')
+      const buffer = await request<ArrayBuffer | undefined>(tx.objectStore(COVERS).get(id))
+      return buffer ? new Uint8Array(buffer) : null
     },
 
     async getProgress(bookId: string) {
       const tx = handle().transaction(PROGRESS, 'readonly')
-      const row = await request<ReadingProgress | undefined>(tx.objectStore(PROGRESS).get(bookId))
-      return row ?? null
+      const progress = await request<ReadingProgress | undefined>(tx.objectStore(PROGRESS).get(bookId))
+      return progress ?? null
     },
 
     async saveProgress(progress: ReadingProgress) {
       const tx = handle().transaction([PROGRESS, BOOKS], 'readwrite')
       tx.objectStore(PROGRESS).put(progress)
-      const books = tx.objectStore(BOOKS)
-      const book = await request<BookRecord | undefined>(books.get(progress.bookId))
-      if (book) books.put({ ...book, lastReadAt: progress.updatedAt })
+
+      const booksStore = tx.objectStore(BOOKS)
+      const book = await request<BookRecord | undefined>(booksStore.get(progress.bookId))
+      if (book) {
+        booksStore.put({ ...book, lastReadAt: progress.updatedAt })
+      }
+
       await done(tx)
     },
 
     async getBookSettings(bookId: string) {
       const tx = handle().transaction(BOOK_SETTINGS, 'readonly')
-      const row = await request<BookSettings | undefined>(tx.objectStore(BOOK_SETTINGS).get(bookId))
-      return row ?? null
+      const settings = await request<BookSettings | undefined>(tx.objectStore(BOOK_SETTINGS).get(bookId))
+      return settings ?? null
     },
 
     async saveBookSettings(settings: BookSettings) {
@@ -188,6 +206,80 @@ export function createWebStorage(): StoragePort {
       const tx = handle().transaction(BOOKMARKS, 'readwrite')
       tx.objectStore(BOOKMARKS).delete(id)
       await done(tx)
+    },
+
+    async recordReadingSession(session: ReadingSession) {
+      const tx = handle().transaction(READING_SESSIONS, 'readwrite')
+      const store = tx.objectStore(READING_SESSIONS)
+      const existing = await request<ReadingSession | undefined>(store.get(session.id))
+      if (existing) {
+        store.put({
+          ...existing,
+          durationSeconds: existing.durationSeconds + session.durationSeconds,
+          wordsRead: existing.wordsRead + session.wordsRead,
+          updatedAt: session.updatedAt,
+        })
+      } else {
+        store.put(session)
+      }
+      await done(tx)
+    },
+
+    async getReadingStats(): Promise<OverallReadingStats> {
+      const tx = handle().transaction(READING_SESSIONS, 'readonly')
+      const sessions = await request<ReadingSession[]>(tx.objectStore(READING_SESSIONS).getAll())
+
+      const dailyStats: Record<string, { durationMinutes: number; wordsRead: number }> = {}
+      let totalDurationSeconds = 0
+      let totalWordsRead = 0
+      const distinctBooks = new Set<string>()
+
+      for (const s of sessions) {
+        totalDurationSeconds += s.durationSeconds
+        totalWordsRead += s.wordsRead
+        distinctBooks.add(s.bookId)
+
+        if (!dailyStats[s.date]) {
+          dailyStats[s.date] = { durationMinutes: 0, wordsRead: 0 }
+        }
+        dailyStats[s.date].durationMinutes += Math.round(s.durationSeconds / 60)
+        dailyStats[s.date].wordsRead += s.wordsRead
+      }
+
+      // Calculate streak
+      let streak = 0
+      const cur = new Date()
+      let curStr = cur.toISOString().slice(0, 10)
+
+      if (dailyStats[curStr] && dailyStats[curStr].durationMinutes > 0) {
+        streak++
+        cur.setDate(cur.getDate() - 1)
+      } else {
+        cur.setDate(cur.getDate() - 1)
+        curStr = cur.toISOString().slice(0, 10)
+        if (dailyStats[curStr] && dailyStats[curStr].durationMinutes > 0) {
+          streak++
+          cur.setDate(cur.getDate() - 1)
+        }
+      }
+
+      while (streak > 0) {
+        curStr = cur.toISOString().slice(0, 10)
+        if (dailyStats[curStr] && dailyStats[curStr].durationMinutes > 0) {
+          streak++
+          cur.setDate(cur.getDate() - 1)
+        } else {
+          break
+        }
+      }
+
+      return {
+        totalDurationMinutes: Math.round(totalDurationSeconds / 60),
+        totalWordsRead,
+        totalBooksRead: distinctBooks.size,
+        currentStreakDays: streak,
+        dailyStats,
+      }
     },
   }
 }

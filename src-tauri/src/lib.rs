@@ -20,6 +20,8 @@ pub fn run() {
             library::library_list_bookmarks,
             library::library_add_bookmark,
             library::library_delete_bookmark,
+            library::library_record_reading_session,
+            library::library_get_reading_stats,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

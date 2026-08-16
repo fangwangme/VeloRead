@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useLibrary } from './store'
 import { BookCover } from './BookCover'
 import type { BookRecord } from '../platform/types'
+import { StatsModal } from '../stats/StatsModal'
 
 export function Library() {
   const books = useLibrary((s) => s.books)
@@ -13,6 +14,7 @@ export function Library() {
 
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
+  const [showStats, setShowStats] = useState(false)
 
   function onDrop(event: React.DragEvent) {
     event.preventDefault()
@@ -43,14 +45,25 @@ export function Library() {
             {books.length > 0 ? `${books.length} book${books.length > 1 ? 's' : ''}` : 'Your library'}
           </p>
         </div>
-        <button
-          type="button"
-          className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
-          disabled={importing !== null}
-          onClick={() => inputRef.current?.click()}
-        >
-          {importing ? `Importing ${importing}…` : 'Add EPUB'}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            className="flex items-center gap-1.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white px-3.5 py-2 text-sm font-medium text-neutral-800 shadow-xs transition hover:bg-neutral-100 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+            onClick={() => setShowStats(true)}
+            title="查看阅读数据与热力图"
+          >
+            <span>📊</span>
+            <span>阅读统计</span>
+          </button>
+          <button
+            type="button"
+            className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
+            disabled={importing !== null}
+            onClick={() => inputRef.current?.click()}
+          >
+            {importing ? `Importing ${importing}…` : 'Add EPUB'}
+          </button>
+        </div>
         <input
           ref={inputRef}
           type="file"
@@ -90,6 +103,8 @@ export function Library() {
       {dragging && (
         <div className="pointer-events-none fixed inset-4 rounded-2xl border-2 border-dashed border-neutral-400 bg-neutral-900/5 dark:bg-neutral-100/5" />
       )}
+
+      {showStats && <StatsModal onClose={() => setShowStats(false)} />}
     </div>
   )
 }

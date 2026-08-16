@@ -5,32 +5,32 @@ interface SettingsPanelProps {
   currentStyleId: StyleId
   overrides: StyleOverride
   flow: 'paginated' | 'scrolled-doc'
-  autoNightMode: boolean
+  themeMode: 'auto' | 'light' | 'dark'
   onStyleSelect: (id: StyleId) => void
   onOverridesChange: (overrides: StyleOverride) => void
   onFlowChange: (flow: 'paginated' | 'scrolled-doc') => void
-  onAutoNightModeChange: (enabled: boolean) => void
+  onThemeModeChange: (mode: 'auto' | 'light' | 'dark') => void
   onClose: () => void
 }
 
 const FONT_OPTIONS = [
   { label: '书籍原字体 (Original)', value: 'original' },
-  { label: 'Georgia (经典衬线)', value: "'Georgia', 'Iowan Old Style', 'Charter', serif" },
-  { label: 'Palatino (典雅精读)', value: "'Palatino', 'Palatino Linotype', 'Iowan Old Style', 'Georgia', serif" },
-  { label: 'Charter (报刊体)', value: "'Charter', 'Bitstream Charter', 'Georgia', serif" },
-  { label: '系统无衬线 (现代清晰)', value: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" },
-  { label: '中文宋体 (标准阅读)', value: "'Georgia', 'Songti SC', 'STSong', 'Noto Serif CJK SC', serif" },
+  { label: 'New York (苹果经典衬线)', value: '-apple-system-ui-serif, "New York", "Iowan Old Style", "Charter", "Georgia", serif' },
+  { label: 'Palatino (典雅精读)', value: '"Palatino", "Palatino Linotype", "Iowan Old Style", -apple-system-ui-serif, serif' },
+  { label: 'Charter (报刊体)', value: '"Charter", "Bitstream Charter", -apple-system-ui-serif, serif' },
+  { label: 'SF Pro (现代无衬线)', value: '-apple-system, "SF Pro Text", "SF Pro", "Helvetica Neue", sans-serif' },
+  { label: '中文宋体 (标准阅读)', value: '-apple-system-ui-serif, "Songti SC", "STSong", "Noto Serif CJK SC", serif' },
 ]
 
 export function SettingsPanel({
   currentStyleId,
   overrides,
   flow,
-  autoNightMode,
+  themeMode,
   onStyleSelect,
   onOverridesChange,
   onFlowChange,
-  onAutoNightModeChange,
+  onThemeModeChange,
   onClose,
 }: SettingsPanelProps) {
   const currentFont = overrides.fontStack ?? 'original'
@@ -42,7 +42,7 @@ export function SettingsPanel({
 
   return (
     <div
-      className="absolute right-6 top-16 z-50 w-84 rounded-2xl border border-black/10 bg-white/92 p-5 shadow-[0_20px_40px_rgba(0,0,0,0.12)] backdrop-blur-2xl dark:border-white/10 dark:bg-neutral-900/92 dark:text-neutral-100 animate-in fade-in zoom-in-95 duration-150"
+      className="absolute right-6 top-16 z-50 w-84 rounded-2xl border border-black/10 bg-white/94 p-5 shadow-[0_20px_40px_rgba(0,0,0,0.12)] backdrop-blur-2xl dark:border-white/10 dark:bg-neutral-900/94 dark:text-neutral-100 animate-in fade-in zoom-in-95 duration-150"
       style={{ boxShadow: '0 24px 48px -12px rgba(0, 0, 0, 0.18)' }}
     >
       <div className="flex items-center justify-between pb-3 border-b border-black/5 dark:border-white/5">
@@ -60,9 +60,36 @@ export function SettingsPanel({
       </div>
 
       <div className="mt-4 space-y-4 text-xs">
+        {/* 3-way Appearance Mode Toggle: Auto / Light / Dark */}
+        <div>
+          <label className="mb-1.5 block text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
+            外观显示模式
+          </label>
+          <div className="flex rounded-xl border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] p-0.5">
+            {[
+              { id: 'auto' as const, label: '🖥 跟随系统' },
+              { id: 'light' as const, label: '☀️ 浅色' },
+              { id: 'dark' as const, label: '🌙 深色' },
+            ].map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onThemeModeChange(item.id)}
+                className={`flex-1 rounded-lg py-1.5 text-center transition text-[11px] font-medium ${
+                  themeMode === item.id
+                    ? 'bg-white text-neutral-900 shadow-xs dark:bg-neutral-800 dark:text-white font-semibold'
+                    : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* 6 Preset theme swatches */}
         <div>
-          <label className="mb-2 block text-[11px] font-medium text-neutral-500 dark:text-neutral-400">风格主题</label>
+          <label className="mb-2 block text-[11px] font-medium text-neutral-500 dark:text-neutral-400">风格预设</label>
           <div className="grid grid-cols-3 gap-2">
             {(Object.keys(PRESETS) as StyleId[]).map((id) => {
               const preset = PRESETS[id]
@@ -214,16 +241,6 @@ export function SettingsPanel({
               type="checkbox"
               checked={bold}
               onChange={(e) => onOverridesChange({ ...overrides, bold: e.target.checked })}
-              className="h-4 w-4 rounded-md accent-blue-600 cursor-pointer"
-            />
-          </label>
-
-          <label className="flex items-center justify-between cursor-pointer py-0.5">
-            <span className="text-neutral-700 dark:text-neutral-300">自动夜间模式 (跟随系统)</span>
-            <input
-              type="checkbox"
-              checked={autoNightMode}
-              onChange={(e) => onAutoNightModeChange(e.target.checked)}
               className="h-4 w-4 rounded-md accent-blue-600 cursor-pointer"
             />
           </label>

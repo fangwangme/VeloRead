@@ -5,7 +5,9 @@ import type {
   BookImport,
   BookRecord,
   BookSettings,
+  OverallReadingStats,
   ReadingProgress,
+  ReadingSession,
   StoragePort,
 } from '../types'
 
@@ -93,6 +95,45 @@ export function createTauriStorage(): StoragePort {
 
     deleteBookmark(id: string) {
       return invoke<void>('library_delete_bookmark', { id })
+    },
+
+    recordReadingSession(session: ReadingSession) {
+      return invoke<void>('library_record_reading_session', { session })
+    },
+
+    async getReadingStats() {
+      const raw = await invoke<OverallReadingStats>('library_get_reading_stats')
+      // Calculate current streak
+      let streak = 0
+      const cur = new Date()
+      let curStr = cur.toISOString().slice(0, 10)
+
+      if (raw.dailyStats && raw.dailyStats[curStr]) {
+        streak++
+        cur.setDate(cur.getDate() - 1)
+      } else {
+        cur.setDate(cur.getDate() - 1)
+        curStr = cur.toISOString().slice(0, 10)
+        if (raw.dailyStats && raw.dailyStats[curStr]) {
+          streak++
+          cur.setDate(cur.getDate() - 1)
+        }
+      }
+
+      while (streak > 0) {
+        curStr = cur.toISOString().slice(0, 10)
+        if (raw.dailyStats && raw.dailyStats[curStr]) {
+          streak++
+          cur.setDate(cur.getDate() - 1)
+        } else {
+          break
+        }
+      }
+
+      return {
+        ...raw,
+        currentStreakDays: streak,
+      }
     },
   }
 }

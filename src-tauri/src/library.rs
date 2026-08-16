@@ -17,7 +17,10 @@ use base64::Engine as _;
 use rusqlite::Connection;
 use tauri::{ipc::Response, AppHandle, Manager, State};
 
-use store::{book_file, BookRecord, BookSettings, Bookmark, ReadingProgress};
+use store::{
+    book_file, BookRecord, BookSettings, Bookmark, OverallReadingStats, ReadingProgress,
+    ReadingSession,
+};
 
 /// Storage primitives, free of any Tauri types.
 mod store {
@@ -69,6 +72,34 @@ mod store {
         pub cfi: String,
         pub text: String,
         pub created_at: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ReadingSession {
+        pub id: String,
+        pub book_id: String,
+        pub date: String,
+        pub duration_seconds: i64,
+        pub words_read: i64,
+        pub updated_at: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct DailyStat {
+        pub duration_minutes: i64,
+        pub words_read: i64,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct OverallReadingStats {
+        pub total_duration_minutes: i64,
+        pub total_words_read: i64,
+        pub total_books_read: i64,
+        pub current_streak_days: i64,
+        pub daily_stats: std::collections::HashMap<String, DailyStat>,
     }
 
     /// Book ids come from the webview, so they are checked before they are ever
@@ -153,7 +184,16 @@ mod store {
                      cfi        TEXT NOT NULL,
                      text       TEXT NOT NULL,
                      created_at TEXT NOT NULL
-                 );",
+                 );
+                 CREATE TABLE IF NOT EXISTS reading_sessions (
+                     id               TEXT PRIMARY KEY,
+                     book_id          TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                     date             TEXT NOT NULL,
+                     duration_seconds INTEGER NOT NULL,
+                     words_read       INTEGER NOT NULL,
+                     updated_at       TEXT NOT NULL
+                 );
+                 CREATE INDEX IF NOT EXISTS idx_sessions_date ON reading_sessions(date);",
             )?;
         }
 
@@ -379,6 +419,78 @@ mod store {
     pub fn delete_bookmark(connection: &Connection, id: &str) -> rusqlite::Result<()> {
         connection.execute("DELETE FROM bookmarks WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    pub fn record_reading_session(
+        connection: &Connection,
+        session: &ReadingSession,
+    ) -> rusqlite::Result<()> {
+        connection.execute(
+            "INSERT INTO reading_sessions (id, book_id, date, duration_seconds, words_read, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(id) DO UPDATE SET
+                 duration_seconds = duration_seconds + excluded.duration_seconds,
+                 words_read = words_read + excluded.words_read,
+                 updated_at = excluded.updated_at",
+            params![
+                session.id,
+                session.book_id,
+                session.date,
+                session.duration_seconds,
+                session.words_read,
+                session.updated_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_reading_stats(connection: &Connection) -> rusqlite::Result<OverallReadingStats> {
+        let mut stmt = connection.prepare(
+            "SELECT date, SUM(duration_seconds), SUM(words_read)
+             FROM reading_sessions
+             GROUP BY date
+             ORDER BY date ASC",
+        )?;
+
+        let mut daily_stats = std::collections::HashMap::new();
+        let mut total_duration_seconds: i64 = 0;
+        let mut total_words_read: i64 = 0;
+
+        let rows = stmt.query_map([], |row| {
+            let date: String = row.get(0)?;
+            let dur: i64 = row.get(1)?;
+            let words: i64 = row.get(2)?;
+            Ok((date, dur, words))
+        })?;
+
+        for row in rows {
+            let (date, dur, words) = row?;
+            total_duration_seconds += dur;
+            total_words_read += words;
+            daily_stats.insert(
+                date,
+                DailyStat {
+                    duration_minutes: dur / 60,
+                    words_read: words,
+                },
+            );
+        }
+
+        let total_books_read: i64 = connection
+            .query_row(
+                "SELECT COUNT(DISTINCT book_id) FROM reading_sessions",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
+        Ok(OverallReadingStats {
+            total_duration_minutes: total_duration_seconds / 60,
+            total_words_read,
+            total_books_read,
+            current_streak_days: 0,
+            daily_stats,
+        })
     }
 }
 
@@ -615,6 +727,25 @@ pub fn library_delete_bookmark(
     id: String,
 ) -> Result<(), String> {
     state.with_db(&app, |connection| store::delete_bookmark(connection, &id))
+}
+
+#[tauri::command]
+pub fn library_record_reading_session(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+    session: ReadingSession,
+) -> Result<(), String> {
+    state.with_db(&app, |connection| {
+        store::record_reading_session(connection, &session)
+    })
+}
+
+#[tauri::command]
+pub fn library_get_reading_stats(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+) -> Result<OverallReadingStats, String> {
+    state.with_db(&app, store::get_reading_stats)
 }
 
 #[cfg(test)]
@@ -949,5 +1080,46 @@ mod tests {
                 "id {id:?} should have been rejected"
             );
         }
+    }
+
+    #[test]
+    fn reading_sessions_record_and_aggregate_stats() {
+        let connection = db();
+        let record = book("a1", "Test Book", "2026-08-15T10:00:00.000Z");
+        insert_book(&connection, &record).unwrap();
+
+        let s1 = ReadingSession {
+            id: "s1".into(),
+            book_id: "a1".into(),
+            date: "2026-08-16".into(),
+            duration_seconds: 120,
+            words_read: 500,
+            updated_at: "2026-08-16T12:00:00Z".into(),
+        };
+        record_reading_session(&connection, &s1).unwrap();
+
+        let s2 = ReadingSession {
+            id: "s1".into(),
+            book_id: "a1".into(),
+            date: "2026-08-16".into(),
+            duration_seconds: 60,
+            words_read: 250,
+            updated_at: "2026-08-16T12:05:00Z".into(),
+        };
+        record_reading_session(&connection, &s2).unwrap();
+
+        let stats = get_reading_stats(&connection).unwrap();
+        assert_eq!(stats.total_duration_minutes, 3);
+        assert_eq!(stats.total_words_read, 750);
+        assert_eq!(stats.total_books_read, 1);
+        assert_eq!(
+            stats
+                .daily_stats
+                .get("2026-08-16")
+                .unwrap()
+                .duration_minutes,
+            3
+        );
+        assert_eq!(stats.daily_stats.get("2026-08-16").unwrap().words_read, 750);
     }
 }

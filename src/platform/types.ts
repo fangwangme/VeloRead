@@ -54,6 +54,7 @@ export interface BookSettings {
 /** Global application settings. */
 export interface AppSettings {
   defaultStyleId?: StyleId
+  themeMode?: 'auto' | 'light' | 'dark'
   autoNightMode?: boolean
   pacerWpm?: number
   pacerChunkSize?: number
@@ -78,12 +79,28 @@ export interface TocItem {
   subitems?: TocItem[]
 }
 
+/** Active reading session slice (capped dwell per page). */
+export interface ReadingSession {
+  id: string
+  bookId: string
+  date: string // YYYY-MM-DD
+  durationSeconds: number // active seconds (max 300s / 5 min per page)
+  wordsRead: number
+  updatedAt: string
+}
+
+/** Aggregated reading activity stats for heatmap and dashboard. */
+export interface OverallReadingStats {
+  totalDurationMinutes: number
+  totalWordsRead: number
+  totalBooksRead: number
+  currentStreakDays: number
+  dailyStats: Record<string, { durationMinutes: number; wordsRead: number }>
+}
+
 /**
  * Library persistence: book metadata, book bytes, cover bytes, reading position,
- * settings, bookmarks.
- *
- * Implementations are obtained through `getStorage()` in `platform/index.ts`,
- * which also calls `init()` exactly once.
+ * settings, bookmarks, reading statistics.
  */
 export interface StoragePort {
   /** Open/create the underlying store. Idempotent. */
@@ -91,7 +108,7 @@ export interface StoragePort {
   /** Newest-read first, then newest-added first. */
   listBooks(): Promise<BookRecord[]>
   addBook(input: BookImport): Promise<BookRecord>
-  /** Removes the record, the stored file, the cover, progress, settings and bookmarks. */
+  /** Removes the record, the stored file, the cover, progress, settings, bookmarks, and sessions. */
   deleteBook(id: string): Promise<void>
   readBookFile(id: string): Promise<Uint8Array>
   readCover(id: string): Promise<Uint8Array | null>
@@ -105,4 +122,6 @@ export interface StoragePort {
   listBookmarks(bookId: string): Promise<Bookmark[]>
   addBookmark(bookmark: Bookmark): Promise<void>
   deleteBookmark(id: string): Promise<void>
+  recordReadingSession(session: ReadingSession): Promise<void>
+  getReadingStats(): Promise<OverallReadingStats>
 }

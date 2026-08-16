@@ -160,4 +160,36 @@ describe('web storage port', () => {
     expect(await storage.listBookmarks(book.id)).toEqual([])
     await expect(storage.readBookFile(book.id)).rejects.toThrow()
   })
+
+  it('records reading sessions and calculates overall stats and streaks', async () => {
+    const book = record()
+    await storage.addBook({ record: book, data: new Uint8Array([1]), cover: null })
+
+    const s1 = {
+      id: 'sess-1',
+      bookId: book.id,
+      date: '2026-08-16',
+      durationSeconds: 180,
+      wordsRead: 800,
+      updatedAt: '2026-08-16T10:00:00.000Z',
+    }
+    const s2 = {
+      id: 'sess-2',
+      bookId: book.id,
+      date: '2026-08-16',
+      durationSeconds: 120,
+      wordsRead: 400,
+      updatedAt: '2026-08-16T11:00:00.000Z',
+    }
+
+    await storage.recordReadingSession(s1)
+    await storage.recordReadingSession(s2)
+
+    const stats = await storage.getReadingStats()
+    expect(stats.totalDurationMinutes).toBe(5)
+    expect(stats.totalWordsRead).toBe(1200)
+    expect(stats.totalBooksRead).toBe(1)
+    expect(stats.dailyStats['2026-08-16'].durationMinutes).toBe(5)
+    expect(stats.dailyStats['2026-08-16'].wordsRead).toBe(1200)
+  })
 })

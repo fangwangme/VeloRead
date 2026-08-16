@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getStorage } from '../platform'
-import type { Bookmark, BookSettings, ReadingProgress, TocItem } from '../platform/types'
+import type { Bookmark, BookSettings, ReadingProgress, ReadingSession, TocItem } from '../platform/types'
 import { useLibrary } from '../library/store'
 import { createReader, type ReaderHandle, type ReaderLocation } from './renderer'
 import { PRESETS } from './styles/presets'
@@ -11,10 +11,12 @@ import { Toc } from './Toc'
 import { PositionInfo } from './PositionInfo'
 import { Overlay } from './pacer/Overlay'
 import { usePacer } from './pacer/usePacer'
+import { StatsModal } from '../stats/StatsModal'
 
 const SAVE_DEBOUNCE_MS = 400
 const RESIZE_DEBOUNCE_MS = 150
 const AUTO_HIDE_CHROME_MS = 3200
+const MAX_PAGE_DWELL_SECONDS = 300 // Max 5 minutes per page to prevent idle tracking
 
 export function Reader({ bookId }: { bookId: string }) {
   const closeBook = useLibrary((s) => s.closeBook)
@@ -30,7 +32,7 @@ export function Reader({ bookId }: { bookId: string }) {
   const [location, setLocation] = useState<ReaderLocation | null>(null)
   const [percentage, setPercentage] = useState<number | null>(0)
 
-  // Immersive Chrome / Controls Visibility (Apple Books auto-hiding navigation)
+  // Immersive Chrome / Controls Visibility
   const [chromeVisible, setChromeVisible] = useState(true)
   const hideChromeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -38,11 +40,12 @@ export function Reader({ bookId }: { bookId: string }) {
   const [styleId, setStyleId] = useState<StyleId>('book')
   const [overrides, setOverrides] = useState<StyleOverride>({})
   const [flow, setFlow] = useState<'paginated' | 'scrolled-doc'>('paginated')
-  const [autoNightMode, setAutoNightMode] = useState(false)
+  const [themeMode, setThemeMode] = useState<'auto' | 'light' | 'dark'>('auto')
 
   // UI Panels
   const [showSettings, setShowSettings] = useState(false)
   const [showToc, setShowToc] = useState(false)
+  const [showStats, setShowStats] = useState(false)
   const [toc, setToc] = useState<TocItem[]>([])
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
 
@@ -54,14 +57,34 @@ export function Reader({ bookId }: { bookId: string }) {
   const [pacerChunkSize, setPacerChunkSize] = useState(3)
   const [showPacerControls, setShowPacerControls] = useState(false)
 
+  // Active reading tracking refs
+  const pageDwellSecondsRef = useRef(0)
+  const sessionBufferSecondsRef = useRef(0)
+  const sessionBufferWordsRef = useRef(0)
+
+  // System dark detection
+  const [systemDark, setSystemDark] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)')?.matches
+  )
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+
+  const isEffectiveDark =
+    themeMode === 'dark' || (themeMode === 'auto' && systemDark)
+
   // Compute resolved style
   const resolvedStyle = useMemo(() => {
-    const isSystemDark =
-      typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)')?.matches
-    const effectiveStyleId = autoNightMode && isSystemDark ? 'night' : styleId
+    // If dark mode is effective, use night base preset or adapt
+    const effectiveStyleId = isEffectiveDark && styleId !== 'night' ? 'night' : styleId
     const base = PRESETS[effectiveStyleId] ?? PRESETS.book
     return resolveStyle(base, overrides)
-  }, [styleId, overrides, autoNightMode])
+  }, [styleId, overrides, isEffectiveDark])
 
   // Pacer hook
   const pacer = usePacer({
@@ -75,12 +98,14 @@ export function Reader({ bookId }: { bookId: string }) {
   const pacerRef = useRef(pacer)
   const showSettingsRef = useRef(showSettings)
   const showTocRef = useRef(showToc)
+  const showStatsRef = useRef(showStats)
   const showPacerControlsRef = useRef(showPacerControls)
 
   useEffect(() => {
     pacerRef.current = pacer
     showSettingsRef.current = showSettings
     showTocRef.current = showToc
+    showStatsRef.current = showStats
     showPacerControlsRef.current = showPacerControls
   })
 
@@ -98,18 +123,74 @@ export function Reader({ bookId }: { bookId: string }) {
     if (hideChromeTimerRef.current) {
       clearTimeout(hideChromeTimerRef.current)
     }
-    // Don't hide if any modal / drawer is open
-    if (showSettingsRef.current || showTocRef.current || showPacerControlsRef.current) {
+    if (showSettingsRef.current || showTocRef.current || showStatsRef.current || showPacerControlsRef.current) {
       return
     }
     hideChromeTimerRef.current = setTimeout(() => {
-      if (!showSettingsRef.current && !showTocRef.current && !showPacerControlsRef.current) {
+      if (!showSettingsRef.current && !showTocRef.current && !showStatsRef.current && !showPacerControlsRef.current) {
         setChromeVisible(false)
       }
     }, AUTO_HIDE_CHROME_MS)
   }
 
-  // Main lifecycle
+  // Flush reading session buffer to storage
+  const flushReadingSession = async () => {
+    const duration = sessionBufferSecondsRef.current
+    const words = sessionBufferWordsRef.current
+    if (duration <= 0 && words <= 0) return
+
+    sessionBufferSecondsRef.current = 0
+    sessionBufferWordsRef.current = 0
+
+    const todayStr = new Date().toISOString().slice(0, 10)
+    const session: ReadingSession = {
+      id: `sess-${bookId}-${todayStr}`,
+      bookId,
+      date: todayStr,
+      durationSeconds: duration,
+      wordsRead: words,
+      updatedAt: new Date().toISOString(),
+    }
+    try {
+      const storage = await getStorage()
+      await storage.recordReadingSession(session)
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  const flushReadingSessionRef = useRef(flushReadingSession)
+  useEffect(() => {
+    flushReadingSessionRef.current = flushReadingSession
+  })
+
+  // Active reading second ticker with 5-minute page dwell limit
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Pause if tab is hidden or modal is open
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      if (showSettings || showToc || showStats) return
+
+      // Anti-idle check: capped at MAX_PAGE_DWELL_SECONDS per page
+      if (pageDwellSecondsRef.current < MAX_PAGE_DWELL_SECONDS) {
+        pageDwellSecondsRef.current += 1
+        sessionBufferSecondsRef.current += 1
+      }
+    }, 1000)
+
+    // Flush session periodically every 30 seconds
+    const flushInterval = setInterval(() => {
+      void flushReadingSessionRef.current()
+    }, 30000)
+
+    return () => {
+      clearInterval(interval)
+      clearInterval(flushInterval)
+      void flushReadingSessionRef.current()
+    }
+  }, [bookId, showSettings, showToc, showStats])
+
+  // Main reader lifecycle
   useEffect(() => {
     let cancelled = false
     let reader: ReaderHandle | null = null
@@ -131,11 +212,11 @@ export function Reader({ bookId }: { bookId: string }) {
 
     async function flushAndRefreshShelf() {
       await flush()
+      await flushReadingSessionRef.current()
       await useLibrary.getState().load()
     }
 
     function onKeyDown(event: KeyboardEvent) {
-      // Any keypress reveals navigation
       pingActivity()
 
       // Space: toggle Pacer (prevent scroll)
@@ -165,15 +246,17 @@ export function Reader({ bookId }: { bookId: string }) {
           setShowSettings(false)
         } else if (showTocRef.current) {
           setShowToc(false)
+        } else if (showStatsRef.current) {
+          setShowStats(false)
         } else {
           closeBook()
         }
       } else if (event.key === 't' || event.key === 'T') {
-        if (!showSettingsRef.current) {
+        if (!showSettingsRef.current && !showStatsRef.current) {
           setShowToc((v) => !v)
         }
       } else if (event.key === 'a' || event.key === 'A') {
-        if (!showTocRef.current) {
+        if (!showTocRef.current && !showStatsRef.current) {
           setShowSettings((v) => !v)
         }
       }
@@ -195,7 +278,6 @@ export function Reader({ bookId }: { bookId: string }) {
 
         if (cancelled || !containerRef.current) return
 
-        // Determine default style: zh* -> song, else book
         const isChinese = bookLanguage?.toLowerCase().startsWith('zh')
         const initialStyleId: StyleId = savedSettings?.styleId ?? (isChinese ? 'song' : 'book')
         const initialOverrides: StyleOverride = savedSettings?.overrides ?? {}
@@ -205,8 +287,10 @@ export function Reader({ bookId }: { bookId: string }) {
         setOverrides(initialOverrides)
         setFlow(initialFlow)
         setBookmarks(savedBookmarks)
-        if (appSettings.autoNightMode !== undefined) {
-          setAutoNightMode(appSettings.autoNightMode)
+        if (appSettings.themeMode) {
+          setThemeMode(appSettings.themeMode)
+        } else if (appSettings.autoNightMode !== undefined) {
+          setThemeMode(appSettings.autoNightMode ? 'auto' : 'light')
         }
         if (appSettings.pacerWpm) setPacerWpm(appSettings.pacerWpm)
         if (appSettings.pacerChunkSize) setPacerChunkSize(appSettings.pacerChunkSize)
@@ -241,6 +325,13 @@ export function Reader({ bookId }: { bookId: string }) {
             }
             clearTimeout(saveTimer)
             saveTimer = setTimeout(() => void flush(), SAVE_DEBOUNCE_MS)
+
+            // Page turned: reset page dwell seconds and accumulate words read estimate
+            pageDwellSecondsRef.current = 0
+            if (reader) {
+              const words = reader.getVisibleWords()
+              sessionBufferWordsRef.current += words.length > 0 ? words.length : 200
+            }
 
             setTimeout(() => {
               pacerRef.current.recalculateGeometry()
@@ -330,11 +421,11 @@ export function Reader({ bookId }: { bookId: string }) {
     void saveCurrentSettings(styleId, overrides, newFlow)
   }
 
-  const handleAutoNightModeChange = async (enabled: boolean) => {
-    setAutoNightMode(enabled)
+  const handleThemeModeChange = async (mode: 'auto' | 'light' | 'dark') => {
+    setThemeMode(mode)
     try {
       const storage = await getStorage()
-      await storage.saveAppSettings({ autoNightMode: enabled })
+      await storage.saveAppSettings({ themeMode: mode, autoNightMode: mode === 'auto' })
     } catch {
       // Non-fatal
     }
@@ -412,13 +503,6 @@ export function Reader({ bookId }: { bookId: string }) {
     }
   }, [])
 
-  // Background gradient atmosphere
-  const isDarkTheme =
-    styleId === 'night' ||
-    (autoNightMode &&
-      typeof window !== 'undefined' &&
-      window.matchMedia?.('(prefers-color-scheme: dark)')?.matches)
-
   return (
     <div
       className="relative flex h-dvh flex-col select-none transition-colors duration-300 font-sans overflow-hidden"
@@ -463,6 +547,18 @@ export function Reader({ bookId }: { bookId: string }) {
           >
             <span>☰</span>
             <span>目录</span>
+          </button>
+          <button
+            type="button"
+            className="flex items-center gap-1.5 rounded-full border border-black/10 bg-white/60 px-3 py-1.5 text-xs font-medium backdrop-blur-md shadow-xs transition hover:bg-white hover:border-black/20 dark:border-white/10 dark:bg-black/40 dark:hover:bg-black/70"
+            onClick={() => {
+              setShowStats(true)
+              setChromeVisible(true)
+            }}
+            title="阅读数据与热力图"
+          >
+            <span>📊</span>
+            <span>统计</span>
           </button>
         </div>
 
@@ -534,7 +630,7 @@ export function Reader({ bookId }: { bookId: string }) {
               rect={pacer.overlayRect}
               animMs={pacer.currentChunk?.animMs}
               accentColor={resolvedStyle.palette.accent}
-              isDark={isDarkTheme}
+              isDark={isEffectiveDark}
             />
           </div>
         </div>
@@ -681,11 +777,11 @@ export function Reader({ bookId }: { bookId: string }) {
           currentStyleId={styleId}
           overrides={overrides}
           flow={flow}
-          autoNightMode={autoNightMode}
+          themeMode={themeMode}
           onStyleSelect={handleStyleSelect}
           onOverridesChange={handleOverridesChange}
           onFlowChange={handleFlowChange}
-          onAutoNightModeChange={handleAutoNightModeChange}
+          onThemeModeChange={handleThemeModeChange}
           onClose={() => setShowSettings(false)}
         />
       )}
@@ -703,6 +799,9 @@ export function Reader({ bookId }: { bookId: string }) {
           onClose={() => setShowToc(false)}
         />
       )}
+
+      {/* Stats Modal */}
+      {showStats && <StatsModal onClose={() => setShowStats(false)} />}
     </div>
   )
 }
