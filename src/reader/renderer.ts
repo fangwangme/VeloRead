@@ -25,6 +25,7 @@ export interface ReaderOptions {
   onKeyDown?: (event: KeyboardEvent) => void
   onClickText?: (target: { text: string; range?: Range }) => void
   flow?: 'paginated' | 'scrolled-doc'
+  spreadMode?: 'auto' | 'single' | 'double'
   style?: ResolvedStyle
 }
 
@@ -35,6 +36,7 @@ export interface ReaderHandle {
   resize(width: number, height: number): void
   applyStyle(style: ResolvedStyle): void
   setFlow(flow: 'paginated' | 'scrolled-doc'): Promise<void>
+  setSpread(mode: 'auto' | 'single' | 'double'): Promise<void>
   getToc(): Promise<TocItem[]>
   getVisibleWords(): WordItem[]
   getIframeElement(): HTMLIFrameElement | null
@@ -64,12 +66,16 @@ export async function createReader(
 ): Promise<ReaderHandle> {
   const book: Book = ePub(detach(data))
   let currentFlow = options.flow ?? 'paginated'
+  let currentSpreadMode = options.spreadMode ?? 'auto'
+
+  const initialSpread = currentSpreadMode === 'single' ? 'none' : currentSpreadMode === 'double' ? 'always' : 'auto'
 
   const rendition: Rendition = book.renderTo(container, {
     width: '100%',
     height: '100%',
     flow: currentFlow,
-    spread: 'none',
+    spread: initialSpread,
+    minSpreadWidth: 860,
     allowScriptedContent: false,
   })
 
@@ -297,6 +303,17 @@ export async function createReader(
       currentFlow = flow
       const currentLoc = rendition.location?.start?.cfi
       rendition.flow(flow)
+      if (currentStyle) {
+        registerAndApplyStyle(currentStyle)
+      }
+      await rendition.display(currentLoc ?? undefined)
+    },
+    setSpread: async (mode: 'auto' | 'single' | 'double') => {
+      if (mode === currentSpreadMode) return
+      currentSpreadMode = mode
+      const currentLoc = rendition.location?.start?.cfi
+      const spreadValue = mode === 'single' ? 'none' : mode === 'double' ? 'always' : 'auto'
+      rendition.spread(spreadValue, 860)
       if (currentStyle) {
         registerAndApplyStyle(currentStyle)
       }

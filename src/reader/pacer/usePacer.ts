@@ -54,21 +54,24 @@ export function usePacer({
     [containerRef, readerHandle],
   )
 
-  const recalculateGeometry = useCallback(() => {
-    if (!readerHandle) return
-    const words = readerHandle.getVisibleWords()
-    const chunks = groupWordsIntoChunks(words, { wpm, chunkSize })
-    setTotalChunks(chunks.length)
+  const recalculateGeometry = useCallback(
+    (preserveIndex = true) => {
+      if (!readerHandle) return
+      const words = readerHandle.getVisibleWords()
+      const chunks = groupWordsIntoChunks(words, { wpm, chunkSize })
+      setTotalChunks(chunks.length)
 
-    const engine = engineRef.current
-    if (engine) {
-      engine.setWpm(wpm)
-      engine.setChunks(chunks, true)
-      const current = engine.getCurrentChunk()
-      setCurrentChunk(current)
-      updateOverlay(current)
-    }
-  }, [readerHandle, wpm, chunkSize, updateOverlay])
+      const engine = engineRef.current
+      if (engine) {
+        engine.setWpm(wpm)
+        engine.setChunks(chunks, preserveIndex)
+        const current = engine.getCurrentChunk()
+        setCurrentChunk(current)
+        updateOverlay(current)
+      }
+    },
+    [readerHandle, wpm, chunkSize, updateOverlay],
+  )
 
   // Initialize engine
   useEffect(() => {
@@ -86,13 +89,26 @@ export function usePacer({
         if (!readerHandle) return false
         try {
           await readerHandle.next()
-          // Wait for next page to settle
-          await new Promise((r) => setTimeout(r, 100))
-          const words = readerHandle.getVisibleWords()
+          // Wait for new page DOM to render with active polling
+          let words = readerHandle.getVisibleWords()
+          if (words.length === 0) {
+            for (let attempt = 0; attempt < 6; attempt++) {
+              await new Promise((r) => setTimeout(r, 50 + attempt * 40))
+              words = readerHandle.getVisibleWords()
+              if (words.length > 0) break
+            }
+          } else {
+            await new Promise((r) => setTimeout(r, 60))
+            words = readerHandle.getVisibleWords()
+          }
+
           const chunks = groupWordsIntoChunks(words, { wpm, chunkSize })
           setTotalChunks(chunks.length)
-          engineRef.current?.setChunks(chunks, false)
-          return chunks.length > 0
+          if (chunks.length > 0) {
+            engineRef.current?.setChunks(chunks, false)
+            return true
+          }
+          return false
         } catch {
           return false
         }

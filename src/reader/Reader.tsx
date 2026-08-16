@@ -112,13 +112,23 @@ export function Reader({ bookId }: { bookId: string }) {
     showPacerControlsRef.current = showPacerControls
   })
 
-  // Measure-based maxWidth calculation
+  // Measure-based maxWidth calculation that adapts to single vs double columns
   const measureMaxWidthPx = useMemo(() => {
     const isCjk = Boolean(resolvedStyle.body.isCjk)
     const ch = resolvedStyle.body.measureCh
     const fontSize = resolvedStyle.body.fontSizePx
-    return isCjk ? ch * fontSize : Math.round(ch * fontSize * 0.55)
-  }, [resolvedStyle])
+    const singleMeasure = isCjk ? ch * fontSize : Math.round(ch * fontSize * 0.58)
+    const spreadMode = overrides.spreadMode ?? 'auto'
+
+    if (spreadMode === 'single') {
+      return Math.max(600, singleMeasure + 80)
+    }
+    if (spreadMode === 'double') {
+      return Math.max(1000, singleMeasure * 2 + 160)
+    }
+    // Auto mode: allow container to expand up to double column width for responsive 1-or-2 column adaptation
+    return Math.max(680, Math.min(1480, singleMeasure * 2 + 160))
+  }, [resolvedStyle, overrides.spreadMode])
 
   // Auto-hide chrome scheduler
   const pingActivity = () => {
@@ -315,6 +325,7 @@ export function Reader({ bookId }: { bookId: string }) {
 
         reader = await createReader(containerRef.current, data, savedProgress?.cfi ?? null, {
           flow: initialFlow,
+          spreadMode: initialOverrides.spreadMode ?? 'auto',
           style: initialResolved,
           onKeyDown,
           onClickText() {
@@ -344,8 +355,10 @@ export function Reader({ bookId }: { bookId: string }) {
             }
 
             setTimeout(() => {
-              pacerRef.current.recalculateGeometry()
-            }, 50)
+              if (!pacerRef.current.isPlaying) {
+                pacerRef.current.recalculateGeometry(false)
+              }
+            }, 60)
           },
         })
 
@@ -418,7 +431,16 @@ export function Reader({ bookId }: { bookId: string }) {
   }
 
   const handleOverridesChange = (newOverrides: StyleOverride) => {
+    const prevSpread = overrides.spreadMode ?? 'auto'
+    const nextSpread = newOverrides.spreadMode ?? 'auto'
     setOverrides(newOverrides)
+    if (prevSpread !== nextSpread && handleRef.current) {
+      void handleRef.current.setSpread(nextSpread).then(() => {
+        setTimeout(() => {
+          pacerRef.current.recalculateGeometry(false)
+        }, 80)
+      })
+    }
     void saveCurrentSettings(styleId, newOverrides, flow)
   }
 

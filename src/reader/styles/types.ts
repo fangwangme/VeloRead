@@ -47,6 +47,7 @@ export interface StyleOverride {
   marginStep?: number | null
   bold?: boolean | null
   justify?: boolean | null
+  spreadMode?: 'auto' | 'single' | 'double' | null
 }
 
 export interface ResolvedStyle {

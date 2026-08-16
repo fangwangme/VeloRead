@@ -1,6 +1,13 @@
 import type { StyleId, StyleOverride } from './styles/types'
 import { PRESETS } from './styles/presets'
-import { IconMonitor, IconMoon, IconSun } from '../ui/icons'
+import {
+  IconColumnsAuto,
+  IconColumnSingle,
+  IconColumnsDouble,
+  IconMonitor,
+  IconMoon,
+  IconSun,
+} from '../ui/icons'
 
 interface SettingsPanelProps {
   currentStyleId: StyleId
@@ -42,6 +49,7 @@ export function SettingsPanel({
   const marginStep = overrides.marginStep ?? 0
   const bold = Boolean(overrides.bold)
   const justify = overrides.justify ?? (PRESETS[currentStyleId]?.body.align === 'justify')
+  const currentSpread = overrides.spreadMode ?? 'auto'
 
   return (
     <div
@@ -80,6 +88,34 @@ export function SettingsPanel({
                 onClick={() => onThemeModeChange(item.id)}
                 className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-center transition text-[11px] font-medium ${
                   themeMode === item.id
+                    ? 'bg-white text-neutral-900 shadow-xs dark:bg-neutral-800 dark:text-white font-semibold'
+                    : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+                }`}
+              >
+                <span className="opacity-80">{item.icon}</span>
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Columns / Spread Layout Toggle: Auto / Single / Double */}
+        <div>
+          <label className="mb-1.5 block text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
+            页面分栏
+          </label>
+          <div className="flex rounded-xl border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] p-0.5">
+            {[
+              { id: 'auto' as const, label: '自适应', icon: <IconColumnsAuto /> },
+              { id: 'single' as const, label: '单栏', icon: <IconColumnSingle /> },
+              { id: 'double' as const, label: '双栏', icon: <IconColumnsDouble /> },
+            ].map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onOverridesChange({ ...overrides, spreadMode: item.id })}
+                className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-center transition text-[11px] font-medium ${
+                  currentSpread === item.id
                     ? 'bg-white text-neutral-900 shadow-xs dark:bg-neutral-800 dark:text-white font-semibold'
                     : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
                 }`}
