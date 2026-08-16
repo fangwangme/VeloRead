@@ -1,5 +1,6 @@
 import type { StyleId, StyleOverride } from './styles/types'
 import { PRESETS } from './styles/presets'
+import { IconMonitor, IconMoon, IconSun } from '../ui/icons'
 
 interface SettingsPanelProps {
   currentStyleId: StyleId
@@ -63,25 +64,26 @@ export function SettingsPanel({
         {/* 3-way Appearance Mode Toggle: Auto / Light / Dark */}
         <div>
           <label className="mb-1.5 block text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
-            外观显示模式
+            外观模式
           </label>
           <div className="flex rounded-xl border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] p-0.5">
             {[
-              { id: 'auto' as const, label: '🖥 跟随系统' },
-              { id: 'light' as const, label: '☀️ 浅色' },
-              { id: 'dark' as const, label: '🌙 深色' },
+              { id: 'auto' as const, label: '跟随系统', icon: <IconMonitor /> },
+              { id: 'light' as const, label: '浅色', icon: <IconSun /> },
+              { id: 'dark' as const, label: '深色', icon: <IconMoon /> },
             ].map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => onThemeModeChange(item.id)}
-                className={`flex-1 rounded-lg py-1.5 text-center transition text-[11px] font-medium ${
+                className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-center transition text-[11px] font-medium ${
                   themeMode === item.id
                     ? 'bg-white text-neutral-900 shadow-xs dark:bg-neutral-800 dark:text-white font-semibold'
                     : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
                 }`}
               >
-                {item.label}
+                <span className="opacity-80">{item.icon}</span>
+                <span>{item.label}</span>
               </button>
             ))}
           </div>

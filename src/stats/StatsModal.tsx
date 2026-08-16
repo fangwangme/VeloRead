@@ -1,6 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { getStorage } from '../platform'
 import type { OverallReadingStats } from '../platform/types'
+import {
+  IconBook,
+  IconClock,
+  IconFlame,
+  IconInfo,
+  IconLibrary,
+  IconStats,
+} from '../ui/icons'
 
 interface StatsModalProps {
   onClose: () => void
@@ -42,12 +50,14 @@ export function StatsModal({ onClose }: StatsModalProps) {
       {/* Modal Card */}
       <div className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col rounded-3xl border border-black/10 bg-white/95 p-6 shadow-2xl backdrop-blur-2xl dark:border-white/10 dark:bg-neutral-900/95 dark:text-neutral-100 animate-in fade-in zoom-in-95 duration-200">
         <div className="flex items-center justify-between pb-4 border-b border-black/5 dark:border-white/5">
-          <div className="flex items-center gap-2.5">
-            <span className="text-xl">📊</span>
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-black/[0.04] dark:bg-white/[0.06] text-neutral-700 dark:text-neutral-200">
+              <IconStats />
+            </div>
             <div>
               <h2 className="text-base font-bold tracking-tight">阅读数据与统计</h2>
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                记录每一次专注阅读，见证心智成长
+                记录专注阅读，见证心智成长
               </p>
             </div>
           </div>
@@ -78,7 +88,7 @@ export function StatsModal({ onClose }: StatsModalProps) {
                       : `${stats.totalDurationMinutes}`
                   }
                   unit={stats.totalDurationMinutes >= 60 ? '小时' : '分钟'}
-                  icon="⏱️"
+                  icon={<IconClock />}
                 />
                 <MetricCard
                   label="累计阅读字数"
@@ -88,19 +98,19 @@ export function StatsModal({ onClose }: StatsModalProps) {
                       : `${stats.totalWordsRead}`
                   }
                   unit={stats.totalWordsRead >= 10000 ? '万字' : '字/词'}
-                  icon="📖"
+                  icon={<IconBook />}
                 />
                 <MetricCard
                   label="连续阅读"
                   value={`${stats.currentStreakDays}`}
                   unit="天"
-                  icon="🔥"
+                  icon={<IconFlame />}
                 />
                 <MetricCard
                   label="涉猎图书"
                   value={`${stats.totalBooksRead}`}
                   unit="本"
-                  icon="📚"
+                  icon={<IconLibrary />}
                 />
               </div>
 
@@ -124,9 +134,9 @@ export function StatsModal({ onClose }: StatsModalProps) {
               </div>
 
               {/* Anti-idle note */}
-              <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3.5 text-xs text-neutral-600 dark:text-neutral-300">
-                <div className="flex items-start gap-2">
-                  <span className="text-blue-500 text-sm">💡</span>
+              <div className="rounded-xl border border-neutral-200/80 bg-neutral-50 p-3.5 text-xs text-neutral-600 dark:border-neutral-800 dark:bg-neutral-800/40 dark:text-neutral-300">
+                <div className="flex items-start gap-2.5">
+                  <span className="text-neutral-500 mt-0.5"><IconInfo /></span>
                   <p className="leading-relaxed text-[11px] opacity-90">
                     <strong>智能防挂机机制：</strong>
                     为保证统计客观真实，单页停留超过 5 分钟无操作将自动暂停计时；页面切至后台或窗口失焦时立即暂停，翻页或互动后自动续接。
@@ -150,13 +160,13 @@ function MetricCard({
   label: string
   value: string
   unit: string
-  icon: string
+  icon: ReactNode
 }) {
   return (
     <div className="flex flex-col justify-between rounded-2xl border border-black/5 bg-black/[0.02] p-4 dark:border-white/5 dark:bg-white/[0.03]">
       <div className="flex items-center justify-between text-neutral-400 text-xs mb-2">
         <span className="font-medium text-[11px]">{label}</span>
-        <span className="text-sm">{icon}</span>
+        <span className="opacity-70">{icon}</span>
       </div>
       <div className="flex items-baseline gap-1">
         <span className="text-2xl font-bold font-mono tracking-tight text-neutral-900 dark:text-white">

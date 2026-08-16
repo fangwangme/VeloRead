@@ -12,6 +12,16 @@ import { PositionInfo } from './PositionInfo'
 import { Overlay } from './pacer/Overlay'
 import { usePacer } from './pacer/usePacer'
 import { StatsModal } from '../stats/StatsModal'
+import {
+  IconArrowLeft,
+  IconChevronLeft,
+  IconChevronRight,
+  IconPause,
+  IconPlay,
+  IconReturn,
+  IconStats,
+  IconToc,
+} from '../ui/icons'
 
 const SAVE_DEBOUNCE_MS = 400
 const RESIZE_DEBOUNCE_MS = 150
@@ -529,7 +539,7 @@ export function Reader({ bookId }: { bookId: string }) {
             className="flex items-center gap-1.5 rounded-full border border-black/10 bg-white/60 px-3.5 py-1.5 text-xs font-medium backdrop-blur-md shadow-xs transition hover:bg-white hover:border-black/20 dark:border-white/10 dark:bg-black/40 dark:hover:bg-black/70"
             onClick={closeBook}
           >
-            <span>←</span>
+            <IconArrowLeft className="opacity-70" />
             <span>书库</span>
           </button>
           <button
@@ -545,19 +555,19 @@ export function Reader({ bookId }: { bookId: string }) {
             }}
             title="目录与书签 (T)"
           >
-            <span>☰</span>
+            <IconToc className="opacity-70" />
             <span>目录</span>
           </button>
           <button
             type="button"
-            className="flex items-center gap-1.5 rounded-full border border-black/10 bg-white/60 px-3 py-1.5 text-xs font-medium backdrop-blur-md shadow-xs transition hover:bg-white hover:border-black/20 dark:border-white/10 dark:bg-black/40 dark:hover:bg-black/70"
+            className="flex items-center gap-1.5 rounded-full border border-black/10 bg-white/60 px-3.5 py-1.5 text-xs font-medium backdrop-blur-md shadow-xs transition hover:bg-white hover:border-black/20 dark:border-white/10 dark:bg-black/40 dark:hover:bg-black/70"
             onClick={() => {
               setShowStats(true)
               setChromeVisible(true)
             }}
             title="阅读数据与热力图"
           >
-            <span>📊</span>
+            <IconStats className="opacity-70" />
             <span>统计</span>
           </button>
         </div>
@@ -576,10 +586,10 @@ export function Reader({ bookId }: { bookId: string }) {
             <button
               type="button"
               onClick={handleJumpBack}
-              className="flex items-center gap-1 rounded-full bg-blue-500/15 px-3 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-500/25 transition active:scale-95 shadow-xs backdrop-blur-md"
+              className="flex items-center gap-1.5 rounded-full bg-blue-500/15 px-3 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-500/25 transition active:scale-95 shadow-xs backdrop-blur-md"
               title="返回跳转前的位置"
             >
-              <span>↩</span>
+              <IconReturn />
               <span>返回原位</span>
             </button>
           )}
@@ -674,13 +684,13 @@ export function Reader({ bookId }: { bookId: string }) {
             <button
               type="button"
               onClick={pacer.toggle}
-              className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-semibold transition active:scale-95 shadow-xs ${
+              className={`flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold transition active:scale-95 shadow-xs ${
                 pacer.isPlaying
                   ? 'bg-amber-600 text-white hover:bg-amber-700'
                   : 'bg-blue-600 text-white hover:bg-blue-700'
               }`}
             >
-              <span>{pacer.isPlaying ? '❚❚' : '▶'}</span>
+              {pacer.isPlaying ? <IconPause /> : <IconPlay />}
               <span>{pacer.isPlaying ? '暂停' : '自动阅读'}</span>
             </button>
 
@@ -696,8 +706,9 @@ export function Reader({ bookId }: { bookId: string }) {
             </button>
 
             {pacer.speedWarning && (
-              <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium" title="超过 500 wpm 后理解率会显著下降">
-                ⚠️ 极速模式
+              <span className="flex items-center text-[10px] text-amber-600 dark:text-amber-400 font-medium" title="超过 500 wpm 后理解率会显著下降">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500 mr-1" />
+                极速模式
               </span>
             )}
           </div>
@@ -709,7 +720,7 @@ export function Reader({ bookId }: { bookId: string }) {
               onClick={() => void handleRef.current?.prev()}
               title="上一页 (←)"
             >
-              ◀
+              <IconChevronLeft />
             </button>
             <button
               type="button"
@@ -717,7 +728,7 @@ export function Reader({ bookId }: { bookId: string }) {
               onClick={() => void handleRef.current?.next()}
               title="下一页 (→)"
             >
-              ▶
+              <IconChevronRight />
             </button>
           </div>
         </div>

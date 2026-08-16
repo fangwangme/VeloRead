@@ -3,6 +3,7 @@ import { useLibrary } from './store'
 import { BookCover } from './BookCover'
 import type { BookRecord } from '../platform/types'
 import { StatsModal } from '../stats/StatsModal'
+import { IconStats } from '../ui/icons'
 
 export function Library() {
   const books = useLibrary((s) => s.books)
@@ -48,11 +49,11 @@ export function Library() {
         <div className="flex items-center gap-3">
           <button
             type="button"
-            className="flex items-center gap-1.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white px-3.5 py-2 text-sm font-medium text-neutral-800 shadow-xs transition hover:bg-neutral-100 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+            className="flex items-center gap-2 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white px-3.5 py-2 text-sm font-medium text-neutral-800 shadow-xs transition hover:bg-neutral-100 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
             onClick={() => setShowStats(true)}
             title="查看阅读数据与热力图"
           >
-            <span>📊</span>
+            <IconStats className="opacity-70" />
             <span>阅读统计</span>
           </button>
           <button
