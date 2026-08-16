@@ -80,6 +80,54 @@ describe('web storage port', () => {
     expect(await storage.readCover(book.id)).toEqual(cover)
   })
 
+  it('saves and reads bookSettings and appSettings', async () => {
+    const book = record()
+    await storage.addBook({ record: book, data: new Uint8Array([1]), cover: null })
+
+    expect(await storage.getBookSettings(book.id)).toBeNull()
+
+    const bookSettings = {
+      bookId: book.id,
+      styleId: 'sepia' as const,
+      overrides: { fontSizeStep: 1, justify: true },
+      flow: 'paginated' as const,
+      updatedAt: '2026-08-16T12:00:00.000Z',
+    }
+    await storage.saveBookSettings(bookSettings)
+    expect(await storage.getBookSettings(book.id)).toEqual(bookSettings)
+
+    await storage.saveAppSettings({ defaultStyleId: 'night', pacerWpm: 300 })
+    expect(await storage.getAppSettings()).toEqual({ defaultStyleId: 'night', pacerWpm: 300 })
+  })
+
+  it('adds, lists, and deletes bookmarks', async () => {
+    const book = record()
+    await storage.addBook({ record: book, data: new Uint8Array([1]), cover: null })
+
+    const bm1 = {
+      id: 'bm-1',
+      bookId: book.id,
+      cfi: 'epubcfi(/6/2!/4/2)',
+      text: 'First bookmark quote',
+      createdAt: '2026-08-16T10:00:00.000Z',
+    }
+    const bm2 = {
+      id: 'bm-2',
+      bookId: book.id,
+      cfi: 'epubcfi(/6/4!/4/10)',
+      text: 'Second bookmark quote',
+      createdAt: '2026-08-16T11:00:00.000Z',
+    }
+
+    await storage.addBookmark(bm1)
+    await storage.addBookmark(bm2)
+
+    expect(await storage.listBookmarks(book.id)).toEqual([bm1, bm2])
+
+    await storage.deleteBookmark('bm-1')
+    expect(await storage.listBookmarks(book.id)).toEqual([bm2])
+  })
+
   it('leaves nothing behind after a delete', async () => {
     const book = record()
     await storage.addBook({ record: book, data: new Uint8Array([1, 2, 3]), cover: new Uint8Array([4]) })
@@ -89,12 +137,27 @@ describe('web storage port', () => {
       percentage: 0.5,
       updatedAt: '2026-08-15T12:00:00.000Z',
     })
+    await storage.saveBookSettings({
+      bookId: book.id,
+      styleId: 'sepia',
+      overrides: {},
+      updatedAt: '2026-08-15T12:00:00.000Z',
+    })
+    await storage.addBookmark({
+      id: 'bm-1',
+      bookId: book.id,
+      cfi: 'epubcfi(/6/4!/4/2/2)',
+      text: 'Bookmark',
+      createdAt: '2026-08-15T12:00:00.000Z',
+    })
 
     await storage.deleteBook(book.id)
 
     expect(await storage.listBooks()).toEqual([])
     expect(await storage.readCover(book.id)).toBeNull()
     expect(await storage.getProgress(book.id)).toBeNull()
+    expect(await storage.getBookSettings(book.id)).toBeNull()
+    expect(await storage.listBookmarks(book.id)).toEqual([])
     await expect(storage.readBookFile(book.id)).rejects.toThrow()
   })
 })

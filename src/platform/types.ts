@@ -4,10 +4,9 @@
  * Per AGENTS.md the frontend never imports `invoke` directly: every native
  * capability goes through a port that has both a Tauri and a web implementation,
  * so `bun run dev` stays a usable target.
- *
- * Only `storage` is defined here — `fs` (摘抄导出) and `dict` (词典查询) land with
- * the features that need them.
  */
+
+import type { StyleId, StyleOverride } from '../reader/styles/types'
 
 /** A book in the library, without its bytes. */
 export interface BookRecord {
@@ -43,8 +42,45 @@ export interface ReadingProgress {
   updatedAt: string
 }
 
+/** Book-specific reading settings. */
+export interface BookSettings {
+  bookId: string
+  styleId: StyleId
+  overrides: StyleOverride
+  flow?: 'paginated' | 'scrolled-doc'
+  updatedAt: string
+}
+
+/** Global application settings. */
+export interface AppSettings {
+  defaultStyleId?: StyleId
+  autoNightMode?: boolean
+  pacerWpm?: number
+  pacerChunkSize?: number
+  pacerCjkCharCount?: number
+  flow?: 'paginated' | 'scrolled-doc'
+}
+
+/** User bookmark in a book. */
+export interface Bookmark {
+  id: string
+  bookId: string
+  cfi: string
+  text: string
+  createdAt: string
+}
+
+/** Navigation TOC item. */
+export interface TocItem {
+  id: string
+  label: string
+  href: string
+  subitems?: TocItem[]
+}
+
 /**
- * Library persistence: book metadata, book bytes, cover bytes, reading position.
+ * Library persistence: book metadata, book bytes, cover bytes, reading position,
+ * settings, bookmarks.
  *
  * Implementations are obtained through `getStorage()` in `platform/index.ts`,
  * which also calls `init()` exactly once.
@@ -55,11 +91,18 @@ export interface StoragePort {
   /** Newest-read first, then newest-added first. */
   listBooks(): Promise<BookRecord[]>
   addBook(input: BookImport): Promise<BookRecord>
-  /** Removes the record, the stored file, the cover and the progress row. */
+  /** Removes the record, the stored file, the cover, progress, settings and bookmarks. */
   deleteBook(id: string): Promise<void>
   readBookFile(id: string): Promise<Uint8Array>
   readCover(id: string): Promise<Uint8Array | null>
   getProgress(bookId: string): Promise<ReadingProgress | null>
   /** Upserts progress and stamps the book's `lastReadAt`. */
   saveProgress(progress: ReadingProgress): Promise<void>
+  getBookSettings(bookId: string): Promise<BookSettings | null>
+  saveBookSettings(settings: BookSettings): Promise<void>
+  getAppSettings(): Promise<AppSettings>
+  saveAppSettings(settings: Partial<AppSettings>): Promise<void>
+  listBookmarks(bookId: string): Promise<Bookmark[]>
+  addBookmark(bookmark: Bookmark): Promise<void>
+  deleteBookmark(id: string): Promise<void>
 }

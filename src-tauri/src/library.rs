@@ -17,7 +17,7 @@ use base64::Engine as _;
 use rusqlite::Connection;
 use tauri::{ipc::Response, AppHandle, Manager, State};
 
-use store::{book_file, BookRecord, ReadingProgress};
+use store::{book_file, BookRecord, BookSettings, Bookmark, ReadingProgress};
 
 /// Storage primitives, free of any Tauri types.
 mod store {
@@ -26,7 +26,7 @@ mod store {
     use rusqlite::{params, Connection, OptionalExtension};
     use serde::{Deserialize, Serialize};
 
-    const SCHEMA_VERSION: i32 = 1;
+    const SCHEMA_VERSION: i32 = 2;
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -48,6 +48,27 @@ mod store {
         pub cfi: Option<String>,
         pub percentage: f64,
         pub updated_at: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct BookSettings {
+        pub book_id: String,
+        pub style_id: String,
+        pub overrides: serde_json::Value,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub flow: Option<String>,
+        pub updated_at: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct Bookmark {
+        pub id: String,
+        pub book_id: String,
+        pub cfi: String,
+        pub text: String,
+        pub created_at: String,
     }
 
     /// Book ids come from the webview, so they are checked before they are ever
@@ -89,6 +110,53 @@ mod store {
                  );",
             )?;
         }
+
+        if version < 2 {
+            // Check if column format exists on books before adding
+            let has_format_col: bool = connection
+                .prepare("SELECT format FROM books LIMIT 0")
+                .is_ok();
+            if !has_format_col {
+                connection.execute_batch(
+                    "ALTER TABLE books ADD COLUMN format TEXT NOT NULL DEFAULT 'epub';",
+                )?;
+            }
+
+            let has_locator_col: bool = connection
+                .prepare("SELECT locator FROM reading_progress LIMIT 0")
+                .is_ok();
+            if !has_locator_col {
+                connection
+                    .execute_batch("ALTER TABLE reading_progress ADD COLUMN locator TEXT;")?;
+                connection.execute_batch(
+                    "UPDATE reading_progress
+                     SET locator = '{\"format\":\"epub\",\"cfi\":\"' || cfi || '\"}'
+                     WHERE cfi IS NOT NULL AND locator IS NULL;",
+                )?;
+            }
+
+            connection.execute_batch(
+                "CREATE TABLE IF NOT EXISTS book_settings (
+                     book_id    TEXT PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+                     style_id   TEXT NOT NULL,
+                     overrides  TEXT NOT NULL,
+                     flow       TEXT,
+                     updated_at TEXT NOT NULL
+                 );
+                 CREATE TABLE IF NOT EXISTS app_settings (
+                     key   TEXT PRIMARY KEY,
+                     value TEXT NOT NULL
+                 );
+                 CREATE TABLE IF NOT EXISTS bookmarks (
+                     id         TEXT PRIMARY KEY,
+                     book_id    TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                     cfi        TEXT NOT NULL,
+                     text       TEXT NOT NULL,
+                     created_at TEXT NOT NULL
+                 );",
+            )?;
+        }
+
         connection.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
         Ok(())
     }
@@ -135,7 +203,12 @@ mod store {
     }
 
     pub fn delete_book(connection: &Connection, id: &str) -> rusqlite::Result<()> {
-        connection.execute("DELETE FROM reading_progress WHERE book_id = ?1", params![id])?;
+        connection.execute("DELETE FROM bookmarks WHERE book_id = ?1", params![id])?;
+        connection.execute("DELETE FROM book_settings WHERE book_id = ?1", params![id])?;
+        connection.execute(
+            "DELETE FROM reading_progress WHERE book_id = ?1",
+            params![id],
+        )?;
         connection.execute("DELETE FROM books WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -184,6 +257,127 @@ mod store {
             "UPDATE books SET last_read_at = ?2 WHERE id = ?1",
             params![progress.book_id, progress.updated_at],
         )?;
+        Ok(())
+    }
+
+    pub fn get_book_settings(
+        connection: &Connection,
+        book_id: &str,
+    ) -> rusqlite::Result<Option<BookSettings>> {
+        connection
+            .query_row(
+                "SELECT book_id, style_id, overrides, flow, updated_at FROM book_settings WHERE book_id = ?1",
+                params![book_id],
+                |row| {
+                    let overrides_str: String = row.get(2)?;
+                    let overrides_val: serde_json::Value =
+                        serde_json::from_str(&overrides_str).unwrap_or(serde_json::Value::Null);
+                    Ok(BookSettings {
+                        book_id: row.get(0)?,
+                        style_id: row.get(1)?,
+                        overrides: overrides_val,
+                        flow: row.get(3)?,
+                        updated_at: row.get(4)?,
+                    })
+                },
+            )
+            .optional()
+    }
+
+    pub fn save_book_settings(
+        connection: &Connection,
+        settings: &BookSettings,
+    ) -> rusqlite::Result<()> {
+        let overrides_str = serde_json::to_string(&settings.overrides).unwrap_or_default();
+        connection.execute(
+            "INSERT INTO book_settings (book_id, style_id, overrides, flow, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(book_id) DO UPDATE SET
+                 style_id = excluded.style_id,
+                 overrides = excluded.overrides,
+                 flow = excluded.flow,
+                 updated_at = excluded.updated_at",
+            params![
+                settings.book_id,
+                settings.style_id,
+                overrides_str,
+                settings.flow,
+                settings.updated_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_app_settings(
+        connection: &Connection,
+        key: &str,
+    ) -> rusqlite::Result<Option<String>> {
+        connection
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = ?1",
+                params![key],
+                |row| row.get(0),
+            )
+            .optional()
+    }
+
+    pub fn save_app_settings(
+        connection: &Connection,
+        key: &str,
+        value: &str,
+    ) -> rusqlite::Result<()> {
+        connection.execute(
+            "INSERT INTO app_settings (key, value)
+             VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_bookmarks(
+        connection: &Connection,
+        book_id: &str,
+    ) -> rusqlite::Result<Vec<Bookmark>> {
+        let mut statement = connection.prepare(
+            "SELECT id, book_id, cfi, text, created_at
+             FROM bookmarks
+             WHERE book_id = ?1
+             ORDER BY created_at ASC",
+        )?;
+        let rows = statement.query_map(params![book_id], |row| {
+            Ok(Bookmark {
+                id: row.get(0)?,
+                book_id: row.get(1)?,
+                cfi: row.get(2)?,
+                text: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn add_bookmark(connection: &Connection, bookmark: &Bookmark) -> rusqlite::Result<()> {
+        connection.execute(
+            "INSERT INTO bookmarks (id, book_id, cfi, text, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(id) DO UPDATE SET
+                 cfi = excluded.cfi,
+                 text = excluded.text,
+                 created_at = excluded.created_at",
+            params![
+                bookmark.id,
+                bookmark.book_id,
+                bookmark.cfi,
+                bookmark.text,
+                bookmark.created_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_bookmark(connection: &Connection, id: &str) -> rusqlite::Result<()> {
+        connection.execute("DELETE FROM bookmarks WHERE id = ?1", params![id])?;
         Ok(())
     }
 }
@@ -292,7 +486,9 @@ pub fn library_add_book(
     if let Err(error) = written {
         let _ = fs::remove_file(&book_file);
         let _ = fs::remove_file(&cover_file);
-        let _ = state.with_db(&app, |connection| store::delete_book(connection, &record.id));
+        let _ = state.with_db(&app, |connection| {
+            store::delete_book(connection, &record.id)
+        });
         return Err(error);
     }
 
@@ -342,7 +538,83 @@ pub fn library_save_progress(
     state: State<'_, LibraryState>,
     progress: ReadingProgress,
 ) -> Result<(), String> {
-    state.with_db(&app, |connection| store::save_progress(connection, &progress))
+    state.with_db(&app, |connection| {
+        store::save_progress(connection, &progress)
+    })
+}
+
+#[tauri::command]
+pub fn library_get_book_settings(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+    book_id: String,
+) -> Result<Option<BookSettings>, String> {
+    state.with_db(&app, |connection| {
+        store::get_book_settings(connection, &book_id)
+    })
+}
+
+#[tauri::command]
+pub fn library_save_book_settings(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+    settings: BookSettings,
+) -> Result<(), String> {
+    state.with_db(&app, |connection| {
+        store::save_book_settings(connection, &settings)
+    })
+}
+
+#[tauri::command]
+pub fn library_get_app_settings(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+    key: String,
+) -> Result<Option<String>, String> {
+    state.with_db(&app, |connection| store::get_app_settings(connection, &key))
+}
+
+#[tauri::command]
+pub fn library_save_app_settings(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    state.with_db(&app, |connection| {
+        store::save_app_settings(connection, &key, &value)
+    })
+}
+
+#[tauri::command]
+pub fn library_list_bookmarks(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+    book_id: String,
+) -> Result<Vec<Bookmark>, String> {
+    state.with_db(&app, |connection| {
+        store::list_bookmarks(connection, &book_id)
+    })
+}
+
+#[tauri::command]
+pub fn library_add_bookmark(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+    bookmark: Bookmark,
+) -> Result<(), String> {
+    state.with_db(&app, |connection| {
+        store::add_bookmark(connection, &bookmark)
+    })
+}
+
+#[tauri::command]
+pub fn library_delete_bookmark(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+    id: String,
+) -> Result<(), String> {
+    state.with_db(&app, |connection| store::delete_bookmark(connection, &id))
 }
 
 #[cfg(test)]
@@ -378,8 +650,98 @@ mod tests {
         let version: i32 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .expect("read user_version");
-        assert_eq!(version, 1);
+        assert_eq!(version, 2);
         assert_eq!(list_books(&connection).unwrap(), vec![]);
+    }
+
+    #[test]
+    fn migration_v1_to_v2_preserves_old_data_and_enables_new_features() {
+        let connection = Connection::open_in_memory().expect("open memory db");
+        // Initialize as v1
+        connection
+            .execute_batch(
+                "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;
+             CREATE TABLE books (
+                 id           TEXT PRIMARY KEY,
+                 title        TEXT NOT NULL,
+                 author       TEXT,
+                 language     TEXT,
+                 cover_mime   TEXT,
+                 file_size    INTEGER NOT NULL,
+                 added_at     TEXT NOT NULL,
+                 last_read_at TEXT
+             );
+             CREATE TABLE reading_progress (
+                 book_id    TEXT PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+                 cfi        TEXT,
+                 percentage REAL NOT NULL DEFAULT 0,
+                 updated_at TEXT NOT NULL
+             );
+             PRAGMA user_version = 1;",
+            )
+            .expect("create v1 db");
+
+        let record = book("v1_book", "Old Book", "2026-08-15T10:00:00.000Z");
+        insert_book(&connection, &record).unwrap();
+        save_progress(
+            &connection,
+            &ReadingProgress {
+                book_id: "v1_book".to_string(),
+                cfi: Some("epubcfi(/6/2!/4/2)".to_string()),
+                percentage: 0.42,
+                updated_at: "2026-08-15T11:00:00.000Z".to_string(),
+            },
+        )
+        .unwrap();
+
+        // Run migrate to v2
+        migrate(&connection).expect("migrate from v1 to v2");
+
+        let version: i32 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .expect("read user_version");
+        assert_eq!(version, 2);
+
+        // Verify old book and progress are still readable
+        let books = list_books(&connection).unwrap();
+        assert_eq!(
+            books,
+            vec![BookRecord {
+                last_read_at: Some("2026-08-15T11:00:00.000Z".to_string()),
+                ..record
+            }]
+        );
+
+        let progress = get_progress(&connection, "v1_book").unwrap().unwrap();
+        assert_eq!(progress.cfi, Some("epubcfi(/6/2!/4/2)".to_string()));
+        assert_eq!(progress.percentage, 0.42);
+
+        // Verify new v2 features work on the migrated database
+        let settings = BookSettings {
+            book_id: "v1_book".to_string(),
+            style_id: "sepia".to_string(),
+            overrides: serde_json::json!({ "fontSizeStep": 1 }),
+            flow: Some("paginated".to_string()),
+            updated_at: "2026-08-16T10:00:00.000Z".to_string(),
+        };
+        save_book_settings(&connection, &settings).unwrap();
+        assert_eq!(
+            get_book_settings(&connection, "v1_book").unwrap(),
+            Some(settings)
+        );
+
+        let bookmark = Bookmark {
+            id: "bm1".to_string(),
+            book_id: "v1_book".to_string(),
+            cfi: "epubcfi(/6/2!/4/2)".to_string(),
+            text: "Important note".to_string(),
+            created_at: "2026-08-16T10:05:00.000Z".to_string(),
+        };
+        add_bookmark(&connection, &bookmark).unwrap();
+        assert_eq!(
+            list_bookmarks(&connection, "v1_book").unwrap(),
+            vec![bookmark]
+        );
     }
 
     #[test]
@@ -394,7 +756,11 @@ mod tests {
     #[test]
     fn a_reading_position_reads_back_exactly_as_it_was_written() {
         let connection = db();
-        insert_book(&connection, &book("a1", "Fixture", "2026-08-15T10:00:00.000Z")).unwrap();
+        insert_book(
+            &connection,
+            &book("a1", "Fixture", "2026-08-15T10:00:00.000Z"),
+        )
+        .unwrap();
 
         assert_eq!(get_progress(&connection, "a1").unwrap(), None);
 
@@ -412,7 +778,11 @@ mod tests {
     #[test]
     fn saving_progress_twice_updates_in_place() {
         let connection = db();
-        insert_book(&connection, &book("a1", "Fixture", "2026-08-15T10:00:00.000Z")).unwrap();
+        insert_book(
+            &connection,
+            &book("a1", "Fixture", "2026-08-15T10:00:00.000Z"),
+        )
+        .unwrap();
 
         for (cfi, percentage, at) in [
             ("epubcfi(/6/2!/4/2/1:0)", 0.0, "2026-08-15T12:00:00.000Z"),
@@ -431,7 +801,9 @@ mod tests {
         }
 
         let rows: i64 = connection
-            .query_row("SELECT COUNT(*) FROM reading_progress", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM reading_progress", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(rows, 1, "upsert must not accumulate rows");
 
@@ -443,8 +815,16 @@ mod tests {
     #[test]
     fn shelf_order_matches_the_web_implementation() {
         let connection = db();
-        insert_book(&connection, &book("older", "Older", "2026-08-14T10:00:00.000Z")).unwrap();
-        insert_book(&connection, &book("newer", "Newer", "2026-08-15T10:00:00.000Z")).unwrap();
+        insert_book(
+            &connection,
+            &book("older", "Older", "2026-08-14T10:00:00.000Z"),
+        )
+        .unwrap();
+        insert_book(
+            &connection,
+            &book("newer", "Newer", "2026-08-15T10:00:00.000Z"),
+        )
+        .unwrap();
 
         // Nothing read yet: newest import first.
         let titles: Vec<_> = list_books(&connection)
@@ -478,9 +858,13 @@ mod tests {
     }
 
     #[test]
-    fn deleting_a_book_takes_its_progress_with_it() {
+    fn deleting_a_book_takes_its_progress_settings_and_bookmarks_with_it() {
         let connection = db();
-        insert_book(&connection, &book("a1", "Fixture", "2026-08-15T10:00:00.000Z")).unwrap();
+        insert_book(
+            &connection,
+            &book("a1", "Fixture", "2026-08-15T10:00:00.000Z"),
+        )
+        .unwrap();
         save_progress(
             &connection,
             &ReadingProgress {
@@ -491,11 +875,35 @@ mod tests {
             },
         )
         .unwrap();
+        save_book_settings(
+            &connection,
+            &BookSettings {
+                book_id: "a1".to_string(),
+                style_id: "night".to_string(),
+                overrides: serde_json::json!({}),
+                flow: None,
+                updated_at: "2026-08-15T20:00:00.000Z".to_string(),
+            },
+        )
+        .unwrap();
+        add_bookmark(
+            &connection,
+            &Bookmark {
+                id: "b1".to_string(),
+                book_id: "a1".to_string(),
+                cfi: "epubcfi(/6/2!/4/2/1:0)".to_string(),
+                text: "Excerpt".to_string(),
+                created_at: "2026-08-15T20:00:00.000Z".to_string(),
+            },
+        )
+        .unwrap();
 
         delete_book(&connection, "a1").expect("delete");
 
         assert_eq!(list_books(&connection).unwrap(), vec![]);
         assert_eq!(get_progress(&connection, "a1").unwrap(), None);
+        assert_eq!(get_book_settings(&connection, "a1").unwrap(), None);
+        assert_eq!(list_bookmarks(&connection, "a1").unwrap(), vec![]);
     }
 
     #[test]
@@ -516,10 +924,7 @@ mod tests {
         let dir = Path::new("/tmp/veloread-library");
         let path = book_file(dir, "a007137f-abd9-45f7-8e31-7c902c3bd091", "epub").unwrap();
 
-        assert_eq!(
-            path,
-            dir.join("a007137f-abd9-45f7-8e31-7c902c3bd091.epub")
-        );
+        assert_eq!(path, dir.join("a007137f-abd9-45f7-8e31-7c902c3bd091.epub"));
         assert!(path.starts_with(dir));
     }
 
