@@ -743,32 +743,123 @@ export function Reader({ bookId }: { bookId: string }) {
           </div>
         </div>
 
-        {/* Extended Pacer Settings Bar */}
+        {/* Extended Pacer Settings Popover */}
         {showPacerControls && (
-          <div className="flex items-center gap-4 py-2.5 px-5 rounded-2xl border border-black/10 dark:border-white/10 bg-white/90 dark:bg-neutral-900/90 shadow-xl backdrop-blur-xl text-[11px] animate-in fade-in zoom-in-95 duration-100">
-            <div className="flex items-center gap-2">
-              <span className="font-medium opacity-80">速度:</span>
-              <input
-                type="range"
-                min={100}
-                max={1000}
-                step={25}
-                value={pacerWpm}
-                onChange={(e) => {
-                  const val = Number(e.target.value)
-                  setPacerWpm(val)
-                  void getStorage().then((s) => s.saveAppSettings({ pacerWpm: val }))
-                }}
-                className="w-24 accent-blue-600 cursor-pointer"
-              />
-              <span className="tabular-nums font-mono font-semibold">{pacerWpm} wpm</span>
+          <div className="flex flex-col gap-3 p-4 rounded-3xl border border-black/10 dark:border-white/10 bg-white/95 dark:bg-neutral-900/95 shadow-2xl backdrop-blur-2xl text-xs animate-in fade-in zoom-in-95 duration-150 max-w-sm w-full">
+            {/* Speed Tier Presets */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
+                  速度档位
+                </span>
+                {pacer.speedWarning && (
+                  <span className="flex items-center text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500 mr-1 animate-pulse" />
+                    极速模式 (理解率可能下降)
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[
+                  { label: '初学', wpm: 180, sub: '180' },
+                  { label: '标准', wpm: 260, sub: '260' },
+                  { label: '进阶', wpm: 380, sub: '380' },
+                  { label: '极速', wpm: 550, sub: '550' },
+                ].map((tier) => {
+                  const isSelected = pacerWpm === tier.wpm
+                  return (
+                    <button
+                      key={tier.wpm}
+                      type="button"
+                      onClick={() => {
+                        setPacerWpm(tier.wpm)
+                        void getStorage().then((s) => s.saveAppSettings({ pacerWpm: tier.wpm }))
+                      }}
+                      className={`flex flex-col items-center justify-center py-1.5 px-2 rounded-xl border transition ${
+                        isSelected
+                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 font-semibold shadow-2xs'
+                          : 'border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.03] text-neutral-700 dark:text-neutral-300 hover:bg-black/5 dark:hover:bg-white/5'
+                      }`}
+                    >
+                      <span className="text-[11px]">{tier.label}</span>
+                      <span className="text-[9px] opacity-60 font-mono">{tier.sub}</span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
 
-            <div className="h-3 w-px bg-black/10 dark:bg-white/10" />
+            {/* Slider & Direct Numeric Input */}
+            <div className="pt-2 border-t border-black/5 dark:border-white/5">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
+                  微调速度 (直接输入或拖动)
+                </span>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={80}
+                    max={1200}
+                    step={10}
+                    value={pacerWpm}
+                    onChange={(e) => {
+                      const val = Math.max(50, Math.min(1500, Number(e.target.value) || 100))
+                      setPacerWpm(val)
+                      void getStorage().then((s) => s.saveAppSettings({ pacerWpm: val }))
+                    }}
+                    className="w-14 rounded-lg border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] px-1.5 py-0.5 text-center font-mono font-bold text-xs text-neutral-900 dark:text-white focus:border-blue-500 focus:outline-none"
+                  />
+                  <span className="text-[10px] text-neutral-400 font-mono">wpm</span>
+                </div>
+              </div>
 
-            <div className="flex items-center gap-2">
-              <span className="font-medium opacity-80">词数/块:</span>
-              <div className="flex rounded-lg border border-black/10 dark:border-white/10 overflow-hidden bg-black/[0.02] dark:bg-white/[0.02]">
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = Math.max(80, pacerWpm - 20)
+                    setPacerWpm(next)
+                    void getStorage().then((s) => s.saveAppSettings({ pacerWpm: next }))
+                  }}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 font-bold transition text-xs"
+                  title="减少 20 wpm"
+                >
+                  -
+                </button>
+                <input
+                  type="range"
+                  min={100}
+                  max={800}
+                  step={10}
+                  value={pacerWpm}
+                  onChange={(e) => {
+                    const val = Number(e.target.value)
+                    setPacerWpm(val)
+                    void getStorage().then((s) => s.saveAppSettings({ pacerWpm: val }))
+                  }}
+                  className="flex-1 accent-blue-600 cursor-pointer h-1.5 rounded-lg bg-black/10 dark:bg-white/10"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = Math.min(1200, pacerWpm + 20)
+                    setPacerWpm(next)
+                    void getStorage().then((s) => s.saveAppSettings({ pacerWpm: next }))
+                  }}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 font-bold transition text-xs"
+                  title="增加 20 wpm"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            {/* Chunk Size Selector */}
+            <div className="pt-2 border-t border-black/5 dark:border-white/5 flex items-center justify-between">
+              <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
+                每次高亮词数
+              </span>
+              <div className="flex rounded-xl border border-black/10 dark:border-white/10 overflow-hidden bg-black/[0.02] dark:bg-white/[0.02] p-0.5">
                 {[1, 2, 3, 4, 5].map((size) => (
                   <button
                     key={size}
@@ -777,13 +868,13 @@ export function Reader({ bookId }: { bookId: string }) {
                       setPacerChunkSize(size)
                       void getStorage().then((s) => s.saveAppSettings({ pacerChunkSize: size }))
                     }}
-                    className={`px-2.5 py-0.5 transition font-medium ${
+                    className={`px-3 py-1 rounded-lg transition text-[11px] font-medium ${
                       pacerChunkSize === size
-                        ? 'bg-blue-600 text-white font-semibold'
-                        : 'hover:bg-black/5 dark:hover:bg-white/5'
+                        ? 'bg-white text-neutral-900 shadow-xs dark:bg-neutral-800 dark:text-white font-semibold'
+                        : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
                     }`}
                   >
-                    {size}
+                    {size}词
                   </button>
                 ))}
               </div>
