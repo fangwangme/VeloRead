@@ -3,9 +3,9 @@ import { PRESETS } from './presets'
 import { resolveStyle } from './resolve'
 
 describe('resolveStyle', () => {
-  it('resolves standard preset without overrides', () => {
+  it('resolves standard preset without overrides in light mode', () => {
     const style = PRESETS.book
-    const resolved = resolveStyle(style)
+    const resolved = resolveStyle(style, {}, false)
 
     expect(resolved.id).toBe('book')
     expect(resolved.body.fontSizePx).toBe(19)
@@ -14,7 +14,16 @@ describe('resolveStyle', () => {
     expect(resolved.body.align).toBe('justify')
     expect(resolved.body.hyphens).toBe(true)
     expect(resolved.body.fontStack).toContain('Charter')
-    expect(resolved.palette.background).toBe(PRESETS.book.palette.background)
+    expect(resolved.palette.background).toBe(PRESETS.book.lightPalette.background)
+  })
+
+  it('resolves preset in dark mode with darkPalette', () => {
+    const style = PRESETS.sepia
+    const resolved = resolveStyle(style, {}, true)
+
+    expect(resolved.id).toBe('sepia')
+    expect(resolved.palette.background).toBe(PRESETS.sepia.darkPalette.background)
+    expect(resolved.palette.text).toBe(PRESETS.sepia.darkPalette.text)
   })
 
   it('applies relative font size, line height, and margin steps', () => {

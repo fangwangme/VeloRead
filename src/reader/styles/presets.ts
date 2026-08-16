@@ -11,14 +11,22 @@ const APPLE_SONG =
 export const PRESETS: Record<StyleId, ReadingStyle> = {
   book: {
     id: 'book',
-    name: '书籍',
-    palette: {
-      background: '#F9F6F0',
+    name: '经典书籍',
+    lightPalette: {
+      background: '#FBF8F3',
       text: '#24211E',
       muted: '#78716A',
       accent: '#9A3412',
-      rule: '#E7E2D8',
-      codeBackground: '#EFEAE0',
+      rule: '#E8E2D6',
+      codeBackground: '#EFE7DC',
+    },
+    darkPalette: {
+      background: '#18181A',
+      text: '#D4D4D8',
+      muted: '#8E8E93',
+      accent: '#E2B887',
+      rule: '#2C2C30',
+      codeBackground: '#242428',
     },
     body: {
       fontStack: APPLE_SERIF,
@@ -42,14 +50,22 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
   },
   sepia: {
     id: 'sepia',
-    name: '羊皮纸',
-    palette: {
+    name: '复古羊皮纸',
+    lightPalette: {
       background: '#F4ECD8',
       text: '#36291C',
       muted: '#7B6E5E',
       accent: '#854D0E',
       rule: '#DFD3B9',
       codeBackground: '#E8DCBF',
+    },
+    darkPalette: {
+      background: '#201B14',
+      text: '#D6C9B4',
+      muted: '#8F816F',
+      accent: '#D4A373',
+      rule: '#383024',
+      codeBackground: '#2A241C',
     },
     body: {
       fontStack: APPLE_SERIF,
@@ -71,32 +87,40 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
       figureCaptionScale: 0.85,
     },
   },
-  night: {
-    id: 'night',
-    name: '夜读',
-    palette: {
-      background: '#161618',
-      text: '#D6D6DA',
-      muted: '#8E8E93',
-      accent: '#E2B887',
-      rule: '#2C2C30',
-      codeBackground: '#242428',
+  modern: {
+    id: 'modern',
+    name: '现代散文',
+    lightPalette: {
+      background: '#FFFFFF',
+      text: '#1A1A1A',
+      muted: '#666666',
+      accent: '#2563EB',
+      rule: '#E5E5E5',
+      codeBackground: '#F3F4F6',
+    },
+    darkPalette: {
+      background: '#121214',
+      text: '#D8D8DC',
+      muted: '#888890',
+      accent: '#60A5FA',
+      rule: '#28282E',
+      codeBackground: '#1E1E22',
     },
     body: {
-      fontStack: APPLE_SERIF,
-      fontSizePx: 19,
-      lineHeight: 1.72,
-      measureCh: 66,
+      fontStack: APPLE_SANS,
+      fontSizePx: 18,
+      lineHeight: 1.70,
+      measureCh: 64,
       align: 'start',
       hyphens: false,
       paragraph: 'spaced',
     },
     elements: {
-      headingFontStack: APPLE_SERIF,
+      headingFontStack: APPLE_SANS,
       headingScale: [1.8, 1.5, 1.3, 1.15, 1.05, 1.0],
-      headingWeight: 600,
+      headingWeight: 700,
       codeFontStack: CODE_FONT_STACK,
-      blockquote: 'indent',
+      blockquote: 'rule',
       listIndentEm: 1.5,
       tableBorder: 'horizontal',
       figureCaptionScale: 0.85,
@@ -104,14 +128,22 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
   },
   journal: {
     id: 'journal',
-    name: '科学杂志',
-    palette: {
+    name: '学术论著',
+    lightPalette: {
       background: '#FBFBFA',
       text: '#181A1C',
       muted: '#646A72',
       accent: '#2563EB',
       rule: '#E2E5E9',
       codeBackground: '#F0F2F5',
+    },
+    darkPalette: {
+      background: '#15181C',
+      text: '#CFD6E0',
+      muted: '#7C8694',
+      accent: '#60A5FA',
+      rule: '#2A303A',
+      codeBackground: '#1E232B',
     },
     body: {
       fontStack: '"Palatino", "Palatino Linotype", "Iowan Old Style", ' + APPLE_SERIF,
@@ -135,14 +167,22 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
   },
   news: {
     id: 'news',
-    name: '报刊',
-    palette: {
+    name: '报刊社论',
+    lightPalette: {
       background: '#F6F6F5',
       text: '#111111',
       muted: '#5C5C5C',
       accent: '#DC2626',
       rule: '#D4D4D4',
       codeBackground: '#E8E8E8',
+    },
+    darkPalette: {
+      background: '#1A1A1C',
+      text: '#D6D6DA',
+      muted: '#88888E',
+      accent: '#EF4444',
+      rule: '#303034',
+      codeBackground: '#26262A',
     },
     body: {
       fontStack: '"Charter", "Bitstream Charter", ' + APPLE_SERIF,
@@ -167,13 +207,21 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
   song: {
     id: 'song',
     name: '中文宋体',
-    palette: {
+    lightPalette: {
       background: '#FAF6EE',
       text: '#242220',
       muted: '#757068',
       accent: '#991B1B',
       rule: '#E2DCD0',
       codeBackground: '#EFE8DC',
+    },
+    darkPalette: {
+      background: '#1A1815',
+      text: '#D5CEC5',
+      muted: '#8A8278',
+      accent: '#E06C5A',
+      rule: '#322E28',
+      codeBackground: '#26231E',
     },
     body: {
       fontStack: APPLE_SONG,

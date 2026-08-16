@@ -87,10 +87,8 @@ export function Reader({ bookId }: { bookId: string }) {
 
   // Compute resolved style
   const resolvedStyle = useMemo(() => {
-    // If dark mode is effective, use night base preset or adapt
-    const effectiveStyleId = isEffectiveDark && styleId !== 'night' ? 'night' : styleId
-    const base = PRESETS[effectiveStyleId] ?? PRESETS.book
-    return resolveStyle(base, overrides)
+    const base = PRESETS[styleId] ?? PRESETS.book
+    return resolveStyle(base, overrides, isEffectiveDark)
   }, [styleId, overrides, isEffectiveDark])
 
   // Pacer hook
@@ -282,7 +280,18 @@ export function Reader({ bookId }: { bookId: string }) {
         if (cancelled || !containerRef.current) return
 
         const isChinese = bookLanguage?.toLowerCase().startsWith('zh')
-        const initialStyleId: StyleId = savedSettings?.styleId ?? (isChinese ? 'song' : 'book')
+        let rawStyleId = savedSettings?.styleId as StyleId | 'night' | undefined
+        let initialThemeMode: 'auto' | 'light' | 'dark' = 'auto'
+        if (appSettings.themeMode) {
+          initialThemeMode = appSettings.themeMode
+        } else if (appSettings.autoNightMode !== undefined) {
+          initialThemeMode = appSettings.autoNightMode ? 'auto' : 'light'
+        }
+        if (rawStyleId === 'night') {
+          rawStyleId = 'book'
+          initialThemeMode = 'dark'
+        }
+        const initialStyleId: StyleId = (rawStyleId && PRESETS[rawStyleId as StyleId] ? rawStyleId as StyleId : undefined) ?? (isChinese ? 'song' : 'book')
         const initialOverrides: StyleOverride = savedSettings?.overrides ?? {}
         const initialFlow = savedSettings?.flow ?? 'paginated'
 
@@ -290,20 +299,18 @@ export function Reader({ bookId }: { bookId: string }) {
         setOverrides(initialOverrides)
         setFlow(initialFlow)
         setBookmarks(savedBookmarks)
-        if (appSettings.themeMode) {
-          setThemeMode(appSettings.themeMode)
-        } else if (appSettings.autoNightMode !== undefined) {
-          setThemeMode(appSettings.autoNightMode ? 'auto' : 'light')
-        }
+        setThemeMode(initialThemeMode)
         if (appSettings.pacerWpm) setPacerWpm(appSettings.pacerWpm)
         if (appSettings.pacerChunkSize) setPacerChunkSize(appSettings.pacerChunkSize)
 
         lastKnownPercentage = savedProgress?.percentage ?? null
         setPercentage(lastKnownPercentage)
 
+        const isInitialDark = initialThemeMode === 'dark' || (initialThemeMode === 'auto' && (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)')?.matches))
         const initialResolved = resolveStyle(
           PRESETS[initialStyleId] ?? PRESETS.book,
           initialOverrides,
+          Boolean(isInitialDark)
         )
 
         reader = await createReader(containerRef.current, data, savedProgress?.cfi ?? null, {
@@ -770,6 +777,7 @@ export function Reader({ bookId }: { bookId: string }) {
           overrides={overrides}
           flow={flow}
           themeMode={themeMode}
+          isDark={isEffectiveDark}
           onStyleSelect={handleStyleSelect}
           onOverridesChange={handleOverridesChange}
           onFlowChange={handleFlowChange}

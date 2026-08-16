@@ -96,8 +96,8 @@ describe('web storage port', () => {
     await storage.saveBookSettings(bookSettings)
     expect(await storage.getBookSettings(book.id)).toEqual(bookSettings)
 
-    await storage.saveAppSettings({ defaultStyleId: 'night', pacerWpm: 300 })
-    expect(await storage.getAppSettings()).toEqual({ defaultStyleId: 'night', pacerWpm: 300 })
+    await storage.saveAppSettings({ defaultStyleId: 'sepia', pacerWpm: 300 })
+    expect(await storage.getAppSettings()).toEqual({ defaultStyleId: 'sepia', pacerWpm: 300 })
   })
 
   it('adds, lists, and deletes bookmarks', async () => {

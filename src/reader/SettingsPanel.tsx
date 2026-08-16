@@ -7,6 +7,7 @@ interface SettingsPanelProps {
   overrides: StyleOverride
   flow: 'paginated' | 'scrolled-doc'
   themeMode: 'auto' | 'light' | 'dark'
+  isDark: boolean
   onStyleSelect: (id: StyleId) => void
   onOverridesChange: (overrides: StyleOverride) => void
   onFlowChange: (flow: 'paginated' | 'scrolled-doc') => void
@@ -28,6 +29,7 @@ export function SettingsPanel({
   overrides,
   flow,
   themeMode,
+  isDark,
   onStyleSelect,
   onOverridesChange,
   onFlowChange,
@@ -39,7 +41,7 @@ export function SettingsPanel({
   const lineHeightStep = overrides.lineHeightStep ?? 0
   const marginStep = overrides.marginStep ?? 0
   const bold = Boolean(overrides.bold)
-  const justify = overrides.justify ?? (PRESETS[currentStyleId].body.align === 'justify')
+  const justify = overrides.justify ?? (PRESETS[currentStyleId]?.body.align === 'justify')
 
   return (
     <div
@@ -89,22 +91,23 @@ export function SettingsPanel({
           </div>
         </div>
 
-        {/* 6 Preset theme swatches */}
+        {/* 6 Preset theme swatches with theme-aware preview palette */}
         <div>
-          <label className="mb-2 block text-[11px] font-medium text-neutral-500 dark:text-neutral-400">风格预设</label>
+          <label className="mb-2 block text-[11px] font-medium text-neutral-500 dark:text-neutral-400">排版风格</label>
           <div className="grid grid-cols-3 gap-2">
             {(Object.keys(PRESETS) as StyleId[]).map((id) => {
               const preset = PRESETS[id]
               const isSelected = currentStyleId === id
+              const palette = isDark ? preset.darkPalette : preset.lightPalette
               return (
                 <button
                   key={id}
                   type="button"
                   onClick={() => onStyleSelect(id)}
                   style={{
-                    backgroundColor: preset.palette.background,
-                    color: preset.palette.text,
-                    borderColor: isSelected ? preset.palette.accent : preset.palette.rule,
+                    backgroundColor: palette.background,
+                    color: palette.text,
+                    borderColor: isSelected ? palette.accent : palette.rule,
                   }}
                   className={`relative flex flex-col items-center justify-center rounded-xl border p-2.5 transition transform active:scale-95 ${
                     isSelected
@@ -117,7 +120,7 @@ export function SettingsPanel({
                   {isSelected && (
                     <span
                       className="absolute top-1 right-1.5 h-1.5 w-1.5 rounded-full"
-                      style={{ backgroundColor: preset.palette.accent }}
+                      style={{ backgroundColor: palette.accent }}
                     />
                   )}
                 </button>

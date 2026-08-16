@@ -1,4 +1,4 @@
-export type StyleId = 'book' | 'sepia' | 'night' | 'journal' | 'news' | 'song'
+export type StyleId = 'book' | 'sepia' | 'modern' | 'journal' | 'news' | 'song'
 
 export interface Palette {
   background: string
@@ -34,7 +34,8 @@ export interface ElementsTypography {
 export interface ReadingStyle {
   id: StyleId
   name: string
-  palette: Palette
+  lightPalette: Palette
+  darkPalette: Palette
   body: BodyTypography
   elements: ElementsTypography
 }

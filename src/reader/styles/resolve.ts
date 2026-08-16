@@ -1,6 +1,10 @@
 import type { ReadingStyle, ResolvedStyle, StyleOverride } from './types'
 
-export function resolveStyle(style: ReadingStyle, override: StyleOverride = {}): ResolvedStyle {
+export function resolveStyle(
+  style: ReadingStyle,
+  override: StyleOverride = {},
+  isDark: boolean = false,
+): ResolvedStyle {
   const isCjk = Boolean(style.body.isCjk)
 
   // Font size step: each step adjusts font size by 2px (bounded 12px..36px)
@@ -9,7 +13,10 @@ export function resolveStyle(style: ReadingStyle, override: StyleOverride = {}):
 
   // Line height step: -1 (tight: base - 0.15), 0 (normal: base), 1 (loose: base + 0.15)
   const lineHeightStep = override.lineHeightStep ?? 0
-  const lineHeight = Math.max(1.2, Math.min(2.4, Number((style.body.lineHeight + lineHeightStep * 0.15).toFixed(2))))
+  const lineHeight = Math.max(
+    1.2,
+    Math.min(2.4, Number((style.body.lineHeight + lineHeightStep * 0.15).toFixed(2))),
+  )
 
   // Margin step: -1 (narrow margin -> wider measure), 0 (normal), 1 (wide margin -> narrower measure)
   // For CJK: step is 4 characters. For Western: step is 8 characters.
@@ -28,16 +35,22 @@ export function resolveStyle(style: ReadingStyle, override: StyleOverride = {}):
   }
 
   // Alignment: if explicitly specified, override preset
-  const align = override.justify !== undefined && override.justify !== null
-    ? (override.justify ? 'justify' : 'start')
-    : style.body.align
+  const align =
+    override.justify !== undefined && override.justify !== null
+      ? override.justify
+        ? 'justify'
+        : 'start'
+      : style.body.align
 
   // Bold: if true, weight 700
   const fontWeight = override.bold ? 700 : undefined
 
+  // Pick palette based on isDark mode
+  const palette = isDark ? { ...style.darkPalette } : { ...style.lightPalette }
+
   return {
     id: style.id,
-    palette: { ...style.palette },
+    palette,
     body: {
       ...style.body,
       fontStack,
