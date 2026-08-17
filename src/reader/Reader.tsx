@@ -104,6 +104,7 @@ export function Reader({ bookId }: { bookId: string }) {
   const showSettingsRef = useRef(showSettings)
   const showTocRef = useRef(showToc)
   const showPacerControlsRef = useRef(showPacerControls)
+  const pacerPopoverRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     pacerRef.current = pacer
@@ -111,6 +112,26 @@ export function Reader({ bookId }: { bookId: string }) {
     showTocRef.current = showToc
     showPacerControlsRef.current = showPacerControls
   })
+
+  // Dismiss Pacer settings on click outside
+  useEffect(() => {
+    if (!showPacerControls) return
+
+    const handlePointerDown = (e: MouseEvent | TouchEvent) => {
+      if (pacerPopoverRef.current && !pacerPopoverRef.current.contains(e.target as Node)) {
+        const target = e.target as HTMLElement | null
+        if (target?.closest('[data-pacer-toggle]')) return
+        setShowPacerControls(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('touchstart', handlePointerDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('touchstart', handlePointerDown)
+    }
+  }, [showPacerControls])
 
   // Measure-based maxWidth calculation that adapts to single vs double columns
   const measureMaxWidthPx = useMemo(() => {
@@ -255,7 +276,9 @@ export function Reader({ bookId }: { bookId: string }) {
         }
       } else if (event.key === 'Escape') {
         event.preventDefault()
-        if (showSettingsRef.current) {
+        if (showPacerControlsRef.current) {
+          setShowPacerControls(false)
+        } else if (showSettingsRef.current) {
           setShowSettings(false)
         } else if (showTocRef.current) {
           setShowToc(false)
@@ -330,6 +353,8 @@ export function Reader({ bookId }: { bookId: string }) {
           onKeyDown,
           onClickText() {
             pingActivity()
+            setShowPacerControls(false)
+            setShowSettings(false)
           },
           onLocation(loc) {
             if (cancelled) return
@@ -706,11 +731,16 @@ export function Reader({ bookId }: { bookId: string }) {
 
             <button
               type="button"
+              data-pacer-toggle="true"
               onClick={() => {
                 setShowPacerControls((v) => !v)
                 setChromeVisible(true)
               }}
-              className="rounded-full border border-black/10 px-3 py-1 text-[11px] font-medium hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10 transition"
+              className={`rounded-full border px-3 py-1 text-[11px] font-medium transition ${
+                showPacerControls
+                  ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/80 dark:text-blue-400 font-semibold'
+                  : 'border-black/10 hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10'
+              }`}
             >
               {pacerWpm} wpm · {pacerChunkSize}词
             </button>
@@ -745,11 +775,29 @@ export function Reader({ bookId }: { bookId: string }) {
 
         {/* Extended Pacer Settings Popover */}
         {showPacerControls && (
-          <div className="flex flex-col gap-3 p-4 rounded-3xl border border-black/10 dark:border-white/10 bg-white/95 dark:bg-neutral-900/95 shadow-2xl backdrop-blur-2xl text-xs animate-in fade-in zoom-in-95 duration-150 max-w-sm w-full">
+          <div
+            ref={pacerPopoverRef}
+            className="flex flex-col gap-3 p-4 rounded-3xl border border-black/[0.08] bg-white/95 dark:bg-[#1C1C1E]/95 shadow-[0_25px_60px_rgba(0,0,0,0.18)] backdrop-blur-2xl text-xs animate-in fade-in zoom-in-95 duration-150 max-w-sm w-full"
+          >
+            {/* Popover Header with Title and Explicit Close Button */}
+            <div className="flex items-center justify-between pb-2 border-b border-black/[0.06] dark:border-white/[0.06]">
+              <span className="text-[11px] font-semibold tracking-wider text-neutral-500 dark:text-neutral-400 uppercase">
+                自动阅读速度与分块
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowPacerControls(false)}
+                className="flex h-6 w-6 items-center justify-center rounded-full text-neutral-400 hover:bg-black/5 hover:text-neutral-700 dark:hover:bg-white/10 dark:hover:text-neutral-200 transition"
+                aria-label="关闭设置"
+              >
+                ✕
+              </button>
+            </div>
+
             {/* Speed Tier Presets */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
                   速度档位
                 </span>
                 {pacer.speedWarning && (
