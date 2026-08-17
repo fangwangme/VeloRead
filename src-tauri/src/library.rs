@@ -470,7 +470,13 @@ mod store {
             daily_stats.insert(
                 date,
                 DailyStat {
-                    duration_minutes: dur / 60,
+                    duration_minutes: if dur >= 30 {
+                        (dur + 30) / 60
+                    } else if dur > 0 {
+                        1
+                    } else {
+                        0
+                    },
                     words_read: words,
                 },
             );
@@ -485,7 +491,13 @@ mod store {
             .unwrap_or(0);
 
         Ok(OverallReadingStats {
-            total_duration_minutes: total_duration_seconds / 60,
+            total_duration_minutes: if total_duration_seconds >= 30 {
+                (total_duration_seconds + 30) / 60
+            } else if total_duration_seconds > 0 {
+                1
+            } else {
+                0
+            },
             total_words_read,
             total_books_read,
             current_streak_days: 0,
