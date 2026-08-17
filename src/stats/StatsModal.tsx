@@ -42,21 +42,21 @@ export function StatsModal({ onClose }: StatsModalProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-200"
+        className="fixed inset-0 bg-black/35 backdrop-blur-sm transition-opacity duration-300 animate-in fade-in"
         onClick={onClose}
         aria-hidden="true"
       />
 
       {/* Modal Card */}
-      <div className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col rounded-3xl border border-black/10 bg-white/95 p-6 shadow-2xl backdrop-blur-2xl dark:border-white/10 dark:bg-neutral-900/95 dark:text-neutral-100 animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between pb-4 border-b border-black/5 dark:border-white/5">
+      <div className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col rounded-3xl border border-black/[0.08] bg-white/94 p-6 shadow-[0_30px_70px_rgba(0,0,0,0.22),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-3xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/94 dark:text-neutral-100 animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between pb-4 border-b border-black/[0.06] dark:border-white/[0.06]">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-black/[0.04] dark:bg-white/[0.06] text-neutral-700 dark:text-neutral-200">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:bg-blue-400/15 dark:text-blue-400">
               <IconStats />
             </div>
             <div>
-              <h2 className="text-base font-bold tracking-tight">阅读数据与统计</h2>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              <h2 className="text-base font-semibold tracking-tight">阅读数据与统计</h2>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
                 记录专注阅读，见证心智成长
               </p>
             </div>
@@ -115,7 +115,7 @@ export function StatsModal({ onClose }: StatsModalProps) {
               </div>
 
               {/* Heatmap Activity Grid */}
-              <div className="rounded-2xl border border-black/5 bg-black/[0.02] p-5 dark:border-white/5 dark:bg-white/[0.03]">
+              <div className="rounded-2xl border border-black/[0.06] bg-black/[0.02] p-5 dark:border-white/[0.06] dark:bg-white/[0.03]">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-xs font-semibold tracking-wide text-neutral-700 dark:text-neutral-300">
                     近半年阅读热力图 (Activity Heatmap)
@@ -134,11 +134,11 @@ export function StatsModal({ onClose }: StatsModalProps) {
               </div>
 
               {/* Anti-idle note */}
-              <div className="rounded-xl border border-neutral-200/80 bg-neutral-50 p-3.5 text-xs text-neutral-600 dark:border-neutral-800 dark:bg-neutral-800/40 dark:text-neutral-300">
-                <div className="flex items-start gap-2.5">
-                  <span className="text-neutral-500 mt-0.5"><IconInfo /></span>
+              <div className="rounded-2xl border border-black/[0.06] bg-black/[0.02] p-4 text-xs text-neutral-600 dark:border-white/[0.06] dark:bg-white/[0.03] dark:text-neutral-300">
+                <div className="flex items-start gap-3">
+                  <span className="text-blue-500 mt-0.5"><IconInfo /></span>
                   <p className="leading-relaxed text-[11px] opacity-90">
-                    <strong>智能防挂机机制：</strong>
+                    <strong className="text-neutral-900 dark:text-white">智能防挂机机制：</strong>
                     为保证统计客观真实，单页停留超过 5 分钟无操作将自动暂停计时；页面切至后台或窗口失焦时立即暂停，翻页或互动后自动续接。
                   </p>
                 </div>
@@ -163,7 +163,7 @@ function MetricCard({
   icon: ReactNode
 }) {
   return (
-    <div className="flex flex-col justify-between rounded-2xl border border-black/5 bg-black/[0.02] p-4 dark:border-white/5 dark:bg-white/[0.03]">
+    <div className="flex flex-col justify-between rounded-2xl border border-black/[0.06] bg-black/[0.02] p-4 dark:border-white/[0.06] dark:bg-white/[0.03] transition hover:bg-black/[0.03] dark:hover:bg-white/[0.05]">
       <div className="flex items-center justify-between text-neutral-400 text-xs mb-2">
         <span className="font-medium text-[11px]">{label}</span>
         <span className="opacity-70">{icon}</span>
