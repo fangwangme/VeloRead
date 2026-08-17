@@ -60,7 +60,7 @@ export function Reader({ bookId }: { bookId: string }) {
   const [jumpOrigin, setJumpOrigin] = useState<string | null>(null)
 
   // Pacer state
-  const [pacerWpm, setPacerWpm] = useState(250)
+  const [pacerWpm, setPacerWpm] = useState(300)
   const [pacerChunkSize, setPacerChunkSize] = useState(3)
   const [showPacerControls, setShowPacerControls] = useState(false)
 
@@ -761,10 +761,10 @@ export function Reader({ bookId }: { bookId: string }) {
               </div>
               <div className="grid grid-cols-4 gap-1.5">
                 {[
-                  { label: '初学', wpm: 180, sub: '180' },
-                  { label: '标准', wpm: 260, sub: '260' },
-                  { label: '进阶', wpm: 380, sub: '380' },
-                  { label: '极速', wpm: 550, sub: '550' },
+                  { label: '初学', wpm: 200, sub: '200 wpm' },
+                  { label: '母语', wpm: 300, sub: '300 wpm' },
+                  { label: '进阶', wpm: 420, sub: '420 wpm' },
+                  { label: '极速', wpm: 600, sub: '600 wpm' },
                 ].map((tier) => {
                   const isSelected = pacerWpm === tier.wpm
                   return (
@@ -775,14 +775,14 @@ export function Reader({ bookId }: { bookId: string }) {
                         setPacerWpm(tier.wpm)
                         void getStorage().then((s) => s.saveAppSettings({ pacerWpm: tier.wpm }))
                       }}
-                      className={`flex flex-col items-center justify-center py-1.5 px-2 rounded-xl border transition ${
+                      className={`flex flex-col items-center justify-center py-2 px-1.5 rounded-2xl border transition ${
                         isSelected
-                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 font-semibold shadow-2xs'
-                          : 'border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.03] text-neutral-700 dark:text-neutral-300 hover:bg-black/5 dark:hover:bg-white/5'
+                          ? 'border-blue-500/80 bg-blue-500/10 text-blue-600 dark:text-blue-400 font-semibold shadow-2xs'
+                          : 'border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.03] text-neutral-700 dark:text-neutral-300 hover:bg-black/[0.05] dark:hover:bg-white/[0.06]'
                       }`}
                     >
-                      <span className="text-[11px]">{tier.label}</span>
-                      <span className="text-[9px] opacity-60 font-mono">{tier.sub}</span>
+                      <span className="text-[11px] font-medium">{tier.label}</span>
+                      <span className="text-[9px] opacity-60 font-mono mt-0.5">{tier.sub}</span>
                     </button>
                   )
                 })}
