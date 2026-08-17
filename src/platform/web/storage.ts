@@ -229,7 +229,8 @@ export function createWebStorage(): StoragePort {
       const tx = handle().transaction(READING_SESSIONS, 'readonly')
       const sessions = await request<ReadingSession[]>(tx.objectStore(READING_SESSIONS).getAll())
 
-      const dailyStats: Record<string, { durationMinutes: number; wordsRead: number }> = {}
+      const dailySeconds: Record<string, number> = {}
+      const dailyWords: Record<string, number> = {}
       let totalDurationSeconds = 0
       let totalWordsRead = 0
       const distinctBooks = new Set<string>()
@@ -239,11 +240,17 @@ export function createWebStorage(): StoragePort {
         totalWordsRead += s.wordsRead
         distinctBooks.add(s.bookId)
 
-        if (!dailyStats[s.date]) {
-          dailyStats[s.date] = { durationMinutes: 0, wordsRead: 0 }
+        dailySeconds[s.date] = (dailySeconds[s.date] ?? 0) + s.durationSeconds
+        dailyWords[s.date] = (dailyWords[s.date] ?? 0) + s.wordsRead
+      }
+
+      const dailyStats: Record<string, { durationMinutes: number; wordsRead: number }> = {}
+      for (const date of Object.keys(dailySeconds)) {
+        const secs = dailySeconds[date]
+        dailyStats[date] = {
+          durationMinutes: secs >= 30 ? Math.max(1, Math.round(secs / 60)) : (secs > 0 ? 1 : 0),
+          wordsRead: dailyWords[date] ?? 0,
         }
-        dailyStats[s.date].durationMinutes += Math.round(s.durationSeconds / 60)
-        dailyStats[s.date].wordsRead += s.wordsRead
       }
 
       // Calculate streak

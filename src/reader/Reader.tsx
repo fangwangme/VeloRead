@@ -68,6 +68,7 @@ export function Reader({ bookId }: { bookId: string }) {
   const pageDwellSecondsRef = useRef(0)
   const sessionBufferSecondsRef = useRef(0)
   const sessionBufferWordsRef = useRef(0)
+  const currentPageWordsRef = useRef(0)
 
   // System dark detection
   const [systemDark, setSystemDark] = useState(() =>
@@ -198,28 +199,42 @@ export function Reader({ bookId }: { bookId: string }) {
     flushReadingSessionRef.current = flushReadingSession
   })
 
-  // Active reading second ticker with 5-minute page dwell limit
+  // Active reading second ticker with 5-minute page dwell limit & visibility pause
   useEffect(() => {
     const interval = setInterval(() => {
-      // Pause if tab is hidden or modal is open
+      // Pause if tab is hidden or modals are open
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
       if (showSettings || showToc) return
 
-      // Anti-idle check: capped at MAX_PAGE_DWELL_SECONDS per page
+      // Anti-idle check: capped at MAX_PAGE_DWELL_SECONDS (300s = 5 mins) per page
       if (pageDwellSecondsRef.current < MAX_PAGE_DWELL_SECONDS) {
         pageDwellSecondsRef.current += 1
         sessionBufferSecondsRef.current += 1
       }
     }, 1000)
 
-    // Flush session periodically every 30 seconds
+    // Flush session periodically every 15 seconds
     const flushInterval = setInterval(() => {
       void flushReadingSessionRef.current()
-    }, 30000)
+    }, 15000)
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        void flushReadingSessionRef.current()
+      }
+    }
+    const onBeforeUnload = () => {
+      void flushReadingSessionRef.current()
+    }
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('beforeunload', onBeforeUnload)
 
     return () => {
       clearInterval(interval)
       clearInterval(flushInterval)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('beforeunload', onBeforeUnload)
       void flushReadingSessionRef.current()
     }
   }, [bookId, showSettings, showToc])
@@ -372,14 +387,22 @@ export function Reader({ bookId }: { bookId: string }) {
             clearTimeout(saveTimer)
             saveTimer = setTimeout(() => void flush(), SAVE_DEBOUNCE_MS)
 
-            // Page turned: reset page dwell seconds and accumulate words read estimate
-            pageDwellSecondsRef.current = 0
-            if (reader) {
-              const words = reader.getVisibleWords()
-              sessionBufferWordsRef.current += words.length > 0 ? words.length : 200
+            // Credit words read from previous page if user genuinely read it (dwell >= 3s or Pacer was active)
+            if (pageDwellSecondsRef.current >= 3 || pacerRef.current.isPlaying) {
+              if (currentPageWordsRef.current > 0) {
+                sessionBufferWordsRef.current += currentPageWordsRef.current
+              }
             }
 
+            // Page turned: reset page dwell seconds for new page
+            pageDwellSecondsRef.current = 0
+
+            // Measure visible words on the newly rendered page
             setTimeout(() => {
+              if (reader) {
+                const words = reader.getVisibleWords()
+                currentPageWordsRef.current = words.length > 0 ? words.length : 250
+              }
               if (!pacerRef.current.isPlaying) {
                 pacerRef.current.recalculateGeometry(false)
               }
@@ -412,7 +435,16 @@ export function Reader({ bookId }: { bookId: string }) {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('mousemove', pingActivity)
       if (hideChromeTimerRef.current) clearTimeout(hideChromeTimerRef.current)
+
+      // Credit final page words if spent >= 3s
+      if (pageDwellSecondsRef.current >= 3 || pacerRef.current.isPlaying) {
+        if (currentPageWordsRef.current > 0) {
+          sessionBufferWordsRef.current += currentPageWordsRef.current
+        }
+      }
+
       void flushAndRefreshShelf()
+      void flushReadingSessionRef.current()
       handleRef.current = null
       setHandle(null)
       reader?.destroy()
