@@ -625,24 +625,67 @@ export function Reader({ bookId }: { bookId: string }) {
               title="返回跳转前的位置"
             >
               <IconReturn />
-              <span>返回原位</span>
+              <span className="hidden sm:inline">返回原位</span>
             </button>
           )}
+
+          {/* Aa Typography & Theme Settings Button */}
           <button
             type="button"
             className={`flex items-center justify-center rounded-full border px-3.5 py-1.5 text-xs font-serif font-bold backdrop-blur-md shadow-xs transition ${
               showSettings
-                ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/80 dark:text-blue-400'
+                ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/80 dark:text-blue-400 font-bold shadow-xs'
                 : 'border-black/10 bg-white/60 hover:bg-white hover:border-black/20 dark:border-white/10 dark:bg-black/40 dark:hover:bg-black/70'
             }`}
             onClick={() => {
               setShowSettings((v) => !v)
+              setShowPacerControls(false)
               setChromeVisible(true)
             }}
             title="排版与显示设置 (A)"
           >
             Aa
           </button>
+
+          {/* Pacer Auto-Reading Segmented Capsule in Top-Right Toolbar */}
+          <div className="flex items-center rounded-full border border-black/10 bg-white/60 dark:border-white/10 dark:bg-black/40 backdrop-blur-md p-0.5 shadow-xs">
+            {/* Play/Pause Button */}
+            <button
+              type="button"
+              onClick={pacer.toggle}
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition active:scale-95 ${
+                pacer.isPlaying
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'bg-blue-600 text-white hover:bg-blue-700 shadow-xs'
+              }`}
+              title={pacer.isPlaying ? '暂停自动阅读 (Space)' : '开启自动阅读 (Space)'}
+            >
+              {pacer.isPlaying ? <IconPause /> : <IconPlay />}
+              <span className="hidden sm:inline font-medium">{pacer.isPlaying ? '暂停' : '自动阅读'}</span>
+            </button>
+
+            {/* Speed Pill trigger */}
+            <button
+              type="button"
+              data-pacer-toggle="true"
+              onClick={() => {
+                setShowPacerControls((v) => !v)
+                setShowSettings(false)
+                setChromeVisible(true)
+              }}
+              className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-mono font-medium transition ${
+                showPacerControls
+                  ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/80 dark:text-blue-400 font-semibold'
+                  : 'text-neutral-700 dark:text-neutral-300 hover:bg-black/5 dark:hover:bg-white/10'
+              }`}
+              title="设置自动阅读速度与分块"
+            >
+              <span>{pacerWpm} wpm</span>
+              {pacer.speedWarning && (
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" title="极速模式" />
+              )}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -696,104 +739,67 @@ export function Reader({ bookId }: { bookId: string }) {
         )}
       </div>
 
-      {/* Bottom Quiet Footer (Always softly visible at bottom edge) */}
-      <div className="fixed bottom-2 inset-x-0 z-20 flex justify-center pointer-events-none">
-        <PositionInfo
-          chapterTitle={location?.chapterTitle}
-          pagesLeftInChapter={location?.pagesLeftInChapter}
-          percentage={percentage}
-        />
-      </div>
-
-      {/* Bottom Floating Control Bar (Auto-hiding interactive pill) */}
+      {/* Bottom Floating Control & Page Turn Bar (Minimal, Apple Books style) */}
       <footer
-        className={`fixed bottom-8 inset-x-0 z-30 flex flex-col items-center justify-center gap-2 px-6 transition-all duration-300 ${
+        className={`fixed bottom-6 inset-x-0 z-30 flex items-center justify-between px-8 pointer-events-none transition-all duration-300 ${
           chromeVisible
-            ? 'opacity-100 translate-y-0 pointer-events-auto'
-            : 'opacity-0 translate-y-4 pointer-events-none'
+            ? 'opacity-100 translate-y-0'
+            : 'opacity-0 translate-y-3'
         }`}
       >
-        {/* Pacer Control Floating Capsule */}
-        <div className="flex items-center gap-3 rounded-full border border-black/10 bg-white/85 px-4 py-1.5 shadow-[0_8px_30px_rgba(0,0,0,0.12)] backdrop-blur-xl dark:border-white/10 dark:bg-neutral-900/85">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={pacer.toggle}
-              className={`flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold transition active:scale-95 shadow-xs ${
-                pacer.isPlaying
-                  ? 'bg-amber-600 text-white hover:bg-amber-700'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}
-            >
-              {pacer.isPlaying ? <IconPause /> : <IconPlay />}
-              <span>{pacer.isPlaying ? '暂停' : '自动阅读'}</span>
-            </button>
-
-            <button
-              type="button"
-              data-pacer-toggle="true"
-              onClick={() => {
-                setShowPacerControls((v) => !v)
-                setChromeVisible(true)
-              }}
-              className={`rounded-full border px-3 py-1 text-[11px] font-medium transition ${
-                showPacerControls
-                  ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/80 dark:text-blue-400 font-semibold'
-                  : 'border-black/10 hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10'
-              }`}
-            >
-              {pacerWpm} wpm · {pacerChunkSize}词
-            </button>
-
-            {pacer.speedWarning && (
-              <span className="flex items-center text-[10px] text-amber-600 dark:text-amber-400 font-medium" title="超过 500 wpm 后理解率会显著下降">
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500 mr-1" />
-                极速模式
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              className="rounded-full p-1.5 text-neutral-600 hover:bg-black/5 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-white/10 dark:hover:text-white transition"
-              onClick={() => void handleRef.current?.prev()}
-              title="上一页 (←)"
-            >
-              <IconChevronLeft />
-            </button>
-            <button
-              type="button"
-              className="rounded-full p-1.5 text-neutral-600 hover:bg-black/5 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-white/10 dark:hover:text-white transition"
-              onClick={() => void handleRef.current?.next()}
-              title="下一页 (→)"
-            >
-              <IconChevronRight />
-            </button>
-          </div>
+        <div className="pointer-events-auto">
+          <button
+            type="button"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.08)] backdrop-blur-xl text-neutral-700 hover:bg-white hover:text-neutral-900 dark:border-white/10 dark:bg-black/60 dark:text-neutral-300 dark:hover:bg-black/90 dark:hover:text-white transition active:scale-95"
+            onClick={() => void handleRef.current?.prev()}
+            title="上一页 (←)"
+          >
+            <IconChevronLeft />
+          </button>
         </div>
 
-        {/* Extended Pacer Settings Popover */}
-        {showPacerControls && (
-          <div
-            ref={pacerPopoverRef}
-            className="flex flex-col gap-3 p-4 rounded-3xl border border-black/[0.08] bg-white/95 dark:bg-[#1C1C1E]/95 shadow-[0_25px_60px_rgba(0,0,0,0.18)] backdrop-blur-2xl text-xs animate-in fade-in zoom-in-95 duration-150 max-w-sm w-full"
-          >
-            {/* Popover Header with Title and Explicit Close Button */}
-            <div className="flex items-center justify-between pb-2 border-b border-black/[0.06] dark:border-white/[0.06]">
-              <span className="text-[11px] font-semibold tracking-wider text-neutral-500 dark:text-neutral-400 uppercase">
-                自动阅读速度与分块
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowPacerControls(false)}
-                className="flex h-6 w-6 items-center justify-center rounded-full text-neutral-400 hover:bg-black/5 hover:text-neutral-700 dark:hover:bg-white/10 dark:hover:text-neutral-200 transition"
-                aria-label="关闭设置"
-              >
-                ✕
-              </button>
-            </div>
+        <div className="pointer-events-auto rounded-full border border-black/10 bg-white/80 px-4 py-1.5 shadow-[0_2px_12px_rgba(0,0,0,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-black/60">
+          <PositionInfo
+            chapterTitle={location?.chapterTitle}
+            pagesLeftInChapter={location?.pagesLeftInChapter}
+            percentage={percentage}
+          />
+        </div>
 
+        <div className="pointer-events-auto">
+          <button
+            type="button"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.08)] backdrop-blur-xl text-neutral-700 hover:bg-white hover:text-neutral-900 dark:border-white/10 dark:bg-black/60 dark:text-neutral-300 dark:hover:bg-black/90 dark:hover:text-white transition active:scale-95"
+            onClick={() => void handleRef.current?.next()}
+            title="下一页 (→)"
+          >
+            <IconChevronRight />
+          </button>
+        </div>
+      </footer>
+
+      {/* Pacer Settings Popover (Anchored at top-right below toolbar) */}
+      {showPacerControls && (
+        <div
+          ref={pacerPopoverRef}
+          className="absolute right-6 top-16 z-50 w-88 rounded-3xl border border-black/[0.08] bg-white/95 p-5 shadow-[0_25px_60px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 animate-in fade-in zoom-in-95 duration-150"
+        >
+          {/* Popover Header with Title and Explicit Close Button */}
+          <div className="flex items-center justify-between pb-3.5 border-b border-black/[0.06] dark:border-white/[0.06]">
+            <h3 className="text-[11px] font-semibold tracking-wider text-neutral-500 dark:text-neutral-400 uppercase">
+              自动阅读速度与分块
+            </h3>
+            <button
+              type="button"
+              onClick={() => setShowPacerControls(false)}
+              className="flex h-6 w-6 items-center justify-center rounded-full text-neutral-400 hover:bg-black/5 hover:text-neutral-700 dark:hover:bg-white/10 dark:hover:text-neutral-200 transition"
+              aria-label="关闭设置"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="mt-4 space-y-4 text-xs">
             {/* Speed Tier Presets */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
@@ -803,7 +809,7 @@ export function Reader({ bookId }: { bookId: string }) {
                 {pacer.speedWarning && (
                   <span className="flex items-center text-[10px] text-amber-600 dark:text-amber-400 font-medium">
                     <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500 mr-1 animate-pulse" />
-                    极速模式 (理解率可能下降)
+                    极速模式
                   </span>
                 )}
               </div>
@@ -838,10 +844,10 @@ export function Reader({ bookId }: { bookId: string }) {
             </div>
 
             {/* Slider & Direct Numeric Input */}
-            <div className="pt-2 border-t border-black/5 dark:border-white/5">
+            <div>
               <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
-                  微调速度 (直接输入或拖动)
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+                  微调速度 (输入或拖动)
                 </span>
                 <div className="flex items-center gap-1">
                   <input
@@ -903,11 +909,11 @@ export function Reader({ bookId }: { bookId: string }) {
             </div>
 
             {/* Chunk Size Selector */}
-            <div className="pt-2 border-t border-black/5 dark:border-white/5 flex items-center justify-between">
-              <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
+            <div className="pt-3 border-t border-black/[0.06] dark:border-white/[0.06] flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
                 每次高亮词数
               </span>
-              <div className="flex rounded-xl border border-black/10 dark:border-white/10 overflow-hidden bg-black/[0.02] dark:bg-white/[0.02] p-0.5">
+              <div className="flex rounded-xl bg-black/[0.04] p-1 dark:bg-white/[0.06]">
                 {[1, 2, 3, 4, 5].map((size) => (
                   <button
                     key={size}
@@ -916,10 +922,10 @@ export function Reader({ bookId }: { bookId: string }) {
                       setPacerChunkSize(size)
                       void getStorage().then((s) => s.saveAppSettings({ pacerChunkSize: size }))
                     }}
-                    className={`px-3 py-1 rounded-lg transition text-[11px] font-medium ${
+                    className={`px-2.5 py-1 rounded-lg transition text-[11px] font-medium ${
                       pacerChunkSize === size
-                        ? 'bg-white text-neutral-900 shadow-xs dark:bg-neutral-800 dark:text-white font-semibold'
-                        : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+                        ? 'bg-white text-neutral-900 shadow-[0_1px_3px_rgba(0,0,0,0.08)] dark:bg-[#2C2C2E] dark:text-white font-semibold'
+                        : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
                     }`}
                   >
                     {size}词
@@ -928,8 +934,8 @@ export function Reader({ bookId }: { bookId: string }) {
               </div>
             </div>
           </div>
-        )}
-      </footer>
+        </div>
+      )}
 
       {/* Settings Modal */}
       {showSettings && (
