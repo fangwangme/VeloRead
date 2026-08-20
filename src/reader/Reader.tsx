@@ -17,6 +17,7 @@ import type { StyleId, StyleOverride } from './styles/types'
 import { resolveStyle } from './styles/resolve'
 import { SettingsPanel } from './SettingsPanel'
 import { Toc } from './Toc'
+import { SearchPanel } from './SearchPanel'
 import { PositionInfo } from './PositionInfo'
 import { Overlay } from './pacer/Overlay'
 import { usePacer } from './pacer/usePacer'
@@ -38,6 +39,7 @@ import {
   IconPause,
   IconPlay,
   IconReturn,
+  IconSearch,
   IconToc,
 } from '../ui/icons'
 
@@ -81,6 +83,7 @@ export function Reader({
   // UI Panels
   const [showSettings, setShowSettings] = useState(false)
   const [showToc, setShowToc] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
   const [toc, setToc] = useState<TocItem[]>([])
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
 
@@ -201,13 +204,15 @@ export function Reader({
       document.visibilityState === 'visible' &&
       document.hasFocus() &&
       !showSettingsRef.current &&
-      !showTocRef.current,
+      !showTocRef.current &&
+      !showSearchRef.current,
     canCreditPage: () =>
       readerTrackableRef.current &&
       document.visibilityState === 'visible' &&
       document.hasFocus() &&
       !showSettingsRef.current &&
       !showTocRef.current &&
+      !showSearchRef.current &&
       !showPacerControlsRef.current &&
       !highlightDraftOpenRef.current,
     accentColor: resolvedStyle.palette.accent,
@@ -224,6 +229,7 @@ export function Reader({
   const highlightDraftOpenRef = useRef(false)
   const showSettingsRef = useRef(showSettings)
   const showTocRef = useRef(showToc)
+  const showSearchRef = useRef(showSearch)
   const showPacerControlsRef = useRef(showPacerControls)
   const pacerPopoverRef = useRef<HTMLDivElement>(null)
 
@@ -233,11 +239,13 @@ export function Reader({
     highlightDraftOpenRef.current = highlightDraft !== null
     showSettingsRef.current = showSettings
     showTocRef.current = showToc
+    showSearchRef.current = showSearch
     showPacerControlsRef.current = showPacerControls
     errorRef.current = error
   })
 
-  const blockingReaderPanelOpen = showSettings || showToc || highlightDraft !== null
+  const blockingReaderPanelOpen =
+    showSettings || showToc || showSearch || highlightDraft !== null
   const readerControlsDisabled = !ready || blockingReaderPanelOpen
   const pageNavigationDisabled = readerControlsDisabled || pacer.isPlaying
   const pausePacer = pacer.pause
@@ -306,11 +314,21 @@ export function Reader({
     if (hideChromeTimerRef.current) {
       clearTimeout(hideChromeTimerRef.current)
     }
-    if (showSettingsRef.current || showTocRef.current || showPacerControlsRef.current) {
+    if (
+      showSettingsRef.current ||
+      showTocRef.current ||
+      showSearchRef.current ||
+      showPacerControlsRef.current
+    ) {
       return
     }
     hideChromeTimerRef.current = setTimeout(() => {
-      if (!showSettingsRef.current && !showTocRef.current && !showPacerControlsRef.current) {
+      if (
+        !showSettingsRef.current &&
+        !showTocRef.current &&
+        !showSearchRef.current &&
+        !showPacerControlsRef.current
+      ) {
         setChromeVisible(false)
       }
     }, AUTO_HIDE_CHROME_MS)
@@ -333,6 +351,7 @@ export function Reader({
           panelOpen:
             showSettingsRef.current ||
             showTocRef.current ||
+            showSearchRef.current ||
             showPacerControlsRef.current ||
             highlightDraftOpenRef.current,
         })
@@ -415,7 +434,8 @@ export function Reader({
       )
       if (isInteractiveTarget && event.key !== 'Escape') return
 
-      const blockingPanelOpen = showSettingsRef.current || showTocRef.current
+      const blockingPanelOpen =
+        showSettingsRef.current || showTocRef.current || showSearchRef.current
 
       // Space: toggle Pacer (prevent scroll)
       if (event.code === 'Space' || event.key === ' ') {
@@ -448,6 +468,8 @@ export function Reader({
         event.preventDefault()
         if (showPacerControlsRef.current) {
           setShowPacerControls(false)
+        } else if (showSearchRef.current) {
+          setShowSearch(false)
         } else if (showSettingsRef.current) {
           setShowSettings(false)
         } else if (showTocRef.current) {
@@ -455,16 +477,25 @@ export function Reader({
         } else {
           closeBook()
         }
+      } else if (event.key === '/' || event.key === 'f' || event.key === 'F') {
+        if (!showSettingsRef.current && !showTocRef.current) {
+          event.preventDefault()
+          pacerRef.current.pause()
+          setShowSearch(true)
+          setShowPacerControls(false)
+        }
       } else if (event.key === 't' || event.key === 'T') {
         if (!showSettingsRef.current) {
           pacerRef.current.pause()
           setShowToc((v) => !v)
+          setShowSearch(false)
           setShowPacerControls(false)
         }
       } else if (event.key === 'a' || event.key === 'A') {
         if (!showTocRef.current) {
           pacerRef.current.pause()
           setShowSettings((v) => !v)
+          setShowSearch(false)
           setShowPacerControls(false)
         }
       }
@@ -1022,6 +1053,7 @@ export function Reader({
               pacer.pause()
               setShowToc((v) => !v)
               setShowSettings(false)
+              setShowSearch(false)
               setShowPacerControls(false)
               setChromeVisible(true)
             }}
@@ -1030,6 +1062,27 @@ export function Reader({
           >
             <IconToc className="opacity-70" />
             <span>目录</span>
+          </button>
+          <button
+            type="button"
+            className={`flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium backdrop-blur-md shadow-xs transition ${
+              showSearch
+                ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/80 dark:text-blue-400'
+                : 'border-black/10 bg-white/60 hover:bg-white hover:border-black/20 dark:border-white/10 dark:bg-black/40 dark:hover:bg-black/70'
+            }`}
+            onClick={() => {
+              pacer.pause()
+              setShowSearch((v) => !v)
+              setShowToc(false)
+              setShowSettings(false)
+              setShowPacerControls(false)
+              setChromeVisible(true)
+            }}
+            disabled={!ready}
+            title="书内搜索 (/)"
+          >
+            <IconSearch className="opacity-70" />
+            <span className="hidden sm:inline">搜索</span>
           </button>
         </div>
 
@@ -1068,6 +1121,7 @@ export function Reader({
               pacer.pause()
               setShowSettings((v) => !v)
               setShowToc(false)
+              setShowSearch(false)
               setShowPacerControls(false)
               setChromeVisible(true)
             }}
@@ -1417,6 +1471,20 @@ export function Reader({
           onOverridesChange={handleOverridesChange}
           onFlowChange={handleFlowChange}
           onClose={() => setShowSettings(false)}
+        />
+      )}
+
+      {showSearch && (
+        <SearchPanel
+          onSearch={(query, options) =>
+            handleRef.current?.searchBook(query, options) ?? Promise.resolve([])
+          }
+          onNavigate={(cfi) => {
+            if (location?.cfi) setJumpOrigin(location.cfi)
+            void handleRef.current?.display(cfi)
+            setShowSearch(false)
+          }}
+          onClose={() => setShowSearch(false)}
         />
       )}
 
