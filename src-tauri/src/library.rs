@@ -750,6 +750,17 @@ mod store {
         Ok(())
     }
 
+    /// Minutes shown for a span of reading. Mirrors `roundedMinutes()` in
+    /// `src/platform/web/storage.ts`: round to the nearest minute, but never
+    /// round a session that happened down to zero.
+    fn rounded_minutes(seconds: i64) -> i64 {
+        if seconds <= 0 {
+            0
+        } else {
+            std::cmp::max(1, (seconds + 30) / 60)
+        }
+    }
+
     pub fn get_reading_stats(connection: &Connection) -> rusqlite::Result<OverallReadingStats> {
         let mut stmt = connection.prepare(
             "SELECT date, SUM(duration_seconds), SUM(latin_words_read),
@@ -760,7 +771,7 @@ mod store {
         )?;
 
         let mut daily_stats = std::collections::HashMap::new();
-        let mut total_duration_seconds: i64 = 0;
+        let mut total_duration_minutes: i64 = 0;
         let mut total_latin_words_read: i64 = 0;
         let mut total_cjk_characters_read: i64 = 0;
 
@@ -774,19 +785,18 @@ mod store {
 
         for row in rows {
             let (date, dur, latin_words, cjk_characters) = row?;
-            total_duration_seconds += dur;
+            let duration_minutes = rounded_minutes(dur);
+            // The grand total is the sum of the per-day minutes, not the
+            // rounding of the grand total in seconds: the check-in calendar
+            // shows the daily numbers, and a total that does not add up to them
+            // reads as a bug in the stats.
+            total_duration_minutes += duration_minutes;
             total_latin_words_read += latin_words;
             total_cjk_characters_read += cjk_characters;
             daily_stats.insert(
                 date,
                 DailyStat {
-                    duration_minutes: if dur >= 30 {
-                        (dur + 30) / 60
-                    } else if dur > 0 {
-                        1
-                    } else {
-                        0
-                    },
+                    duration_minutes,
                     latin_words_read: latin_words,
                     cjk_characters_read: cjk_characters,
                 },
@@ -802,13 +812,7 @@ mod store {
             .unwrap_or(0);
 
         Ok(OverallReadingStats {
-            total_duration_minutes: if total_duration_seconds >= 30 {
-                (total_duration_seconds + 30) / 60
-            } else if total_duration_seconds > 0 {
-                1
-            } else {
-                0
-            },
+            total_duration_minutes,
             total_latin_words_read,
             total_cjk_characters_read,
             total_books_read,

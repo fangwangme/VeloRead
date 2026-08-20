@@ -10,6 +10,7 @@ import type {
   TocItem,
 } from '../platform/types'
 import { useLibrary } from '../library/store'
+import { newId } from '../platform/ids'
 import { createReader, type ReaderHandle, type ReaderLocation } from './renderer'
 import { HighlightPopover, type HighlightDraft } from './annotations/HighlightPopover'
 import { PRESETS } from './styles/presets'
@@ -137,19 +138,20 @@ export function Reader({
   const [sessionBuffer] = useState(
     () =>
       new ReadingSessionBuffer(async (snapshot) => {
-        const now = new Date()
-        const date = localDateKey(now)
+        // The day comes from the snapshot, not from `new Date()`: a session
+        // that ran past midnight is already split into per-day buckets, and
+        // stamping the write time would move the evening onto tomorrow.
         const storage = await getStorage()
         await storage.recordReadingSession({
-          id: `sess-${bookId}-${date}`,
+          id: `sess-${bookId}-${snapshot.date}`,
           bookId,
-          date,
+          date: snapshot.date,
           durationSeconds: snapshot.durationSeconds,
           latinWordsRead: snapshot.latinWords,
           cjkCharactersRead: snapshot.cjkCharacters,
-          updatedAt: now.toISOString(),
+          updatedAt: new Date().toISOString(),
         })
-      }),
+      }, localDateKey(new Date())),
   )
 
   const flushReadingSession = useCallback(
@@ -231,7 +233,6 @@ export function Reader({
       !showSearchRef.current &&
       !showPacerControlsRef.current &&
       !highlightDraftOpenRef.current,
-    accentColor: resolvedStyle.palette.accent,
   })
   const pacerUsesCjkUnits = pacer.dominantUnit === 'cjk'
   const pacerSpeed = pacerUsesCjkUnits ? pacerCpm : pacerWpm
@@ -381,6 +382,10 @@ export function Reader({
       ) {
         return
       }
+
+      // Seal the previous day before crediting this second to it. Reading
+      // through midnight is normal; the two halves belong to two days.
+      sessionBuffer.setDate(localDateKey(new Date()))
 
       // Anti-idle check: capped at MAX_PAGE_DWELL_SECONDS (300s = 5 mins) per page
       if (pageDwellSecondsRef.current < MAX_PAGE_DWELL_SECONDS) {
@@ -640,8 +645,14 @@ export function Reader({
             setShowPacerControls(false)
             setShowSettings(false)
             setShowToc(false)
+            // Re-selecting a passage that is already highlighted edits that
+            // highlight. Minting a second row for the same range would show two
+            // identical entries in the drawer while epub.js keeps one mark per
+            // range — and deleting either would erase the other's colour.
+            const existing =
+              annotationsRef.current.find((item) => item.cfiRange === cfiRange) ?? null
             setHighlightDraft({
-              annotation: null,
+              annotation: existing,
               cfiRange,
               text,
               rect,
@@ -871,7 +882,7 @@ export function Reader({
     const next: Annotation = draft.annotation
       ? { ...draft.annotation, color, note, updatedAt: now }
       : {
-          id: crypto.randomUUID(),
+          id: newId(),
           bookId,
           cfiRange: draft.cfiRange,
           text: draft.text,
@@ -952,7 +963,7 @@ export function Reader({
     const excerpt =
       firstWordsOnPage() || location.chapterTitle || `位置 ${Math.round((percentage ?? 0) * 100)}%`
     const newBm: Bookmark = {
-      id: crypto.randomUUID(),
+      id: newId(),
       bookId,
       cfi: location.cfi,
       text: excerpt,
@@ -1252,6 +1263,11 @@ export function Reader({
 
             {highlightDraft && (
               <HighlightPopover
+                // Keyed by the passage: the colour and the note are local state
+                // seeded from the draft, and re-pointing the same instance at
+                // another passage kept the previous one's note — which the next
+                // colour tap would then save onto the new highlight.
+                key={highlightDraft.annotation?.id ?? highlightDraft.cfiRange}
                 draft={highlightDraft}
                 bounds={highlightDraft.bounds}
                 onApply={(color, note) => void applyHighlight(color, note)}

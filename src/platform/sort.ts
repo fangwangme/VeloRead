@@ -12,18 +12,40 @@ export function compareBooks(a: BookRecord, b: BookRecord): number {
 }
 
 /**
+ * Compare two strings by Unicode code point, which is the order SQLite's
+ * default BINARY collation produces on UTF-8 text.
+ *
+ * Not `<` on the strings themselves: that compares UTF-16 code units, so an
+ * astral character (a book emoji, U+1F4D8) sorts *before* a high BMP one
+ * (U+FF21) even though its code point is far larger. Iterating the string
+ * yields whole code points, which restores the UTF-8 ordering.
+ */
+export function compareCodePoints(a: string, b: string): number {
+  if (a === b) return 0
+  const left = Array.from(a)
+  const right = Array.from(b)
+  const shared = Math.min(left.length, right.length)
+  for (let index = 0; index < shared; index++) {
+    const leftPoint = left[index].codePointAt(0) ?? 0
+    const rightPoint = right[index].codePointAt(0) ?? 0
+    if (leftPoint !== rightPoint) return leftPoint < rightPoint ? -1 : 1
+  }
+  return left.length - right.length
+}
+
+/**
  * Collection order, shared so both storage targets agree.
  *
- * Plain code-point order rather than `localeCompare`: SQLite's `ORDER BY name`
- * is code-point ordering and teaching it pinyin collation is not worth a
- * shelf list, but the two targets returning different orders for the same data
- * is a real inconsistency. `id` breaks ties so the order is total.
+ * Code-point order rather than `localeCompare`: SQLite's `ORDER BY name` is
+ * code-point ordering and teaching it pinyin collation is not worth a shelf
+ * list, but the two targets returning different orders for the same data is a
+ * real inconsistency. `id` breaks ties so the order is total.
  */
 export function compareCollections(
   a: { name: string; id: string },
   b: { name: string; id: string },
 ): number {
-  if (a.name !== b.name) return a.name < b.name ? -1 : 1
-  if (a.id === b.id) return 0
-  return a.id < b.id ? -1 : 1
+  const byName = compareCodePoints(a.name, b.name)
+  if (byName !== 0) return byName
+  return compareCodePoints(a.id, b.id)
 }

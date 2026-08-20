@@ -6,6 +6,7 @@ import { StatsModal } from '../stats/StatsModal'
 import { AppSettingsModal } from '../settings/AppSettingsModal'
 import { IconBook, IconClose, IconCollection, IconImport, IconSettings, IconStats } from '../ui/icons'
 import { ALL_BOOKS, BookCollectionMenu, CollectionBar, UNFILED } from './CollectionBar'
+import { useConfirm } from '../ui/useConfirm'
 
 const TOOLBAR_BUTTON_CLASS =
   'flex items-center gap-1.5 rounded-full border border-black/[0.08] bg-white/80 px-3.5 py-1.5 text-xs font-medium text-neutral-800 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-md transition hover:border-black/20 hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 active:scale-95 disabled:pointer-events-none disabled:opacity-50 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-neutral-200 dark:hover:bg-white/[0.1]'
@@ -34,6 +35,7 @@ export function Library({
   const [showStats, setShowStats] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [activeCollection, setActiveCollection] = useState<string>(ALL_BOOKS)
+  const { confirm, confirmDialog } = useConfirm()
 
   const visibleBooks = useMemo(() => {
     if (activeCollection === ALL_BOOKS) return books
@@ -143,7 +145,19 @@ export function Library({
             onSelect={setActiveCollection}
             onCreate={(name) => void createCollection(name)}
             onRename={(id, name) => void renameCollection(id, name)}
-            onDelete={(id) => void removeCollection(id)}
+            onDelete={(id) => {
+              const collection = collections.find((item) => item.id === id)
+              if (!collection) return
+              void (async () => {
+                const ok = await confirm({
+                  title: `删除合集「${collection.name}」？`,
+                  body: '合集里的书籍会保留在书库中，只是不再归入这个合集。',
+                  confirmLabel: '删除合集',
+                  cancelLabel: '取消',
+                })
+                if (ok) void removeCollection(id)
+              })()
+            }}
           />
         </div>
       )}
@@ -190,6 +204,7 @@ export function Library({
           onClose={() => setShowSettings(false)}
         />
       )}
+      {confirmDialog}
     </div>
   )
 }
@@ -202,6 +217,7 @@ function BookTile({ book }: { book: BookRecord }) {
   const selected = membership[book.id] ?? []
   const openBook = useLibrary((s) => s.openBook)
   const removeBook = useLibrary((s) => s.removeBook)
+  const { confirm, confirmDialog } = useConfirm()
 
   return (
     <li className="group relative">
@@ -264,11 +280,20 @@ function BookTile({ book }: { book: BookRecord }) {
         className="absolute right-2 top-9 hidden size-6 items-center justify-center rounded-full bg-black/60 text-xs text-white shadow-sm backdrop-blur-md transition hover:bg-red-600 focus-visible:flex focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 group-focus-within:flex group-hover:flex"
         onClick={(e) => {
           e.stopPropagation()
-          if (confirm(`确定从书库移除《${book.title}》吗？`)) void removeBook(book.id)
+          void (async () => {
+            const ok = await confirm({
+              title: `从书库移除《${book.title}》？`,
+              body: '书籍文件、阅读进度、书签与划线都会一并删除，无法恢复。',
+              confirmLabel: '移除书籍',
+              cancelLabel: '取消',
+            })
+            if (ok) void removeBook(book.id)
+          })()
         }}
       >
         <IconClose width={12} height={12} />
       </button>
+      {confirmDialog}
     </li>
   )
 }

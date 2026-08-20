@@ -21,7 +21,6 @@ interface UsePacerOptions {
   onPageConsumed?: () => void
   canAdvancePage?: () => boolean
   canCreditPage?: () => boolean
-  accentColor?: string
 }
 
 export function usePacer({

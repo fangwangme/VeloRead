@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SearchHit, SearchOptions } from './renderer'
 import { IconClose, IconSearch } from '../ui/icons'
+import { useModalDialog } from '../ui/useModalDialog'
 
 interface SearchPanelProps {
   onSearch: (query: string, options: SearchOptions) => Promise<SearchHit[]>
@@ -20,7 +21,10 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const abortRef = useRef<AbortController | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const panelRef = useModalDialog<HTMLElement>(onClose)
 
+  // Declared after useModalDialog, so this wins over the trap's first-focusable
+  // rule: the point of opening this panel is to type.
   useEffect(() => {
     inputRef.current?.focus()
   }, [])
@@ -50,15 +54,21 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
           if (!controller.signal.aborted) setProgress({ done, total })
         },
       })
-      if (controller.signal.aborted) return
+      // Only a *newer* search may discard this one's results. An aborted scan
+      // still returns everything it found before stopping, and throwing that
+      // away is what makes "停止" feel like "取消".
+      if (controller !== abortRef.current) return
       setHits(found)
-      setStatus('done')
+      setStatus(controller.signal.aborted ? 'cancelled' : 'done')
     } catch {
-      if (!controller.signal.aborted) setStatus('done')
+      if (controller !== abortRef.current) return
+      setStatus(controller.signal.aborted ? 'cancelled' : 'done')
     }
   }
 
   const cancel = () => {
+    // Status flips now so the button responds; the hits collected so far land
+    // when the in-flight pass unwinds.
     abortRef.current?.abort()
     setStatus('cancelled')
   }
@@ -75,6 +85,10 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
       />
 
       <aside
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
         className="fixed inset-y-0 left-0 z-50 flex w-92 flex-col border-r border-black/[0.08] bg-white/92 shadow-[0_25px_60px_rgba(0,0,0,0.18)] backdrop-blur-2xl vr-animate-drawer dark:border-white/[0.08] dark:bg-[#1C1C1E]/92 dark:text-neutral-100"
         aria-label="书内搜索"
       >
@@ -151,11 +165,14 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
 
           {status !== 'searching' && submitted && (
             <p className="mt-2.5 text-[10px] text-neutral-400" aria-live="polite">
-              {status === 'cancelled'
-                ? '已停止搜索'
-                : hits.length === 0
-                  ? `没有找到「${submitted}」`
-                  : `找到 ${hits.length}${hits.length >= MAX_HITS ? '+' : ''} 处「${submitted}」`}
+              {hits.length === 0
+                ? status === 'cancelled'
+                  ? '已停止搜索'
+                  : `没有找到「${submitted}」`
+                : `${status === 'cancelled' ? '已停止 · ' : ''}找到 ${hits.length}${
+                    hits.length >= MAX_HITS ? '+' : ''
+                  } 处「${submitted}」`}
+              {status === 'cancelled' && hits.length > 0 && ' · 仅为已扫描章节的结果'}
               {hits.length >= MAX_HITS && ' · 已达上限，请用更具体的词'}
             </p>
           )}

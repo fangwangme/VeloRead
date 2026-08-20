@@ -3,6 +3,8 @@ import type { Annotation, Bookmark, TocItem } from '../platform/types'
 import { IconBookmark, IconClose, IconHighlight, IconPlus, IconToc, IconTrash } from '../ui/icons'
 import { highlightPalette } from './annotations/colors'
 import { resolveActiveTocId } from './tocActive'
+import { useModalDialog } from '../ui/useModalDialog'
+import { useConfirm } from '../ui/useConfirm'
 
 /** Apple Books organizes this drawer as 目录 / 书签 / 划线笔记. */
 type DrawerTab = 'toc' | 'bookmarks' | 'annotations'
@@ -39,6 +41,28 @@ export function Toc({
   const [tab, setTab] = useState<DrawerTab>('toc')
   const activeTocId = resolveActiveTocId(toc, currentTocId, currentHref)
   const noteCount = annotations.filter((item) => item.note.trim().length > 0).length
+  const drawerRef = useModalDialog<HTMLElement>(onClose)
+  const { confirm, confirmDialog } = useConfirm()
+
+  const confirmDeleteBookmark = async (bookmark: Bookmark) => {
+    const ok = await confirm({
+      title: '删除这条书签？',
+      body: bookmark.text || undefined,
+      confirmLabel: '删除',
+      cancelLabel: '取消',
+    })
+    if (ok) onDeleteBookmark(bookmark.id)
+  }
+
+  const confirmDeleteAnnotation = async (annotation: Annotation) => {
+    const ok = await confirm({
+      title: annotation.note.trim() ? '删除这条划线和它的笔记？' : '删除这条划线？',
+      body: annotation.text,
+      confirmLabel: '删除',
+      cancelLabel: '取消',
+    })
+    if (ok) onDeleteAnnotation(annotation.id)
+  }
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
@@ -51,6 +75,10 @@ export function Toc({
 
       {/* Floating Left Drawer */}
       <aside
+        ref={drawerRef}
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
         className="fixed inset-y-0 left-0 z-50 flex w-92 flex-col border-r border-black/[0.08] bg-white/92 shadow-[0_25px_60px_rgba(0,0,0,0.18)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/92 dark:text-neutral-100 vr-animate-drawer"
         aria-label="目录、书签与划线抽屉"
       >
@@ -130,7 +158,7 @@ export function Toc({
                   <ListCard
                     key={bm.id}
                     onOpen={() => onNavigate(bm.cfi)}
-                    onDelete={() => onDeleteBookmark(bm.id)}
+                    onDelete={() => void confirmDeleteBookmark(bm)}
                     deleteLabel={`删除书签：${bm.text || '书签位置'}`}
                     createdAt={bm.createdAt}
                   >
@@ -167,7 +195,7 @@ export function Toc({
                       // Imported rows have no reliable anchor, so they are not
                       // given a jump affordance that would do nothing.
                       onOpen={imported ? undefined : () => onNavigateToAnnotation(annotation)}
-                      onDelete={() => onDeleteAnnotation(annotation.id)}
+                      onDelete={() => void confirmDeleteAnnotation(annotation)}
                       deleteLabel={`删除划线：${annotation.text.slice(0, 20)}`}
                       createdAt={annotation.createdAt}
                       meta={
@@ -205,6 +233,8 @@ export function Toc({
           )}
         </div>
       </aside>
+
+      {confirmDialog}
     </div>
   )
 }

@@ -387,9 +387,36 @@ export async function createReader(
       },
     })
 
+    // In scrolled flow the Pacer owns the whole spine section, so every token is
+    // wanted and there is nothing to cull.
+    const cullToViewport = !(includeWholeScrolledSection && currentFlow === 'scrolled-doc')
+    // One reusable range for the per-node test: measuring a whole text node once
+    // decides whether any of its tokens can be on this page. Without it every
+    // token in the section cost a `createRange()` plus a forced layout, so a
+    // long single-file chapter meant tens of thousands of layouts per page turn.
+    const probe = doc.createRange()
+
     let textNode: Text | null = walker.nextNode() as Text | null
     while (textNode) {
       const text = textNode.textContent ?? ''
+
+      if (cullToViewport) {
+        probe.selectNodeContents(textNode)
+        const nodeRect = probe.getBoundingClientRect()
+        // The union of the node's line boxes, so this only ever over-selects: a
+        // node it rejects had no fragment anywhere near the page.
+        const nodeVisible =
+          (nodeRect.width > 0 || nodeRect.height > 0) &&
+          iframeRect.left + nodeRect.right >= containerRect.left - 2 &&
+          iframeRect.left + nodeRect.left <= containerRect.right + 2 &&
+          iframeRect.top + nodeRect.bottom >= containerRect.top - 2 &&
+          iframeRect.top + nodeRect.top <= containerRect.bottom + 2
+        if (!nodeVisible) {
+          textNode = walker.nextNode() as Text | null
+          continue
+        }
+      }
+
       for (const token of tokenizeText(text)) {
         const { start, end } = token
 
@@ -581,6 +608,10 @@ export async function createReader(
       for (let index = 0; index < sections.length; index++) {
         if (signal?.aborted || hits.length >= limit) break
         const section = sections[index]
+        // A section the renderer is currently showing is already loaded, and
+        // `Section.unload()` clears `document`/`contents`/`output` on the very
+        // object the live view holds. Leave those exactly as they were found.
+        const wasAlreadyLoaded = Boolean(section.document)
         try {
           await section.load(book.load.bind(book))
           // `search` stitches sequential text nodes, so a phrase split across
@@ -602,10 +633,12 @@ export async function createReader(
         } catch {
           // A section that will not load is skipped; the rest still searches.
         } finally {
-          try {
-            section.unload()
-          } catch {
-            // Already unloaded.
+          if (!wasAlreadyLoaded) {
+            try {
+              section.unload()
+            } catch {
+              // Already unloaded.
+            }
           }
         }
 
@@ -746,6 +779,8 @@ function detach(bytes: Uint8Array): ArrayBuffer {
  */
 interface SpineSection {
   href?: string
+  /** Set while the section is loaded; the live view relies on it staying set. */
+  document?: Document
   load(request: unknown): Promise<Document>
   unload(): void
   find(query: string): { cfi: string; excerpt: string }[]

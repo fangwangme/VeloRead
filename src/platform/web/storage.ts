@@ -381,13 +381,11 @@ export function createWebStorage(databaseName = DB_NAME): StoragePort {
       const dailySeconds: Record<string, number> = {}
       const dailyLatinWords: Record<string, number> = {}
       const dailyCjkCharacters: Record<string, number> = {}
-      let totalDurationSeconds = 0
       let totalLatinWordsRead = 0
       let totalCjkCharactersRead = 0
       const distinctBooks = new Set<string>()
 
       for (const s of sessions) {
-        totalDurationSeconds += s.durationSeconds
         totalLatinWordsRead += s.latinWordsRead
         totalCjkCharactersRead += s.cjkCharactersRead
         distinctBooks.add(s.bookId)
@@ -407,8 +405,16 @@ export function createWebStorage(databaseName = DB_NAME): StoragePort {
         }
       }
 
+      // Sum the per-day minutes rather than rounding the grand total: the
+      // check-in calendar shows the daily numbers, and a total that does not
+      // add up to them reads as a bug in the stats.
+      const totalDurationMinutes = Object.values(dailyStats).reduce(
+        (sum, day) => sum + day.durationMinutes,
+        0,
+      )
+
       return {
-        totalDurationMinutes: roundedMinutes(totalDurationSeconds),
+        totalDurationMinutes,
         totalLatinWordsRead,
         totalCjkCharactersRead,
         totalBooksRead: distinctBooks.size,

@@ -3,6 +3,7 @@ import { getStorage } from '../platform'
 import type { BookRecord, Collection } from '../platform/types'
 import { parseEpubMetadata } from '../epub/metadata'
 import { compareCollections } from '../platform/sort'
+import { newId } from '../platform/ids'
 
 export type View = { name: 'library' } | { name: 'reader'; bookId: string }
 
@@ -68,7 +69,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
         const metadata = await parseEpubMetadata(data)
         await storage.addBook({
           record: {
-            id: newBookId(),
+            id: newId(),
             title: metadata.title || stripExtension(file.name),
             author: metadata.author,
             language: metadata.language,
@@ -106,7 +107,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     if (trimmed.length === 0) return
     const now = new Date().toISOString()
     const collection: Collection = {
-      id: newBookId(),
+      id: newId(),
       name: trimmed,
       createdAt: now,
       updatedAt: now,
@@ -177,18 +178,6 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     set({ error: null })
   },
 }))
-
-/**
- * `crypto.randomUUID` is only defined in a secure context, and the id ends up
- * in a filename on the Tauri side, so a failure here would break importing
- * entirely. `getRandomValues` has no such restriction; both shapes satisfy the
- * `[A-Za-z0-9-]` check that Rust applies before touching the filesystem.
- */
-function newBookId(): string {
-  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
-  const bytes = crypto.getRandomValues(new Uint8Array(16))
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
-}
 
 function stripExtension(filename: string): string {
   return filename.replace(/\.epub$/i, '')

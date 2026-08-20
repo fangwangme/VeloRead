@@ -17,7 +17,7 @@ interface AppSettingsModalProps {
 }
 
 const GOAL_OPTIONS = [10, 15, 20, 30, 45, 60]
-/** A day is 1440 minutes; anything past this is a typo, not a reading goal. */
+/** Ten hours. Past this it is a typo, not a daily reading goal. */
 const GOAL_MIN = 1
 const GOAL_MAX = 600
 
