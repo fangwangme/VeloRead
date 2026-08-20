@@ -175,10 +175,10 @@ export function SettingsPanel({
           <div className="mb-1.5 flex justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
             <span>字号大小</span>
             <span className="flex items-baseline gap-1.5 font-normal">
-              <span className="font-mono text-xs font-semibold text-neutral-800 dark:text-neutral-200">
+              <span className="font-mono text-xs font-semibold normal-case text-neutral-800 dark:text-neutral-200">
                 {resolved.fontSizePx}px
               </span>
-              <span className="font-mono text-[10px] lowercase text-neutral-400">
+              <span className="font-mono text-[10px] normal-case text-neutral-400">
                 {fontSizeStep > 0 ? `+${fontSizeStep}` : fontSizeStep === 0 ? '标准' : fontSizeStep}
               </span>
             </span>

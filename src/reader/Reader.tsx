@@ -1058,7 +1058,7 @@ export function Reader({
               setChromeVisible(true)
             }}
             disabled={!ready}
-            title="目录与书签 (T)"
+            title="目录、书签与划线 (T)"
           >
             <IconToc className="opacity-70" />
             <span>目录</span>

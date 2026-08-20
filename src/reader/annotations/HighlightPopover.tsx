@@ -73,6 +73,17 @@ export function HighlightPopover({
     onApply(nextColor, nextNote.trim())
   }
 
+  /**
+   * Picking a colour saves but keeps the popover open, so a note can follow
+   * without reselecting. Saving from the note editor is the end of the
+   * interaction and closes it — otherwise "保存" leaves the panel sitting there
+   * with no sign anything happened.
+   */
+  const applyAndClose = () => {
+    apply(color, note)
+    onClose()
+  }
+
   return (
     <div
       ref={panelRef}
@@ -155,7 +166,7 @@ export function HighlightPopover({
             </button>
             <button
               type="button"
-              onClick={() => apply(color, note)}
+              onClick={applyAndClose}
               className="rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white transition hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
             >
               保存
