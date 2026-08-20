@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getStorage } from '../platform'
 import type {
+  Annotation,
   AppSettings,
   Bookmark,
   BookSettings,
+  HighlightColor,
   ReadingProgress,
   TocItem,
 } from '../platform/types'
 import { useLibrary } from '../library/store'
 import { createReader, type ReaderHandle, type ReaderLocation } from './renderer'
+import { HighlightPopover, type HighlightDraft } from './annotations/HighlightPopover'
 import { PRESETS } from './styles/presets'
 import type { StyleId, StyleOverride } from './styles/types'
 import { resolveStyle } from './styles/resolve'
@@ -83,6 +86,12 @@ export function Reader({
 
   // Jump History (1-level)
   const [jumpOrigin, setJumpOrigin] = useState<string | null>(null)
+
+  // Highlights & notes
+  const [annotations, setAnnotations] = useState<Annotation[]>([])
+  const [highlightDraft, setHighlightDraft] = useState<
+    (HighlightDraft & { bounds: { width: number; height: number } }) | null
+  >(null)
 
   // Pacer state
   const [pacerWpm, setPacerWpm] = useState(appSettings.pacerWpm ?? 250)
@@ -199,7 +208,8 @@ export function Reader({
       document.hasFocus() &&
       !showSettingsRef.current &&
       !showTocRef.current &&
-      !showPacerControlsRef.current,
+      !showPacerControlsRef.current &&
+      !highlightDraftOpenRef.current,
     accentColor: resolvedStyle.palette.accent,
   })
   const pacerUsesCjkUnits = pacer.dominantUnit === 'cjk'
@@ -208,6 +218,10 @@ export function Reader({
   const pacerUnit = pacerUsesCjkUnits ? '字/分钟' : 'wpm'
 
   const pacerRef = useRef(pacer)
+  const annotationsRef = useRef(annotations)
+  // Writing a note is not reading: the popover pauses the Pacer and stops the
+  // clock, exactly like the TOC and Aa panels.
+  const highlightDraftOpenRef = useRef(false)
   const showSettingsRef = useRef(showSettings)
   const showTocRef = useRef(showToc)
   const showPacerControlsRef = useRef(showPacerControls)
@@ -215,13 +229,15 @@ export function Reader({
 
   useEffect(() => {
     pacerRef.current = pacer
+    annotationsRef.current = annotations
+    highlightDraftOpenRef.current = highlightDraft !== null
     showSettingsRef.current = showSettings
     showTocRef.current = showToc
     showPacerControlsRef.current = showPacerControls
     errorRef.current = error
   })
 
-  const blockingReaderPanelOpen = showSettings || showToc
+  const blockingReaderPanelOpen = showSettings || showToc || highlightDraft !== null
   const readerControlsDisabled = !ready || blockingReaderPanelOpen
   const pageNavigationDisabled = readerControlsDisabled || pacer.isPlaying
   const pausePacer = pacer.pause
@@ -315,7 +331,10 @@ export function Reader({
           visibilityState: document.visibilityState,
           windowFocused: document.hasFocus(),
           panelOpen:
-            showSettingsRef.current || showTocRef.current || showPacerControlsRef.current,
+            showSettingsRef.current ||
+            showTocRef.current ||
+            showPacerControlsRef.current ||
+            highlightDraftOpenRef.current,
         })
       ) {
         return
@@ -346,6 +365,11 @@ export function Reader({
       flush()
     }
   }, [sessionBuffer])
+
+  const measureContainerBounds = useCallback(() => {
+    const container = containerRef.current
+    return { width: container?.clientWidth ?? 0, height: container?.clientHeight ?? 0 }
+  }, [])
 
   // Main reader lifecycle
   useEffect(() => {
@@ -452,12 +476,14 @@ export function Reader({
     void (async () => {
       try {
         const storage = await getStorage()
-        const [data, savedProgress, savedSettings, savedBookmarks] = await Promise.all([
-          storage.readBookFile(bookId),
-          storage.getProgress(bookId),
-          storage.getBookSettings(bookId),
-          storage.listBookmarks(bookId),
-        ])
+        const [data, savedProgress, savedSettings, savedBookmarks, savedAnnotations] =
+          await Promise.all([
+            storage.readBookFile(bookId),
+            storage.getProgress(bookId),
+            storage.getBookSettings(bookId),
+            storage.listBookmarks(bookId),
+            storage.listAnnotations(bookId),
+          ])
 
         if (cancelled || !containerRef.current) return
 
@@ -500,6 +526,7 @@ export function Reader({
         setOverrides(initialOverrides)
         setFlow(initialFlow)
         setBookmarks(savedBookmarks)
+        setAnnotations(savedAnnotations)
         setPacerWpm(initialPacerWpm)
         setPacerCpm(initialPacerCpm)
         setPacerChunkSize(initialPacerChunkSize)
@@ -525,7 +552,11 @@ export function Reader({
           onClickText({ range }) {
             pingActivity()
             const panelWasOpen =
-              showPacerControlsRef.current || showSettingsRef.current || showTocRef.current
+              showPacerControlsRef.current ||
+              showSettingsRef.current ||
+              showTocRef.current ||
+              highlightDraftOpenRef.current
+            setHighlightDraft(null)
             setShowPacerControls(false)
             setShowSettings(false)
             setShowToc(false)
@@ -537,6 +568,36 @@ export function Reader({
             setShowPacerControls(false)
             setShowSettings(false)
             setShowToc(false)
+            setHighlightDraft(null)
+          },
+          onSelection({ cfiRange, text, rect }) {
+            pingActivity()
+            pacerRef.current.pause()
+            setShowPacerControls(false)
+            setShowSettings(false)
+            setShowToc(false)
+            setHighlightDraft({
+              annotation: null,
+              cfiRange,
+              text,
+              rect,
+              bounds: measureContainerBounds(),
+            })
+          },
+          onHighlightClick(annotationId) {
+            pingActivity()
+            pacerRef.current.pause()
+            const annotation = annotationsRef.current.find((item) => item.id === annotationId)
+            if (!annotation) return
+            const rect = handleRef.current?.rectForCfiRange(annotation.cfiRange)
+            if (!rect) return
+            setHighlightDraft({
+              annotation,
+              cfiRange: annotation.cfiRange,
+              text: annotation.text,
+              rect,
+              bounds: measureContainerBounds(),
+            })
           },
           onLocation(loc) {
             if (cancelled) return
@@ -596,6 +657,12 @@ export function Reader({
         setHandle(reader)
         readerTrackableRef.current = true
 
+        // epub.js keeps marks per spine section and re-injects them as views
+        // render, so painting once here covers every later page turn.
+        for (const annotation of savedAnnotations) {
+          reader.addHighlight(annotation.id, annotation.cfiRange, annotation.color)
+        }
+
         // Load TOC
         void reader.getToc().then((items) => {
           if (!cancelled) setToc(items)
@@ -631,7 +698,7 @@ export function Reader({
       setHandle(null)
       reader?.destroy()
     }
-  }, [bookId, bookLanguage, closeBook, creditReadingUnits, flushReadingSession])
+  }, [bookId, bookLanguage, closeBook, creditReadingUnits, flushReadingSession, measureContainerBounds])
 
   // Apply style updates
   useEffect(() => {
@@ -711,9 +778,98 @@ export function Reader({
     }
   }
 
+  function closeHighlightDraft() {
+    setHighlightDraft(null)
+    handleRef.current?.clearSelection()
+  }
+
+  const applyHighlight = async (color: HighlightColor, note: string) => {
+    const draft = highlightDraft
+    if (!draft) return
+    const now = new Date().toISOString()
+    const next: Annotation = draft.annotation
+      ? { ...draft.annotation, color, note, updatedAt: now }
+      : {
+          id: crypto.randomUUID(),
+          bookId,
+          cfiRange: draft.cfiRange,
+          text: draft.text,
+          note,
+          color,
+          chapterTitle: location?.chapterTitle ?? null,
+          source: 'local',
+          createdAt: now,
+          updatedAt: now,
+        }
+
+    // Paint first so the highlight appears immediately; a storage failure
+    // surfaces below rather than leaving the user staring at nothing.
+    handleRef.current?.addHighlight(next.id, next.cfiRange, next.color)
+    setAnnotations((previous) => {
+      const without = previous.filter((item) => item.id !== next.id)
+      return [...without, next].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    })
+    // The popover stays open and rebinds to the saved row, so a colour tap can
+    // be followed by writing a note without reselecting the passage.
+    setHighlightDraft((current) =>
+      current && current.cfiRange === next.cfiRange ? { ...current, annotation: next } : current,
+    )
+
+    try {
+      await (await getStorage()).saveAnnotation(next)
+    } catch {
+      // Non-fatal: the highlight stays on screen for this session.
+    }
+  }
+
+  const deleteHighlight = async () => {
+    const annotation = highlightDraft?.annotation
+    if (!annotation) return
+    handleRef.current?.removeHighlight(annotation.cfiRange)
+    setAnnotations((previous) => previous.filter((item) => item.id !== annotation.id))
+    closeHighlightDraft()
+    try {
+      await (await getStorage()).deleteAnnotation(annotation.id)
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  const handleDeleteAnnotationById = async (id: string) => {
+    const annotation = annotations.find((item) => item.id === id)
+    if (!annotation) return
+    handleRef.current?.removeHighlight(annotation.cfiRange)
+    setAnnotations((previous) => previous.filter((item) => item.id !== id))
+    try {
+      await (await getStorage()).deleteAnnotation(id)
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  const handleNavigateToAnnotation = (annotation: Annotation) => {
+    setShowToc(false)
+    void handleRef.current?.display(annotation.cfiRange)
+  }
+
+  function firstWordsOnPage(): string {
+    const words = handleRef.current?.getViewportWords() ?? []
+    if (words.length === 0) return ''
+    let excerpt = ''
+    for (const word of words.slice(0, 16)) {
+      const needsSpace = excerpt.length > 0 && word.kind === 'latin' && !/\s$/u.test(excerpt)
+      excerpt += `${needsSpace ? ' ' : ''}${word.text}`
+      if (excerpt.length >= 60) break
+    }
+    return excerpt.trim()
+  }
+
   const handleAddBookmark = async () => {
     if (!location?.cfi) return
-    const excerpt = location.chapterTitle || `位置 ${Math.round((percentage ?? 0) * 100)}%`
+    // The chapter title repeats across every bookmark in a chapter, which makes
+    // the list unreadable. Prefer the first words actually on the page.
+    const excerpt =
+      firstWordsOnPage() || location.chapterTitle || `位置 ${Math.round((percentage ?? 0) * 100)}%`
     const newBm: Bookmark = {
       id: crypto.randomUUID(),
       bookId,
@@ -998,6 +1154,16 @@ export function Reader({
               accentColor={resolvedStyle.palette.accent}
               isDark={isEffectiveDark}
             />
+
+            {highlightDraft && (
+              <HighlightPopover
+                draft={highlightDraft}
+                bounds={highlightDraft.bounds}
+                onApply={(color, note) => void applyHighlight(color, note)}
+                onDelete={() => void deleteHighlight()}
+                onClose={closeHighlightDraft}
+              />
+            )}
           </div>
         </div>
 
@@ -1254,12 +1420,15 @@ export function Reader({
         <Toc
           toc={toc}
           bookmarks={bookmarks}
+          annotations={annotations}
           currentHref={location?.href ?? null}
           currentTocId={location?.tocId ?? null}
           currentCfi={location?.cfi ?? null}
           onNavigate={handleNavigate}
           onAddBookmark={handleAddBookmark}
           onDeleteBookmark={handleDeleteBookmark}
+          onNavigateToAnnotation={handleNavigateToAnnotation}
+          onDeleteAnnotation={handleDeleteAnnotationById}
           onClose={() => setShowToc(false)}
         />
       )}

@@ -1,33 +1,44 @@
 import { useState } from 'react'
-import type { Bookmark, TocItem } from '../platform/types'
-import { IconBook, IconToc } from '../ui/icons'
+import type { Annotation, Bookmark, TocItem } from '../platform/types'
+import { IconBookmark, IconClose, IconHighlight, IconPlus, IconToc, IconTrash } from '../ui/icons'
+import { highlightPalette } from './annotations/colors'
 import { resolveActiveTocId } from './tocActive'
+
+/** Apple Books organizes this drawer as 目录 / 书签 / 划线笔记. */
+type DrawerTab = 'toc' | 'bookmarks' | 'annotations'
 
 interface TocProps {
   toc: TocItem[]
   bookmarks: Bookmark[]
+  annotations: Annotation[]
   currentHref: string | null
   currentTocId: string | null
   currentCfi: string | null
   onNavigate: (hrefOrCfi: string) => void
   onAddBookmark: () => void
   onDeleteBookmark: (id: string) => void
+  onNavigateToAnnotation: (annotation: Annotation) => void
+  onDeleteAnnotation: (id: string) => void
   onClose: () => void
 }
 
 export function Toc({
   toc,
   bookmarks,
+  annotations,
   currentHref,
   currentTocId,
   currentCfi,
   onNavigate,
   onAddBookmark,
   onDeleteBookmark,
+  onNavigateToAnnotation,
+  onDeleteAnnotation,
   onClose,
 }: TocProps) {
-  const [tab, setTab] = useState<'toc' | 'bookmarks'>('toc')
+  const [tab, setTab] = useState<DrawerTab>('toc')
   const activeTocId = resolveActiveTocId(toc, currentTocId, currentHref)
+  const noteCount = annotations.filter((item) => item.note.trim().length > 0).length
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
@@ -41,36 +52,35 @@ export function Toc({
       {/* Floating Left Drawer */}
       <aside
         className="fixed inset-y-0 left-0 z-50 flex w-92 flex-col border-r border-black/[0.08] bg-white/92 shadow-[0_25px_60px_rgba(0,0,0,0.18)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/92 dark:text-neutral-100 vr-animate-drawer"
-        aria-label="目录与书签抽屉"
+        aria-label="目录、书签与划线抽屉"
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-black/[0.06] px-5 py-4 dark:border-white/[0.06]">
           {/* iOS Segmented Pill Switcher */}
-          <div className="flex rounded-xl bg-black/[0.05] p-1 dark:bg-white/[0.08]">
-            <button
-              type="button"
-              onClick={() => setTab('toc')}
-              className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-medium transition-[color,background-color,box-shadow] ${
-                tab === 'toc'
-                  ? 'bg-white text-neutral-900 shadow-[0_1px_4px_rgba(0,0,0,0.08)] dark:bg-[#2C2C2E] dark:text-white font-semibold'
-                  : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-white'
-              }`}
-            >
-              <IconToc className="opacity-75" />
-              <span>目录 ({toc.length})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setTab('bookmarks')}
-              className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-medium transition-[color,background-color,box-shadow] ${
-                tab === 'bookmarks'
-                  ? 'bg-white text-neutral-900 shadow-[0_1px_4px_rgba(0,0,0,0.08)] dark:bg-[#2C2C2E] dark:text-white font-semibold'
-                  : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-white'
-              }`}
-            >
-              <IconBook className="opacity-75" />
-              <span>书签 ({bookmarks.length})</span>
-            </button>
+          <div className="flex rounded-xl bg-black/[0.05] p-1 dark:bg-white/[0.08]" role="tablist">
+            {([
+              { id: 'toc', label: '目录', count: toc.length, icon: <IconToc className="opacity-75" /> },
+              { id: 'bookmarks', label: '书签', count: bookmarks.length, icon: <IconBookmark className="opacity-75" /> },
+              { id: 'annotations', label: '划线', count: annotations.length, icon: <IconHighlight className="opacity-75" /> },
+            ] as const).map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={tab === item.id}
+                onClick={() => setTab(item.id)}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-[color,background-color,box-shadow] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
+                  tab === item.id
+                    ? 'bg-white font-semibold text-neutral-900 shadow-[0_1px_4px_rgba(0,0,0,0.08)] dark:bg-[#2C2C2E] dark:text-white'
+                    : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-white'
+                }`}
+              >
+                {item.icon}
+                <span>
+                  {item.label} ({item.count})
+                </span>
+              </button>
+            ))}
           </div>
 
           <button
@@ -79,7 +89,7 @@ export function Toc({
             className="flex h-7 w-7 items-center justify-center rounded-full text-neutral-400 hover:bg-black/5 hover:text-neutral-700 dark:hover:bg-white/10 dark:hover:text-neutral-200 transition"
             aria-label="关闭抽屉"
           >
-            ✕
+            <IconClose />
           </button>
         </div>
 
@@ -88,66 +98,108 @@ export function Toc({
           {tab === 'toc' ? (
             <div className="space-y-1">
               {toc.length === 0 ? (
-                <div className="py-20 text-center text-xs text-neutral-400 dark:text-neutral-500">
-                  此书籍未内置目录结构
-                </div>
+                <EmptyPanel title="此书籍未内置目录结构" />
               ) : (
                 <TocList items={toc} activeTocId={activeTocId} onNavigate={onNavigate} depth={0} />
               )}
             </div>
-          ) : (
+          ) : tab === 'bookmarks' ? (
             <div className="space-y-3">
-              <div className="flex justify-between items-center pb-2.5 border-b border-black/[0.05] dark:border-white/[0.05]">
-                <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">
+              <div className="flex items-center justify-between border-b border-black/[0.05] pb-2.5 dark:border-white/[0.05]">
+                <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
                   {bookmarks.length > 0 ? `共 ${bookmarks.length} 处已存书签` : '暂无书签'}
                 </span>
                 <button
                   type="button"
                   onClick={onAddBookmark}
                   disabled={!currentCfi}
-                  className="rounded-full bg-blue-600 px-3.5 py-1.5 text-xs font-medium text-white shadow-xs transition hover:bg-blue-700 active:scale-95 disabled:opacity-40"
+                  className="flex items-center gap-1 rounded-full bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-xs transition hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 active:scale-95 disabled:opacity-40"
                 >
-                  + 添加书签
+                  <IconPlus />
+                  <span>添加书签</span>
                 </button>
               </div>
 
               {bookmarks.length === 0 ? (
-                <div className="py-20 text-center space-y-2">
-                  <p className="text-xs text-neutral-400 dark:text-neutral-500">
-                    暂无书签记录
-                  </p>
-                  <p className="text-[11px] text-neutral-400/80 max-w-[200px] mx-auto">
-                    在阅读中点击上方「+ 添加书签」快速记录当前页
-                  </p>
-                </div>
+                <EmptyPanel
+                  title="暂无书签记录"
+                  hint="在阅读中点击上方「添加书签」快速记录当前页"
+                />
               ) : (
                 bookmarks.map((bm) => (
-                  <div
+                  <ListCard
                     key={bm.id}
-                    className="group relative flex flex-col justify-between rounded-2xl border border-black/[0.06] bg-black/[0.02] p-3.5 transition hover:border-blue-500/40 hover:bg-black/[0.04] dark:border-white/[0.06] dark:bg-white/[0.03] dark:hover:border-blue-400/40 dark:hover:bg-white/[0.05]"
+                    onOpen={() => onNavigate(bm.cfi)}
+                    onDelete={() => onDeleteBookmark(bm.id)}
+                    deleteLabel={`删除书签：${bm.text || '书签位置'}`}
+                    createdAt={bm.createdAt}
                   >
-                    <button
-                      type="button"
-                      onClick={() => onNavigate(bm.cfi)}
-                      className="text-left text-xs font-medium leading-relaxed text-neutral-800 dark:text-neutral-200 line-clamp-3 hover:text-blue-600 dark:hover:text-blue-400 transition"
-                    >
+                    <p className="line-clamp-3 text-xs font-medium leading-relaxed text-neutral-800 dark:text-neutral-200">
                       {bm.text || '书签位置'}
-                    </button>
-                    <div className="mt-3 flex items-center justify-between text-[10px] text-neutral-400 dark:text-neutral-500">
-                      <span>{new Date(bm.createdAt).toLocaleDateString()}</span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onDeleteBookmark(bm.id)
-                        }}
-                        className="text-red-500/80 hover:text-red-600 dark:text-red-400 opacity-0 group-hover:opacity-100 transition font-medium hover:underline"
-                      >
-                        删除
-                      </button>
-                    </div>
-                  </div>
+                    </p>
+                  </ListCard>
                 ))
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between border-b border-black/[0.05] pb-2.5 dark:border-white/[0.05]">
+                <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                  {annotations.length > 0 ? `共 ${annotations.length} 条划线` : '暂无划线'}
+                </span>
+                {noteCount > 0 && (
+                  <span className="text-[10px] text-neutral-400">其中 {noteCount} 条带笔记</span>
+                )}
+              </div>
+
+              {annotations.length === 0 ? (
+                <EmptyPanel
+                  title="暂无划线记录"
+                  hint="在书页上选中一段文字，即可划线并添加笔记"
+                />
+              ) : (
+                annotations.map((annotation) => {
+                  const palette = highlightPalette(annotation.color)
+                  const imported = annotation.source !== 'local'
+                  return (
+                    <ListCard
+                      key={annotation.id}
+                      // Imported rows have no reliable anchor, so they are not
+                      // given a jump affordance that would do nothing.
+                      onOpen={imported ? undefined : () => onNavigateToAnnotation(annotation)}
+                      onDelete={() => onDeleteAnnotation(annotation.id)}
+                      deleteLabel={`删除划线：${annotation.text.slice(0, 20)}`}
+                      createdAt={annotation.createdAt}
+                      meta={
+                        imported ? (
+                          <span title="来自 Kindle 导入，无法跳转">来自导入</span>
+                        ) : (
+                          annotation.chapterTitle && (
+                            <span className="line-clamp-1 max-w-40">{annotation.chapterTitle}</span>
+                          )
+                        )
+                      }
+                    >
+                      <div className="flex gap-2.5">
+                        <span
+                          aria-hidden="true"
+                          className="mt-0.5 w-1 shrink-0 rounded-full"
+                          style={{ backgroundColor: palette.swatch }}
+                        />
+                        <div className="min-w-0">
+                          <p className="line-clamp-4 text-xs leading-relaxed text-neutral-800 dark:text-neutral-200">
+                            {annotation.text}
+                          </p>
+                          {annotation.note && (
+                            <p className="mt-2 line-clamp-3 rounded-lg bg-black/[0.03] px-2 py-1.5 text-[11px] leading-relaxed text-neutral-600 dark:bg-white/[0.05] dark:text-neutral-300">
+                              {annotation.note}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </ListCard>
+                  )
+                })
               )}
             </div>
           )}
@@ -204,5 +256,61 @@ function TocList({
         )
       })}
     </ul>
+  )
+}
+
+function EmptyPanel({ title, hint }: { title: string; hint?: string }) {
+  return (
+    <div className="space-y-2 py-20 text-center">
+      <p className="text-xs text-neutral-400 dark:text-neutral-500">{title}</p>
+      {hint && <p className="mx-auto max-w-[200px] text-[11px] text-neutral-400/80">{hint}</p>}
+    </div>
+  )
+}
+
+function ListCard({
+  children,
+  meta,
+  createdAt,
+  onOpen,
+  onDelete,
+  deleteLabel,
+}: {
+  children: React.ReactNode
+  meta?: React.ReactNode
+  createdAt: string
+  /** Omitted when the entry cannot be located, so no dead jump target is shown. */
+  onOpen?: () => void
+  onDelete: () => void
+  deleteLabel: string
+}) {
+  return (
+    <div className="group relative rounded-2xl border border-black/[0.06] bg-black/[0.02] p-3.5 transition hover:border-blue-500/40 hover:bg-black/[0.04] dark:border-white/[0.06] dark:bg-white/[0.03] dark:hover:border-blue-400/40 dark:hover:bg-white/[0.05]">
+      {onOpen ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="block w-full rounded-lg text-left transition hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+        >
+          {children}
+        </button>
+      ) : (
+        <div>{children}</div>
+      )}
+      <div className="mt-3 flex items-center justify-between gap-2 text-[10px] text-neutral-400 dark:text-neutral-500">
+        <span className="flex min-w-0 items-center gap-2">
+          <span>{new Date(createdAt).toLocaleDateString()}</span>
+          {meta}
+        </span>
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label={deleteLabel}
+          className="flex size-6 items-center justify-center rounded-lg text-neutral-400 opacity-0 transition hover:bg-red-500/10 hover:text-red-600 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 group-focus-within:opacity-100 group-hover:opacity-100 dark:hover:text-red-400"
+        >
+          <IconTrash />
+        </button>
+      </div>
+    </div>
   )
 }

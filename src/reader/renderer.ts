@@ -2,7 +2,8 @@ import ePub from 'epubjs'
 import type { Book, Contents, Rendition } from 'epubjs'
 import type { ResolvedStyle } from './styles/types'
 import { toCssRules } from './styles/toCssRules'
-import type { TocItem } from '../platform/types'
+import type { HighlightColor, TocItem } from '../platform/types'
+import { highlightPalette } from './annotations/colors'
 import type { WordItem } from './pacer/chunker'
 import { tokenizeText } from './pacer/tokenizer'
 
@@ -22,11 +23,20 @@ export interface ReaderLocation {
   atEnd: boolean
 }
 
+/** A live text selection, already translated into parent-container coordinates. */
+export interface SelectionInfo {
+  cfiRange: string
+  text: string
+  rect: { left: number; top: number; width: number; height: number }
+}
+
 export interface ReaderOptions {
   onLocation?: (location: ReaderLocation) => void
   onKeyDown?: (event: KeyboardEvent) => void
   onClickText?: (target: { text: string; range?: Range }) => void
   onLinkClick?: () => void
+  onSelection?: (selection: SelectionInfo) => void
+  onHighlightClick?: (annotationId: string) => void
   flow?: 'paginated' | 'scrolled-doc'
   spreadMode?: 'auto' | 'single' | 'double'
   style?: ResolvedStyle
@@ -46,6 +56,12 @@ export interface ReaderHandle {
   getIframeElement(): HTMLIFrameElement | null
   getScrollElement(): HTMLElement | null
   getCurrentLocation(): ReaderLocation | null
+  /** Paint a stored highlight onto the page. Re-adding the same id repaints it. */
+  addHighlight(annotationId: string, cfiRange: string, color: HighlightColor): void
+  removeHighlight(cfiRange: string): void
+  /** Where a stored highlight sits right now, in container coordinates. */
+  rectForCfiRange(cfiRange: string): SelectionInfo['rect'] | null
+  clearSelection(): void
   advancePacerPage(): Promise<boolean>
   ensurePacerRectVisible(rect: Pick<WordItem['rect'], 'top' | 'height'>): void
   fontsReady(): Promise<void>
@@ -105,6 +121,45 @@ export async function createReader(
   const onKeyDown = options.onKeyDown
   const onClickText = options.onClickText
   const onLinkClick = options.onLinkClick
+  const onSelection = options.onSelection
+  const onHighlightClick = options.onHighlightClick
+
+  /** Translate an iframe-relative rect into the parent container's box. */
+  function toContainerRect(rect: DOMRect): SelectionInfo['rect'] | null {
+    const iframe = getIframe()
+    if (!iframe) return null
+    const iframeRect = iframe.getBoundingClientRect()
+    const containerRect = container.getBoundingClientRect()
+    return {
+      left: Math.round(iframeRect.left - containerRect.left + rect.left),
+      top: Math.round(iframeRect.top - containerRect.top + rect.top),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    }
+  }
+
+  if (onSelection) {
+    rendition.on('selected', (cfiRange: string, contents: Contents) => {
+      let text = ''
+      let rect: SelectionInfo['rect'] | null = null
+      try {
+        const range = contents.range(cfiRange)
+        text = range?.toString().trim() ?? ''
+        const bounds = range?.getBoundingClientRect()
+        if (bounds) rect = toContainerRect(bounds)
+      } catch {
+        // A malformed CFI must not break selecting text.
+      }
+      if (!text || !rect) return
+      onSelection({ cfiRange, text, rect })
+    })
+  }
+
+  if (onHighlightClick) {
+    rendition.on('markClicked', (_cfiRange: string, data?: { id?: string }) => {
+      if (data?.id) onHighlightClick(data.id)
+    })
+  }
 
   rendition.hooks.content.register((contents: Contents) => {
     const doc = contents.document
@@ -390,6 +445,52 @@ export async function createReader(
     getIframeElement: getIframe,
     getScrollElement,
     getCurrentLocation: () => lastLocation,
+    addHighlight: (annotationId, cfiRange, color) => {
+      const palette = highlightPalette(color)
+      // Removing first makes this idempotent, so a recolor is just a re-add and
+      // a repaint after page turns cannot stack duplicate marks.
+      try {
+        rendition.annotations.remove(cfiRange, 'highlight')
+      } catch {
+        // Nothing painted there yet.
+      }
+      try {
+        rendition.annotations.highlight(
+          cfiRange,
+          { id: annotationId },
+          undefined,
+          'vr-highlight',
+          {
+            fill: palette.fill,
+            'fill-opacity': palette.fillOpacity,
+            'mix-blend-mode': 'multiply',
+          },
+        )
+      } catch {
+        // A highlight whose CFI no longer resolves is skipped rather than
+        // breaking the page; the row itself stays listed and readable.
+      }
+    },
+    removeHighlight: (cfiRange) => {
+      try {
+        rendition.annotations.remove(cfiRange, 'highlight')
+      } catch {
+        // Already gone.
+      }
+    },
+    rectForCfiRange: (cfiRange) => {
+      try {
+        const range = rendition.getRange(cfiRange)
+        const bounds = range?.getBoundingClientRect()
+        if (!bounds || (bounds.width === 0 && bounds.height === 0)) return null
+        return toContainerRect(bounds)
+      } catch {
+        return null
+      }
+    },
+    clearSelection: () => {
+      getIframe()?.contentWindow?.getSelection()?.removeAllRanges()
+    },
     advancePacerPage: async () => {
       if (lastLocation?.atEnd) return false
       const before = lastLocation?.cfi ?? null
