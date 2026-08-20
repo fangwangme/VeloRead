@@ -5,7 +5,6 @@ import type {
   Bookmark,
   BookSettings,
   ReadingProgress,
-  ReadingSession,
   TocItem,
 } from '../platform/types'
 import { useLibrary } from '../library/store'
@@ -28,6 +27,7 @@ import {
   shouldAccumulateReading,
   shouldCreditDepartedPage,
 } from '../stats/tracking'
+import { ReadingSessionBuffer } from '../stats/sessionBuffer'
 import {
   IconArrowLeft,
   IconChevronLeft,
@@ -94,9 +94,7 @@ export function Reader({
 
   // Active reading tracking refs
   const pageDwellSecondsRef = useRef(0)
-  const sessionBufferSecondsRef = useRef(0)
-  const sessionBufferLatinWordsRef = useRef(0)
-  const sessionBufferCjkCharactersRef = useRef(0)
+  const errorRef = useRef<string | null>(null)
   const currentPageCountsRef = useRef<ReadingUnitCounts>({ latinWords: 0, cjkCharacters: 0 })
   const currentPageCfiRef = useRef<string | null>(null)
   const pagePacerConsumedRef = useRef(false)
@@ -104,7 +102,39 @@ export function Reader({
   const layoutSuppressionVersionRef = useRef(0)
   const layoutSuppressionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const readerTrackableRef = useRef(false)
-  const sessionFlushInFlightRef = useRef<Promise<void> | null>(null)
+
+  // One serialized buffer per mounted book. App.tsx keys <Reader> by bookId, so
+  // this component instance never outlives its book: the initializer runs once
+  // and the bookId it captures stays the one these seconds were read against.
+  const [sessionBuffer] = useState(
+    () =>
+      new ReadingSessionBuffer(async (snapshot) => {
+        const now = new Date()
+        const date = localDateKey(now)
+        const storage = await getStorage()
+        await storage.recordReadingSession({
+          id: `sess-${bookId}-${date}`,
+          bookId,
+          date,
+          durationSeconds: snapshot.durationSeconds,
+          latinWordsRead: snapshot.latinWords,
+          cjkCharactersRead: snapshot.cjkCharacters,
+          updatedAt: now.toISOString(),
+        })
+      }),
+  )
+
+  const flushReadingSession = useCallback(
+    () => sessionBuffer.flush().catch(() => undefined),
+    [sessionBuffer],
+  )
+
+  const creditReadingUnits = useCallback(
+    (counts: ReadingUnitCounts) => {
+      sessionBuffer.addReadingUnits(counts.latinWords, counts.cjkCharacters)
+    },
+    [sessionBuffer],
+  )
 
   const suppressLayoutTracking = useCallback(() => {
     const version = layoutSuppressionVersionRef.current + 1
@@ -188,6 +218,7 @@ export function Reader({
     showSettingsRef.current = showSettings
     showTocRef.current = showToc
     showPacerControlsRef.current = showPacerControls
+    errorRef.current = error
   })
 
   const blockingReaderPanelOpen = showSettings || showToc
@@ -269,81 +300,22 @@ export function Reader({
     }, AUTO_HIDE_CHROME_MS)
   }
 
-  // Flush reading session buffer to storage
-  const flushReadingSession = async () => {
-    if (sessionFlushInFlightRef.current) {
-      try {
-        await sessionFlushInFlightRef.current
-      } catch {
-        // The failed snapshot stays buffered. Continue below so a concurrent
-        // cleanup flush can retry it together with any newly credited page.
-      }
-    }
-
-    const duration = sessionBufferSecondsRef.current
-    const latinWords = sessionBufferLatinWordsRef.current
-    const cjkCharacters = sessionBufferCjkCharactersRef.current
-    if (duration <= 0 && latinWords <= 0 && cjkCharacters <= 0) return
-
-    const now = new Date()
-    const todayStr = localDateKey(now)
-    const session: ReadingSession = {
-      id: `sess-${bookId}-${todayStr}`,
-      bookId,
-      date: todayStr,
-      durationSeconds: duration,
-      latinWordsRead: latinWords,
-      cjkCharactersRead: cjkCharacters,
-      updatedAt: now.toISOString(),
-    }
-
-    const task = (async () => {
-      const storage = await getStorage()
-      await storage.recordReadingSession(session)
-      // Time and units may continue accumulating while storage is writing.
-      // Subtract only the successfully persisted snapshot so those increments
-      // remain buffered, and preserve everything when persistence fails.
-      sessionBufferSecondsRef.current = Math.max(
-        0,
-        sessionBufferSecondsRef.current - duration,
-      )
-      sessionBufferLatinWordsRef.current = Math.max(
-        0,
-        sessionBufferLatinWordsRef.current - latinWords,
-      )
-      sessionBufferCjkCharactersRef.current = Math.max(
-        0,
-        sessionBufferCjkCharactersRef.current - cjkCharacters,
-      )
-    })()
-    sessionFlushInFlightRef.current = task
-
-    try {
-      await task
-    } catch {
-      // Non-fatal. Keep the buffer intact so a later flush can retry it.
-    } finally {
-      if (sessionFlushInFlightRef.current === task) {
-        sessionFlushInFlightRef.current = null
-      }
-    }
-  }
-
-  const flushReadingSessionRef = useRef(flushReadingSession)
+  // Active reading second ticker with 5-minute page dwell limit & visibility pause.
+  // Panel and error state are read through refs so toggling a panel cannot tear
+  // down the interval: a rebuild both dropped the sub-second remainder and fired
+  // an extra flush on every open/close.
   useEffect(() => {
-    flushReadingSessionRef.current = flushReadingSession
-  })
+    const flush = () => void sessionBuffer.flush().catch(() => undefined)
 
-  // Active reading second ticker with 5-minute page dwell limit & visibility pause
-  useEffect(() => {
     const interval = setInterval(() => {
       if (
         !shouldAccumulateReading({
           ready: readerTrackableRef.current,
-          hasError: Boolean(error),
+          hasError: Boolean(errorRef.current),
           visibilityState: document.visibilityState,
           windowFocused: document.hasFocus(),
-          panelOpen: showSettings || showToc || showPacerControls,
+          panelOpen:
+            showSettingsRef.current || showTocRef.current || showPacerControlsRef.current,
         })
       ) {
         return
@@ -352,35 +324,28 @@ export function Reader({
       // Anti-idle check: capped at MAX_PAGE_DWELL_SECONDS (300s = 5 mins) per page
       if (pageDwellSecondsRef.current < MAX_PAGE_DWELL_SECONDS) {
         pageDwellSecondsRef.current += 1
-        sessionBufferSecondsRef.current += 1
+        sessionBuffer.addSeconds(1)
       }
     }, 1000)
 
     // Flush session periodically every 15 seconds
-    const flushInterval = setInterval(() => {
-      void flushReadingSessionRef.current()
-    }, 15000)
+    const flushInterval = setInterval(flush, 15000)
 
     const onVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        void flushReadingSessionRef.current()
-      }
-    }
-    const onBeforeUnload = () => {
-      void flushReadingSessionRef.current()
+      if (document.visibilityState === 'hidden') flush()
     }
 
     document.addEventListener('visibilitychange', onVisibilityChange)
-    window.addEventListener('beforeunload', onBeforeUnload)
+    window.addEventListener('beforeunload', flush)
 
     return () => {
       clearInterval(interval)
       clearInterval(flushInterval)
       document.removeEventListener('visibilitychange', onVisibilityChange)
-      window.removeEventListener('beforeunload', onBeforeUnload)
-      void flushReadingSessionRef.current()
+      window.removeEventListener('beforeunload', flush)
+      flush()
     }
-  }, [bookId, error, showSettings, showToc, showPacerControls])
+  }, [sessionBuffer])
 
   // Main reader lifecycle
   useEffect(() => {
@@ -413,7 +378,7 @@ export function Reader({
 
     async function flushAndRefreshShelf() {
       await flush()
-      await flushReadingSessionRef.current()
+      await flushReadingSession()
       await useLibrary.getState().load()
     }
 
@@ -602,9 +567,7 @@ export function Reader({
                   layoutChangeSuppressed,
                 )
               ) {
-                sessionBufferLatinWordsRef.current += currentPageCountsRef.current.latinWords
-                sessionBufferCjkCharactersRef.current +=
-                  currentPageCountsRef.current.cjkCharacters
+                creditReadingUnits(currentPageCountsRef.current)
               }
 
               currentPageCfiRef.current = loc.cfi
@@ -660,8 +623,7 @@ export function Reader({
         !layoutChangeSuppressedRef.current &&
         (pageDwellSecondsRef.current >= 3 || pagePacerConsumedRef.current)
       ) {
-        sessionBufferLatinWordsRef.current += currentPageCountsRef.current.latinWords
-        sessionBufferCjkCharactersRef.current += currentPageCountsRef.current.cjkCharacters
+        creditReadingUnits(currentPageCountsRef.current)
       }
 
       void flushAndRefreshShelf()
@@ -669,7 +631,7 @@ export function Reader({
       setHandle(null)
       reader?.destroy()
     }
-  }, [bookId, bookLanguage, closeBook])
+  }, [bookId, bookLanguage, closeBook, creditReadingUnits, flushReadingSession])
 
   // Apply style updates
   useEffect(() => {
