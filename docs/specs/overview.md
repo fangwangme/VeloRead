@@ -43,6 +43,7 @@
 | 划线摘抄 | [annotations.md](annotations.md) | 🚧 划线笔记已实现，导出与导入规划中 |
 | 划词与生词本 | [vocabulary.md](vocabulary.md) | 📋 规划中 |
 | 平台适配层与存储 | [platform-and-storage.md](platform-and-storage.md) | 🚧 `storage` 已实现，`fs` / `dict` 未定义 |
+| 界面语言 | [i18n.md](i18n.md) | ✅ 简体中文 / English 已实现 |
 
 状态图例：✅ 已实现 · 🚧 部分实现 · 📋 规划中
 

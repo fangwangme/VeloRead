@@ -48,7 +48,7 @@ src/platform/
 | `setBookCollections(bookId, ids)` / `listCollectionMembership()` | 整体替换一本书的归属；一次取回全部归属供书架筛选 |
 | `listAnnotations(bookId)` / `saveAnnotation(a)` / `deleteAnnotation(id)` | 划线与笔记的增删改，`saveAnnotation` 是 upsert |
 | `getBookSettings(bookId)` / `saveBookSettings(settings)` | 读取 / upsert 当前书籍的排版、flow 与 Pacer 覆盖值 |
-| `getAppSettings()` / `saveAppSettings(partial)` | 读取 / 合并保存全局外观、Pacer 与每日目标 |
+| `getAppSettings()` / `saveAppSettings(partial)` | 读取 / 合并保存全局外观、界面语言、Pacer 默认值、高亮样式与每日目标 |
 | `listBookmarks(bookId)` / `addBookmark()` / `deleteBookmark()` | 按书管理书签 |
 | `recordReadingSession(session)` | 按稳定 session id 累加有效时长、英文词数与 CJK 字符数 |
 | `getReadingStats()` | 汇总总量、每日数据、阅读书数与连续天数 |
@@ -56,6 +56,19 @@ src/platform/
 **书架顺序**：`lastReadAt` 降序（未读的排后面），并列时 `addedAt` 降序。
 web 侧用 `compareBooks()`，Tauri 侧用 `ORDER BY COALESCE(last_read_at,'') DESC, added_at DESC`。
 **两者语义必须一致，改一处必须改另一处。**
+
+**合集顺序**：按名称的 **Unicode 码点**升序，同名以 `id` 兜底成全序。
+SQLite 的 `ORDER BY name` 是 UTF-8 字节序，等价于码点序；JS 的 `<` 比的是 UTF-16 码元，
+星平面字符（合集名里的 emoji）会排到 U+E000–U+FFFF 之前，和 SQLite 相反。
+`compareCodePoints()` 逐码点比较，两端因此一致。
+
+**`AppSettings` 是一个 JSON 值**（`app_settings` 表的 `global` 行），不拆列：
+它是一组松散的偏好，加一项不该动 schema。当前包含
+`themeMode` / `language` / `defaultStyleId` / `flow` /
+`pacerWpm` `pacerCpm` `pacerChunkSize` `pacerCjkCharCount` /
+`pacerHighlightColor` `pacerHighlightOpacity` `pacerHighlightShape` /
+`dailyReadingGoalMinutes`。缺省一律由读取处补全，**存储层不写默认值**，
+这样改默认值不需要迁移已存的行。
 
 **时间戳**一律由前端生成 ISO-8601 字符串，存储层不自己取时钟。
 

@@ -37,6 +37,24 @@
 选它而不是 RSVP（单词定点闪现）的理由：RSVP 速度上限更高，但会脱离书页排版，
 不再是「读书」；移动高亮块保留上下文，更接近真实的眼动训练。
 
+### 3.1 样式可调
+
+这条高亮会在正文之上停留数十分钟，**它的观感必须由用户决定**，而不是被排版预设绑死。
+应用设置提供三项，作用于全局：
+
+| 设置 | 取值 | 默认 |
+| --- | --- | --- |
+| 颜色 | `auto`（跟随当前排版风格的 accent）或任意 hex | `auto` |
+| 浓度 | 0.04–0.5 的填充不透明度 | `0.18` |
+| 形态 | `block` / `block-underline` / `underline` | `block-underline` |
+
+默认值与可调之前的观感完全一致。深色页的填充在解析时统一加 `+0.04`，
+是**推导出来的偏移而不是第二个设置**，避免两个值各自漂移。
+形态选 `underline` 时填充为 `transparent`，浓度滑杆随之禁用——留一个不起作用的控件比没有更糟。
+
+解析规则在 `pacer/overlayStyle.ts`，纯函数、可单测；设置面板的实时预览与书页走同一个解析器，
+所以预览里看到的就是翻开书之后的样子。
+
 ## 4. 核心方案：不碰 DOM
 
 **旧实现的做法与失败原因**（453 行，满屏 `CRITICAL` 注释）：
@@ -74,12 +92,17 @@ chunker.ts    纯函数：文本 run[] → 注视块[]（可单测，不依赖 e
 tokenizer.ts  Unicode 分词：文本节点 → 英文词 / CJK 字素 / 标点
 geometry.ts   纯函数：块 → 父文档坐标矩形（可单测）
 engine.ts     计时状态机：play / pause / seek / 翻页续接
+overlayStyle.ts 纯函数：用户设置 + 排版 accent + 明暗 → 高亮的实际样式（可单测）
 Overlay.tsx   高亮块渲染与动画
 usePacer.ts   薄封装，把 engine 接到 React
 ```
 
 文本与几何统一由 `ReaderHandle.getVisibleWords()` 提供（未来格式统一接口见
 [reading-formats](reading-formats.md)），Pacer hook 不直接遍历书页 DOM。
+
+`getVisibleWords()` 先按整个文本节点做一次视口裁剪，再对留下的节点逐 token 取矩形。
+分页模式下一页只占章节的一小部分，**逐 token 建 Range 会把整章的布局全算一遍**，
+单文件长章节每翻一页就是上万次强制重排。节点级矩形是各行盒的并集，只会多留不会漏。
 
 ## 6. 分块规则
 

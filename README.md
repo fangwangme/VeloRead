@@ -15,16 +15,19 @@ started, and nothing exports yet. Start at
 
 **Working (EPUB only)**
 
-- **Reader** — TOC, bookmarks, per-book typography, six visual presets (经典书籍 / 复古羊皮纸 /
-  现代散文 / 学术论著 / 报刊社论 / 中文宋体), light and dark, paginated or scrolling
+- **Reader** — TOC, bookmarks, per-book typography, six visual presets (Classic Book,
+  Parchment, Modern Prose, Academic, Editorial, Chinese Song), light and dark, paginated or
+  scrolling
 - **Pacer** — an auto-advancing highlight that paces your eyes a few words at a time, to train
   reading speed past subvocalization. One engine, separate profiles for Latin (words/min) and
-  CJK (graphemes/min), applied per chunk so mixed text paces correctly
+  CJK (graphemes/min), applied per chunk so mixed text paces correctly. Its colour, strength
+  and shape are yours to set
 - **Highlights** — five colours with optional notes, listed alongside the TOC and bookmarks
 - **Full-text search** — across the whole book, loading each chapter on demand
 - **Library** — collections, with a book able to sit on several shelves
 - **Reading activity** — honest active-reading time, words and CJK characters counted
   separately, streaks, and a four-tier daily check-in
+- **Interface in English or Chinese** — following your system by default
 
 **Not started**
 
@@ -43,9 +46,14 @@ bun run dev        # frontend only, http://localhost:5174 — fastest UI loop
 bun run app:dev    # full desktop app (Tauri; first Rust build takes a while)
 bun run app:build  # bundle .app / .dmg
 bun run lint
+bun run test
+bun run build      # tsc -b && vite build
 ```
 
 Requires [bun](https://bun.sh), a Rust toolchain, and Xcode Command Line Tools.
+
+CI runs lint, tests and the type-checked build on Linux, and `cargo fmt --check`,
+`cargo clippy -D warnings` and `cargo test` on macOS, for every pull request.
 
 ## Stack
 

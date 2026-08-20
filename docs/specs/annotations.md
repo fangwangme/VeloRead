@@ -97,6 +97,10 @@ CREATE INDEX idx_annotations_book ON annotations(book_id, created_at);
    持有原文和笔记比拆成两行更贴近实际操作。导出时若 `note` 非空，再拆成 Highlight 与
    Note 两条记录写出去。
 
+**一个 CFI range 只能对应一条划线。** 重新选中一段已划线的文字，是*编辑那一条*，
+不是新建第二条：epub.js 按 cfiRange 存 mark，重复的行在页面上看不出来，却会在抽屉里
+出现两条一模一样的记录，而删掉任意一条都会把另一条的着色一并抹掉。
+
 `locator` 抽象（格式无关的位置标识）尚未落地，当前直接存 EPUB CFI range；TXT / PDF 接入时
 与 `bookmarks`、`reading_progress` 一起迁移，见 [reading-formats](reading-formats.md)。
 
@@ -106,6 +110,10 @@ CREATE INDEX idx_annotations_book ON annotations(book_id, created_at);
 导入的 Kindle 条目往往无法精确锚定到 CFI（Kindle location 与 CFI 之间没有可靠映射），
 这类条目应保留原文与元数据、**可查看、可导出**，但**不保证能跳转定位**。
 这是诚实处理导入数据的关键 —— 假装能定位比不能定位更糟。
+
+划线浮层的颜色与笔记是组件本地状态，**必须按段落重新挂载**（以 annotation id 或 cfiRange 作 key）。
+浮层在选色后保持打开是为了接着写笔记；此时另选一段文字，若沿用同一个实例，
+新段落会带着上一段的笔记，下一次点色就把它存了进去。
 
 ## 6. 导出
 
