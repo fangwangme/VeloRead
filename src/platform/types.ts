@@ -78,6 +78,39 @@ export interface Bookmark {
   createdAt: string
 }
 
+/** Highlight colors offered in the reader. */
+export type HighlightColor = 'yellow' | 'green' | 'blue' | 'pink' | 'purple'
+
+/**
+ * A highlighted passage, optionally carrying a note.
+ *
+ * Kept in its own table rather than folded into `Bookmark`: a bookmark is a
+ * position, a highlight is a range of text the user chose to keep. One row holds
+ * both the highlight and its note, because in this reader a note is always
+ * attached to a passage — the Kindle export format splits them back into two
+ * records at export time (see docs/specs/annotations.md).
+ */
+export interface Annotation {
+  id: string
+  bookId: string
+  /** EPUB CFI range covering the selection. */
+  cfiRange: string
+  /** The passage as it read when it was highlighted. */
+  text: string
+  /** User note; empty string when the passage was only highlighted. */
+  note: string
+  color: HighlightColor
+  /** Chapter label captured at creation, so the list reads well offline. */
+  chapterTitle: string | null
+  /**
+   * Where the row came from. Imported Kindle rows cannot always be anchored to a
+   * CFI, and the UI must not offer a jump button that does nothing.
+   */
+  source: 'local' | 'kindle-import'
+  createdAt: string
+  updatedAt: string
+}
+
 /** Navigation TOC item. */
 export interface TocItem {
   id: string
@@ -123,7 +156,7 @@ export interface StoragePort {
   /** Newest-read first, then newest-added first. */
   listBooks(): Promise<BookRecord[]>
   addBook(input: BookImport): Promise<BookRecord>
-  /** Removes the record, the stored file, the cover, progress, settings, bookmarks, and sessions. */
+  /** Removes the record, the stored file, the cover, progress, settings, bookmarks, annotations, and sessions. */
   deleteBook(id: string): Promise<void>
   readBookFile(id: string): Promise<Uint8Array>
   readCover(id: string): Promise<Uint8Array | null>
@@ -137,6 +170,11 @@ export interface StoragePort {
   listBookmarks(bookId: string): Promise<Bookmark[]>
   addBookmark(bookmark: Bookmark): Promise<void>
   deleteBookmark(id: string): Promise<void>
+  /** Oldest first, so the list follows reading order within a book. */
+  listAnnotations(bookId: string): Promise<Annotation[]>
+  /** Upsert: also used to edit a note or recolor an existing highlight. */
+  saveAnnotation(annotation: Annotation): Promise<void>
+  deleteAnnotation(id: string): Promise<void>
   recordReadingSession(session: ReadingSession): Promise<void>
   getReadingStats(): Promise<OverallReadingStats>
 }

@@ -1,4 +1,5 @@
 import type {
+  Annotation,
   AppSettings,
   Bookmark,
   BookImport,
@@ -13,7 +14,16 @@ import { compareBooks } from '../sort'
 import { calculateCurrentStreak } from '../../stats/tracking'
 
 const DB_NAME = 'veloread'
-const DB_VERSION = 3
+const DB_VERSION = 4
+
+/**
+ * Up to this version the reading counts were a single mixed `wordsRead` that
+ * cannot be split honestly into words and CJK characters, so upgrading past it
+ * rebuilt the unpublished stores. The bound is pinned rather than written as
+ * `< DB_VERSION`: leaving it open-ended would re-run the wipe on every future
+ * schema bump and silently destroy real settings and statistics.
+ */
+const MIXED_WORD_COUNT_VERSION = 3
 
 const BOOKS = 'books'
 const FILES = 'files'
@@ -23,6 +33,7 @@ const BOOK_SETTINGS = 'book_settings'
 const APP_SETTINGS = 'app_settings'
 const BOOKMARKS = 'bookmarks'
 const READING_SESSIONS = 'reading_sessions'
+const ANNOTATIONS = 'annotations'
 
 function roundedMinutes(seconds: number): number {
   if (seconds <= 0) return 0
@@ -54,7 +65,7 @@ function open(databaseName: string): Promise<IDBDatabase> {
       // labelled honestly as either words or CJK characters, and the old
       // per-book settings do not contain the two language profiles. Reset only
       // those development stores; books, files, covers, and progress survive.
-      if (event.oldVersion > 0 && event.oldVersion < DB_VERSION) {
+      if (event.oldVersion > 0 && event.oldVersion < MIXED_WORD_COUNT_VERSION) {
         if (db.objectStoreNames.contains(BOOK_SETTINGS)) db.deleteObjectStore(BOOK_SETTINGS)
         if (db.objectStoreNames.contains(READING_SESSIONS)) db.deleteObjectStore(READING_SESSIONS)
       }
@@ -73,6 +84,10 @@ function open(databaseName: string): Promise<IDBDatabase> {
         const sessionsStore = db.createObjectStore(READING_SESSIONS, { keyPath: 'id' })
         sessionsStore.createIndex('by_date', 'date', { unique: false })
         sessionsStore.createIndex('by_bookId', 'bookId', { unique: false })
+      }
+      if (!db.objectStoreNames.contains(ANNOTATIONS)) {
+        const annotationsStore = db.createObjectStore(ANNOTATIONS, { keyPath: 'id' })
+        annotationsStore.createIndex('by_bookId', 'bookId', { unique: false })
       }
 
     }
@@ -118,7 +133,7 @@ export function createWebStorage(databaseName = DB_NAME): StoragePort {
 
     async deleteBook(id: string) {
       const tx = handle().transaction(
-        [BOOKS, FILES, COVERS, PROGRESS, BOOK_SETTINGS, BOOKMARKS, READING_SESSIONS],
+        [BOOKS, FILES, COVERS, PROGRESS, BOOK_SETTINGS, BOOKMARKS, ANNOTATIONS, READING_SESSIONS],
         'readwrite',
       )
       tx.objectStore(BOOKS).delete(id)
@@ -133,6 +148,14 @@ export function createWebStorage(databaseName = DB_NAME): StoragePort {
       const bookmarks = await request<Bookmark[]>(bmIndex.getAll(id))
       for (const bm of bookmarks) {
         bookmarksStore.delete(bm.id)
+      }
+
+      // Delete annotations for this book
+      const annotationsStore = tx.objectStore(ANNOTATIONS)
+      const annotationIndex = annotationsStore.index('by_bookId')
+      const annotations = await request<Annotation[]>(annotationIndex.getAll(id))
+      for (const annotation of annotations) {
+        annotationsStore.delete(annotation.id)
       }
 
       // Delete sessions for this book
@@ -222,6 +245,25 @@ export function createWebStorage(databaseName = DB_NAME): StoragePort {
     async deleteBookmark(id: string) {
       const tx = handle().transaction(BOOKMARKS, 'readwrite')
       tx.objectStore(BOOKMARKS).delete(id)
+      await done(tx)
+    },
+
+    async listAnnotations(bookId: string) {
+      const tx = handle().transaction(ANNOTATIONS, 'readonly')
+      const index = tx.objectStore(ANNOTATIONS).index('by_bookId')
+      const annotations = await request<Annotation[]>(index.getAll(bookId))
+      return annotations.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    },
+
+    async saveAnnotation(annotation: Annotation) {
+      const tx = handle().transaction(ANNOTATIONS, 'readwrite')
+      tx.objectStore(ANNOTATIONS).put(annotation)
+      await done(tx)
+    },
+
+    async deleteAnnotation(id: string) {
+      const tx = handle().transaction(ANNOTATIONS, 'readwrite')
+      tx.objectStore(ANNOTATIONS).delete(id)
       await done(tx)
     },
 

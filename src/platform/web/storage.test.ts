@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createWebStorage } from './storage'
 import { buildFixtureEpub } from '../../test/fixture-epub'
-import type { BookRecord, StoragePort } from '../types'
+import type { Annotation, BookRecord, StoragePort } from '../types'
 
 function record(overrides: Partial<BookRecord> = {}): BookRecord {
   return {
@@ -213,6 +213,81 @@ describe('web storage port', () => {
     expect(await storage.listBookmarks(book.id)).toEqual([bm2])
   })
 
+  it('saves, edits, lists, and deletes annotations', async () => {
+    const storage = await freshStorage()
+    const book = record()
+    await storage.addBook({ record: book, data: await buildFixtureEpub(), cover: null })
+
+    const highlight: Annotation = {
+      id: 'ann-1',
+      bookId: book.id,
+      cfiRange: 'epubcfi(/6/4!/4/2,/1:0,/1:24)',
+      text: 'the unexamined life',
+      note: '',
+      color: 'yellow',
+      chapterTitle: 'Chapter 1',
+      source: 'local',
+      createdAt: '2026-08-20T10:00:00.000Z',
+      updatedAt: '2026-08-20T10:00:00.000Z',
+    }
+    const later: Annotation = {
+      ...highlight,
+      id: 'ann-2',
+      text: 'a second passage',
+      color: 'green',
+      createdAt: '2026-08-20T11:00:00.000Z',
+      updatedAt: '2026-08-20T11:00:00.000Z',
+    }
+
+    await storage.saveAnnotation(later)
+    await storage.saveAnnotation(highlight)
+
+    // Oldest first, so the list follows reading order rather than write order.
+    expect((await storage.listAnnotations(book.id)).map((item) => item.id)).toEqual([
+      'ann-1',
+      'ann-2',
+    ])
+
+    await storage.saveAnnotation({
+      ...highlight,
+      note: 'Socrates, Apology',
+      color: 'blue',
+      updatedAt: '2026-08-20T12:00:00.000Z',
+    })
+    const [edited] = await storage.listAnnotations(book.id)
+    expect(edited.note).toBe('Socrates, Apology')
+    expect(edited.color).toBe('blue')
+    expect(await storage.listAnnotations(book.id)).toHaveLength(2)
+
+    await storage.deleteAnnotation('ann-1')
+    expect((await storage.listAnnotations(book.id)).map((item) => item.id)).toEqual(['ann-2'])
+  })
+
+  it('keeps annotations scoped to their own book', async () => {
+    const storage = await freshStorage()
+    const first = record()
+    const second = record()
+    const data = await buildFixtureEpub()
+    await storage.addBook({ record: first, data, cover: null })
+    await storage.addBook({ record: second, data, cover: null })
+
+    const base: Omit<Annotation, 'id' | 'bookId'> = {
+      cfiRange: 'epubcfi(/6/4!/4/2,/1:0,/1:5)',
+      text: 'hello',
+      note: '',
+      color: 'yellow',
+      chapterTitle: null,
+      source: 'local',
+      createdAt: '2026-08-20T10:00:00.000Z',
+      updatedAt: '2026-08-20T10:00:00.000Z',
+    }
+    await storage.saveAnnotation({ ...base, id: 'a', bookId: first.id })
+    await storage.saveAnnotation({ ...base, id: 'b', bookId: second.id })
+
+    expect((await storage.listAnnotations(first.id)).map((item) => item.id)).toEqual(['a'])
+    expect((await storage.listAnnotations(second.id)).map((item) => item.id)).toEqual(['b'])
+  })
+
   it('leaves nothing behind after a delete', async () => {
     const book = record()
     await storage.addBook({ record: book, data: new Uint8Array([1, 2, 3]), cover: new Uint8Array([4]) })
@@ -235,6 +310,18 @@ describe('web storage port', () => {
       text: 'Bookmark',
       createdAt: '2026-08-15T12:00:00.000Z',
     })
+    await storage.saveAnnotation({
+      id: 'ann-delete',
+      bookId: book.id,
+      cfiRange: 'epubcfi(/6/4!/4/2,/1:0,/1:5)',
+      text: 'Highlight',
+      note: 'note',
+      color: 'yellow',
+      chapterTitle: null,
+      source: 'local',
+      createdAt: '2026-08-15T12:00:00.000Z',
+      updatedAt: '2026-08-15T12:00:00.000Z',
+    })
     await storage.recordReadingSession({
       id: 'sess-delete',
       bookId: book.id,
@@ -252,6 +339,7 @@ describe('web storage port', () => {
     expect(await storage.getProgress(book.id)).toBeNull()
     expect(await storage.getBookSettings(book.id)).toBeNull()
     expect(await storage.listBookmarks(book.id)).toEqual([])
+    expect(await storage.listAnnotations(book.id)).toEqual([])
     expect((await storage.getReadingStats()).totalBooksRead).toBe(0)
     await expect(storage.readBookFile(book.id)).rejects.toThrow()
   })

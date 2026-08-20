@@ -1,6 +1,6 @@
 # 划线摘抄
 
-> 状态：📋 规划中。
+> 状态：🚧 划线、笔记、书内列表已实现；Kindle 格式导入导出规划中。
 > 参照物：Kindle 的 `My Clippings.txt`。
 > 相关：[reading-formats](reading-formats.md)、[vocabulary](vocabulary.md)、[platform-and-storage](platform-and-storage.md)
 
@@ -74,26 +74,37 @@ Perhaps consciousness arises when the brain's simulation of the world becomes so
 
 ```sql
 CREATE TABLE annotations (
-    id          TEXT PRIMARY KEY,
-    book_id     TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
-    kind        TEXT NOT NULL,      -- 'highlight' | 'note' | 'bookmark'
-    locator     TEXT NOT NULL,      -- JSON Locator
-    locator_end TEXT,               -- JSON Locator，选区终点；书签为 NULL
-    text        TEXT,               -- 划线的原文；书签为 NULL
-    note        TEXT,               -- 用户笔记
-    color       TEXT,
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL,
-    source      TEXT NOT NULL       -- 'local' | 'kindle-import'
+    id            TEXT PRIMARY KEY,
+    book_id       TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    cfi_range     TEXT NOT NULL,    -- 覆盖整个选区的 EPUB CFI range
+    text          TEXT NOT NULL,    -- 划线时的原文
+    note          TEXT NOT NULL DEFAULT '',
+    color         TEXT NOT NULL,    -- yellow | green | blue | pink | purple
+    chapter_title TEXT,             -- 建立时捕获，列表离线可读
+    source        TEXT NOT NULL DEFAULT 'local',  -- 'local' | 'kindle-import'
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
 );
-CREATE INDEX annotations_book ON annotations(book_id, created_at DESC);
+CREATE INDEX idx_annotations_book ON annotations(book_id, created_at);
 ```
 
-`source` 用于区分导入数据与本地数据 —— 导入的 Kindle 条目往往无法精确锚定到我们的
-`Locator`（Kindle location 与 CFI 之间没有可靠映射），这类条目应：
-- 保留原文与元数据，**可查看、可导出**
-- 但**不保证能跳转定位**，UI 上要区别对待，不要给一个点了没反应的跳转按钮
+### 与早期设计的两处差异
 
+1. **书签不在这张表里。** 书签保留独立的 `bookmarks` 表：书签是一个*位置*，划线是一段
+   被刻意留下的*文本*，两者的字段、列表形态和交互都不同。导出 Kindle 格式时再把两张表
+   合并成一个文件（`My Clippings.txt` 本来就把三种类型混在一起）。
+2. **没有 `kind` 列，笔记是划线的一个字段。** 本应用里笔记永远依附于一段划线，一行同时
+   持有原文和笔记比拆成两行更贴近实际操作。导出时若 `note` 非空，再拆成 Highlight 与
+   Note 两条记录写出去。
+
+`locator` 抽象（格式无关的位置标识）尚未落地，当前直接存 EPUB CFI range；TXT / PDF 接入时
+与 `bookmarks`、`reading_progress` 一起迁移，见 [reading-formats](reading-formats.md)。
+
+`source` 用于区分导入数据与本地数据 —— 导入的 Kindle 条目往往无法精确锚定，UI 必须区别
+对待，不要给一个点了没反应的跳转按钮。
+
+导入的 Kindle 条目往往无法精确锚定到 CFI（Kindle location 与 CFI 之间没有可靠映射），
+这类条目应保留原文与元数据、**可查看、可导出**，但**不保证能跳转定位**。
 这是诚实处理导入数据的关键 —— 假装能定位比不能定位更糟。
 
 ## 6. 导出

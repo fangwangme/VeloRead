@@ -20,6 +20,9 @@ pub fn run() {
             library::library_list_bookmarks,
             library::library_add_bookmark,
             library::library_delete_bookmark,
+            library::library_list_annotations,
+            library::library_save_annotation,
+            library::library_delete_annotation,
             library::library_record_reading_session,
             library::library_get_reading_stats,
         ])

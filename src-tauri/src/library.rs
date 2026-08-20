@@ -18,8 +18,8 @@ use rusqlite::Connection;
 use tauri::{ipc::Response, AppHandle, Manager, State};
 
 use store::{
-    book_file, BookRecord, BookSettings, Bookmark, OverallReadingStats, ReadingProgress,
-    ReadingSession,
+    book_file, Annotation, BookRecord, BookSettings, Bookmark, OverallReadingStats,
+    ReadingProgress, ReadingSession,
 };
 
 /// Storage primitives, free of any Tauri types.
@@ -29,7 +29,7 @@ mod store {
     use rusqlite::{params, Connection, OptionalExtension};
     use serde::{Deserialize, Serialize};
 
-    const SCHEMA_VERSION: i32 = 3;
+    pub const SCHEMA_VERSION: i32 = 4;
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -80,6 +80,29 @@ mod store {
         pub cfi: String,
         pub text: String,
         pub created_at: String,
+    }
+
+    /// A highlighted passage and its optional note. Separate from `bookmarks`:
+    /// a bookmark is a position, a highlight is a range of text kept on purpose.
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct Annotation {
+        pub id: String,
+        pub book_id: String,
+        pub cfi_range: String,
+        pub text: String,
+        #[serde(default)]
+        pub note: String,
+        pub color: String,
+        pub chapter_title: Option<String>,
+        #[serde(default = "default_annotation_source")]
+        pub source: String,
+        pub created_at: String,
+        pub updated_at: String,
+    }
+
+    fn default_annotation_source() -> String {
+        "local".to_string()
     }
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -213,7 +236,11 @@ mod store {
             )?;
         }
 
-        if version > 0 && version < SCHEMA_VERSION {
+        // Pinned to 3, not SCHEMA_VERSION: this reset exists only because the
+        // pre-v3 mixed word count cannot be split into words and CJK characters.
+        // Left open-ended it would re-run on every future bump and delete real
+        // settings and statistics along with it.
+        if version > 0 && version < 3 {
             // The application is still in development. The old mixed count
             // cannot be mapped truthfully to words or CJK characters, so reset
             // only unpublished per-book settings and reading sessions. Books,
@@ -244,6 +271,23 @@ mod store {
                  CREATE INDEX idx_sessions_date ON reading_sessions(date);",
             )?;
         }
+
+        connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS annotations (
+                 id            TEXT PRIMARY KEY,
+                 book_id       TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                 cfi_range     TEXT NOT NULL,
+                 text          TEXT NOT NULL,
+                 note          TEXT NOT NULL DEFAULT '',
+                 color         TEXT NOT NULL,
+                 chapter_title TEXT,
+                 source        TEXT NOT NULL DEFAULT 'local',
+                 created_at    TEXT NOT NULL,
+                 updated_at    TEXT NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_annotations_book
+                 ON annotations(book_id, created_at);",
+        )?;
 
         connection.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
         Ok(())
@@ -291,6 +335,10 @@ mod store {
     }
 
     pub fn delete_book(connection: &Connection, id: &str) -> rusqlite::Result<()> {
+        connection.execute(
+            "DELETE FROM annotations WHERE book_id = ?1",
+            params![id],
+        )?;
         connection.execute(
             "DELETE FROM reading_sessions WHERE book_id = ?1",
             params![id],
@@ -489,6 +537,66 @@ mod store {
 
     pub fn delete_bookmark(connection: &Connection, id: &str) -> rusqlite::Result<()> {
         connection.execute("DELETE FROM bookmarks WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn list_annotations(connection: &Connection, book_id: &str) -> rusqlite::Result<Vec<Annotation>> {
+        let mut statement = connection.prepare(
+            "SELECT id, book_id, cfi_range, text, note, color, chapter_title,
+                    source, created_at, updated_at
+             FROM annotations WHERE book_id = ?1
+             ORDER BY created_at ASC, id ASC",
+        )?;
+        let rows = statement.query_map(params![book_id], |row| {
+            Ok(Annotation {
+                id: row.get(0)?,
+                book_id: row.get(1)?,
+                cfi_range: row.get(2)?,
+                text: row.get(3)?,
+                note: row.get(4)?,
+                color: row.get(5)?,
+                chapter_title: row.get(6)?,
+                source: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Upsert, so editing a note or recoloring a highlight reuses this path.
+    pub fn save_annotation(connection: &Connection, annotation: &Annotation) -> rusqlite::Result<()> {
+        connection.execute(
+            "INSERT INTO annotations (
+                 id, book_id, cfi_range, text, note, color, chapter_title,
+                 source, created_at, updated_at
+             )
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             ON CONFLICT(id) DO UPDATE SET
+                 cfi_range = excluded.cfi_range,
+                 text = excluded.text,
+                 note = excluded.note,
+                 color = excluded.color,
+                 chapter_title = excluded.chapter_title,
+                 updated_at = excluded.updated_at",
+            params![
+                annotation.id,
+                annotation.book_id,
+                annotation.cfi_range,
+                annotation.text,
+                annotation.note,
+                annotation.color,
+                annotation.chapter_title,
+                annotation.source,
+                annotation.created_at,
+                annotation.updated_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_annotation(connection: &Connection, id: &str) -> rusqlite::Result<()> {
+        connection.execute("DELETE FROM annotations WHERE id = ?1", params![id])?;
         Ok(())
     }
 
@@ -824,6 +932,33 @@ pub fn library_delete_bookmark(
 }
 
 #[tauri::command]
+pub fn library_list_annotations(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+    book_id: String,
+) -> Result<Vec<Annotation>, String> {
+    state.with_db(&app, |connection| store::list_annotations(connection, &book_id))
+}
+
+#[tauri::command]
+pub fn library_save_annotation(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+    annotation: Annotation,
+) -> Result<(), String> {
+    state.with_db(&app, |connection| store::save_annotation(connection, &annotation))
+}
+
+#[tauri::command]
+pub fn library_delete_annotation(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+    id: String,
+) -> Result<(), String> {
+    state.with_db(&app, |connection| store::delete_annotation(connection, &id))
+}
+
+#[tauri::command]
 pub fn library_record_reading_session(
     app: AppHandle,
     state: State<'_, LibraryState>,
@@ -875,7 +1010,7 @@ mod tests {
         let version: i32 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .expect("read user_version");
-        assert_eq!(version, 3);
+        assert_eq!(version, SCHEMA_VERSION);
         assert_eq!(list_books(&connection).unwrap(), vec![]);
     }
 
@@ -925,7 +1060,7 @@ mod tests {
         let version: i32 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .expect("read user_version");
-        assert_eq!(version, 3);
+        assert_eq!(version, SCHEMA_VERSION);
 
         // Verify old book and progress are still readable
         let books = list_books(&connection).unwrap();
@@ -1208,6 +1343,7 @@ mod tests {
             },
         )
         .unwrap();
+        save_annotation(&connection, &annotation("h1", "a1", "2026-08-15T20:00:00.000Z")).unwrap();
         record_reading_session(
             &connection,
             &ReadingSession {
@@ -1228,7 +1364,90 @@ mod tests {
         assert_eq!(get_progress(&connection, "a1").unwrap(), None);
         assert_eq!(get_book_settings(&connection, "a1").unwrap(), None);
         assert_eq!(list_bookmarks(&connection, "a1").unwrap(), vec![]);
+        assert_eq!(list_annotations(&connection, "a1").unwrap(), vec![]);
         assert_eq!(get_reading_stats(&connection).unwrap().total_books_read, 0);
+    }
+
+    fn annotation(id: &str, book_id: &str, created_at: &str) -> Annotation {
+        Annotation {
+            id: id.to_string(),
+            book_id: book_id.to_string(),
+            cfi_range: "epubcfi(/6/4!/4/2,/1:0,/1:19)".to_string(),
+            text: "the unexamined life".to_string(),
+            note: String::new(),
+            color: "yellow".to_string(),
+            chapter_title: Some("Chapter 1".to_string()),
+            source: "local".to_string(),
+            created_at: created_at.to_string(),
+            updated_at: created_at.to_string(),
+        }
+    }
+
+    #[test]
+    fn annotations_round_trip_in_reading_order_and_upsert_in_place() {
+        let connection = db();
+        insert_book(
+            &connection,
+            &book("a1", "Fixture", "2026-08-15T10:00:00.000Z"),
+        )
+        .unwrap();
+
+        // Written newest-first on purpose: the list must follow reading order.
+        save_annotation(&connection, &annotation("h2", "a1", "2026-08-16T09:00:00.000Z")).unwrap();
+        save_annotation(&connection, &annotation("h1", "a1", "2026-08-15T09:00:00.000Z")).unwrap();
+
+        let listed = list_annotations(&connection, "a1").unwrap();
+        assert_eq!(
+            listed.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(),
+            vec!["h1", "h2"]
+        );
+
+        let edited = Annotation {
+            note: "Socrates, Apology".to_string(),
+            color: "blue".to_string(),
+            updated_at: "2026-08-17T09:00:00.000Z".to_string(),
+            ..annotation("h1", "a1", "2026-08-15T09:00:00.000Z")
+        };
+        save_annotation(&connection, &edited).unwrap();
+
+        let listed = list_annotations(&connection, "a1").unwrap();
+        assert_eq!(listed.len(), 2, "an edit must not create a second row");
+        assert_eq!(listed[0], edited);
+
+        delete_annotation(&connection, "h1").unwrap();
+        assert_eq!(
+            list_annotations(&connection, "a1")
+                .unwrap()
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["h2"]
+        );
+    }
+
+    #[test]
+    fn annotations_stay_scoped_to_their_own_book() {
+        let connection = db();
+        insert_book(&connection, &book("a1", "One", "2026-08-15T10:00:00.000Z")).unwrap();
+        insert_book(&connection, &book("a2", "Two", "2026-08-15T11:00:00.000Z")).unwrap();
+        save_annotation(&connection, &annotation("h1", "a1", "2026-08-15T09:00:00.000Z")).unwrap();
+        save_annotation(&connection, &annotation("h2", "a2", "2026-08-15T09:00:00.000Z")).unwrap();
+
+        assert_eq!(list_annotations(&connection, "a1").unwrap().len(), 1);
+        assert_eq!(list_annotations(&connection, "a2").unwrap()[0].id, "h2");
+    }
+
+    #[test]
+    fn an_annotation_payload_without_optional_fields_still_deserializes() {
+        // The webview drops undefined keys, so `note` and `source` can be absent.
+        let parsed: Annotation = serde_json::from_str(
+            r#"{"id":"h1","bookId":"a1","cfiRange":"epubcfi(/6/4!/4/2,/1:0,/1:5)",
+                "text":"hello","color":"yellow","chapterTitle":null,
+                "createdAt":"2026-08-15T09:00:00.000Z","updatedAt":"2026-08-15T09:00:00.000Z"}"#,
+        )
+        .expect("deserialize");
+        assert_eq!(parsed.note, "");
+        assert_eq!(parsed.source, "local");
     }
 
     #[test]

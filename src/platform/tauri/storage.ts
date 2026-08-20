@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import type {
+  Annotation,
   AppSettings,
   Bookmark,
   BookImport,
@@ -104,6 +105,18 @@ export function createTauriStorage(): StoragePort {
 
     deleteBookmark(id: string) {
       return invoke<void>('library_delete_bookmark', { id })
+    },
+
+    listAnnotations(bookId: string) {
+      return invoke<Annotation[]>('library_list_annotations', { bookId })
+    },
+
+    saveAnnotation(annotation: Annotation) {
+      return invoke<void>('library_save_annotation', { annotation })
+    },
+
+    deleteAnnotation(id: string) {
+      return invoke<void>('library_delete_annotation', { id })
     },
 
     recordReadingSession(session: ReadingSession) {
