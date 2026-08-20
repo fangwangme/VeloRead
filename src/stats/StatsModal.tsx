@@ -2,10 +2,19 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { getStorage } from '../platform'
 import type { DailyReadingStats, OverallReadingStats } from '../platform/types'
 import { localDateKey } from './tracking'
-import { checkinState, monthCheckinSummary } from './checkins'
+import {
+  checkinState,
+  EXCEEDED_GOAL_MULTIPLE,
+  isCurrentMonth,
+  monthCheckinSummary,
+  shiftMonth,
+  type CheckinState,
+} from './checkins'
 import {
   IconBook,
   IconCalendar,
+  IconChevronLeft,
+  IconChevronRight,
   IconClock,
   IconFlame,
   IconInfo,
@@ -194,6 +203,34 @@ export function StatsModal({ dailyGoalMinutes, onClose }: StatsModalProps) {
   )
 }
 
+const CHECKIN_STYLES: Record<CheckinState, { cell: string; swatch: string; label: string }> = {
+  exceeded: {
+    cell: 'border-blue-600/70 bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-[0_4px_12px_rgba(37,99,235,0.28)] dark:from-blue-500 dark:to-indigo-500',
+    swatch: 'bg-gradient-to-br from-blue-600 to-indigo-600 dark:from-blue-500 dark:to-indigo-500',
+    label: '超额达标',
+  },
+  complete: {
+    cell: 'border-blue-500/60 bg-blue-600 text-white shadow-[0_3px_9px_rgba(37,99,235,0.2)] dark:bg-blue-500',
+    swatch: 'bg-blue-600 dark:bg-blue-500',
+    label: '已达标',
+  },
+  partial: {
+    cell: 'border-amber-400/55 bg-amber-50 text-amber-800 dark:border-amber-500/35 dark:bg-amber-400/10 dark:text-amber-300',
+    swatch: 'bg-amber-100 border border-amber-300 dark:bg-amber-400/10 dark:border-amber-500/40',
+    label: '读了但未达标',
+  },
+  empty: {
+    cell: 'border-black/[0.07] bg-white/70 text-neutral-500 dark:border-white/[0.07] dark:bg-white/[0.025] dark:text-neutral-400',
+    swatch: 'bg-white border border-black/10 dark:bg-white/[0.03] dark:border-white/10',
+    label: '未阅读',
+  },
+  future: {
+    cell: 'border-dashed border-black/[0.06] bg-transparent text-neutral-300 dark:border-white/[0.06] dark:text-neutral-700',
+    swatch: 'border border-dashed border-black/15 dark:border-white/15',
+    label: '未到',
+  },
+}
+
 function CheckinPage({
   dailyStats,
   currentStreakDays,
@@ -205,14 +242,34 @@ function CheckinPage({
 }) {
   const today = new Date()
   const safeDailyGoalMinutes = Math.max(1, dailyGoalMinutes)
-  const year = today.getFullYear()
-  const month = today.getMonth()
-  const firstDay = new Date(year, month, 1).getDay()
-  const daysInMonth = new Date(year, month + 1, 0).getDate()
-  const summary = monthCheckinSummary(dailyStats, safeDailyGoalMinutes, today)
-  const progress = Math.min(100, Math.round((summary.todayMinutes / safeDailyGoalMinutes) * 100))
+  const [month, setMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
+  const viewingCurrentMonth = isCurrentMonth(month, today)
+
+  const summary = monthCheckinSummary(dailyStats, safeDailyGoalMinutes, month, today)
+  const year = month.getFullYear()
+  const monthIndex = month.getMonth()
+  const firstDay = new Date(year, monthIndex, 1).getDay()
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate()
+
+  // Progress can pass 100%: the bar fills to the goal and a second segment shows
+  // the overshoot, so a 2x day reads differently from a bare pass.
+  const goalProgress = Math.min(100, Math.round((summary.todayMinutes / safeDailyGoalMinutes) * 100))
+  const overshootMinutes = Math.max(0, summary.todayMinutes - safeDailyGoalMinutes)
+  const overshootProgress = Math.min(
+    100,
+    Math.round((overshootMinutes / safeDailyGoalMinutes) * 100),
+  )
+  const todayState = checkinState(today, summary.todayMinutes, safeDailyGoalMinutes, today)
+
   const cells: (Date | null)[] = Array.from({ length: firstDay }, () => null)
-  for (let day = 1; day <= daysInMonth; day++) cells.push(new Date(year, month, day))
+  for (let day = 1; day <= daysInMonth; day++) cells.push(new Date(year, monthIndex, day))
+
+  const todayMessage =
+    todayState === 'exceeded'
+      ? `已读 ${summary.todayMinutes} 分钟，达到目标的 ${Math.floor(summary.todayMinutes / safeDailyGoalMinutes)} 倍。`
+      : todayState === 'complete'
+        ? '今日目标已完成，打卡已自动点亮。'
+        : `再读 ${Math.max(0, safeDailyGoalMinutes - summary.todayMinutes)} 分钟即可完成打卡。`
 
   return (
     <div className="space-y-5">
@@ -230,35 +287,69 @@ function CheckinPage({
                 / {safeDailyGoalMinutes} 分钟
               </span>
             </div>
-            <p className="mt-2 text-[11px] text-neutral-500 dark:text-neutral-400">
-              {progress >= 100 ? '今日目标已完成，打卡已自动点亮。' : `再读 ${Math.max(0, safeDailyGoalMinutes - summary.todayMinutes)} 分钟即可完成打卡。`}
-            </p>
+            <p className="mt-2 text-[11px] text-neutral-500 dark:text-neutral-400">{todayMessage}</p>
           </div>
           <div className="shrink-0 text-right">
-            <p className="font-mono text-2xl font-bold text-blue-600 dark:text-blue-400">{progress}%</p>
+            <p className="font-mono text-2xl font-bold text-blue-600 dark:text-blue-400">
+              {Math.round((summary.todayMinutes / safeDailyGoalMinutes) * 100)}%
+            </p>
             <p className="mt-1 text-[10px] text-neutral-400">连续 {currentStreakDays} 天</p>
           </div>
         </div>
-        <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-blue-500/10 dark:bg-blue-300/10">
+        <div className="mt-4 flex h-1.5 gap-0.5 overflow-hidden rounded-full bg-blue-500/10 dark:bg-blue-300/10">
           <div
-            className="h-full rounded-full bg-blue-600 transition-[width] duration-300 dark:bg-blue-400"
-            style={{ width: `${progress}%` }}
+            className="h-full rounded-full bg-blue-600 transition-[width] duration-300 motion-reduce:transition-none dark:bg-blue-400"
+            style={{ width: `${goalProgress}%` }}
           />
+          {overshootProgress > 0 && (
+            <div
+              className="h-full rounded-full bg-indigo-500/70 transition-[width] duration-300 motion-reduce:transition-none dark:bg-indigo-400/70"
+              style={{ width: `${overshootProgress}%` }}
+              title={`超出目标 ${overshootMinutes} 分钟`}
+            />
+          )}
         </div>
       </section>
 
       <section className="rounded-2xl border border-black/[0.06] bg-black/[0.015] p-5 dark:border-white/[0.07] dark:bg-white/[0.025]">
-        <div className="mb-4 flex items-end justify-between">
-          <div>
-            <h3 className="text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200">
-              {year} 年 {month + 1} 月
-            </h3>
-            <p className="mt-1 text-[10px] text-neutral-400">达标日会在书页右上角留下完成印记</p>
+        <div className="mb-4 flex items-end justify-between gap-4">
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setMonth((current) => shiftMonth(current, -1))}
+              className="flex size-7 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-white/10 dark:hover:text-neutral-200"
+              aria-label="上一个月"
+            >
+              <IconChevronLeft />
+            </button>
+            <div className="min-w-28 text-center">
+              <h3 className="text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200">
+                {year} 年 {monthIndex + 1} 月
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMonth((current) => shiftMonth(current, 1))}
+              disabled={viewingCurrentMonth}
+              className="flex size-7 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:pointer-events-none disabled:opacity-30 dark:hover:bg-white/10 dark:hover:text-neutral-200"
+              aria-label="下一个月"
+            >
+              <IconChevronRight />
+            </button>
           </div>
-          <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
-            <span className="font-mono font-bold text-neutral-900 dark:text-white">{summary.completedDays}</span>
-            {' '}天达标 · {summary.activeDays} 天有阅读
-          </p>
+          <div className="text-right text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
+            <p>
+              <span className="font-mono font-bold text-neutral-900 dark:text-white">
+                {summary.completedDays}
+              </span>
+              {' / '}
+              {summary.elapsedDays} 天达标
+              {summary.exceededDays > 0 && `（${summary.exceededDays} 天超额）`}
+            </p>
+            <p className="mt-0.5 text-neutral-400">
+              {summary.activeDays} 天有阅读 · 共 {formatMinutes(summary.totalMinutes)}
+            </p>
+          </div>
         </div>
 
         <div className="grid grid-cols-7 gap-2">
@@ -273,27 +364,23 @@ function CheckinPage({
             const minutes = dailyStats[key]?.durationMinutes ?? 0
             const state = checkinState(date, minutes, safeDailyGoalMinutes, today)
             const isToday = key === localDateKey(today)
-            const stateClass = {
-              complete: 'border-blue-500/60 bg-blue-600 text-white shadow-[0_3px_9px_rgba(37,99,235,0.2)] dark:bg-blue-500',
-              partial: 'border-amber-400/55 bg-amber-50 text-amber-800 dark:border-amber-500/35 dark:bg-amber-400/10 dark:text-amber-300',
-              empty: 'border-black/[0.07] bg-white/70 text-neutral-500 dark:border-white/[0.07] dark:bg-white/[0.025] dark:text-neutral-400',
-              future: 'border-black/[0.035] bg-transparent text-neutral-300 dark:border-white/[0.035] dark:text-neutral-700',
-            }[state]
             return (
               <div
                 key={key}
-                title={`${key}: ${minutes} 分钟`}
-                className={`relative min-h-14 rounded-[7px_12px_7px_7px] border px-2 py-1.5 transition ${stateClass} ${
+                title={`${key}: ${minutes} 分钟 · ${CHECKIN_STYLES[state].label}`}
+                className={`relative min-h-14 rounded-[7px_12px_7px_7px] border px-2 py-1.5 transition ${CHECKIN_STYLES[state].cell} ${
                   isToday ? 'ring-2 ring-blue-500/25 ring-offset-2 ring-offset-white dark:ring-offset-[#1C1C1E]' : ''
                 }`}
               >
                 <span className="text-[10px] font-semibold">{date.getDate()}</span>
                 {state !== 'future' && (
-                  <span className="mt-2 block text-[9px] font-mono opacity-75">{minutes}m</span>
+                  <span className="mt-2 block font-mono text-[9px] opacity-75">{minutes}m</span>
                 )}
-                {state === 'complete' && (
+                {(state === 'complete' || state === 'exceeded') && (
                   <>
-                    <span className="absolute right-1.5 top-1 text-[9px] font-bold" aria-label="已达标">✓</span>
+                    <span className="absolute right-1.5 top-1 text-[9px] font-bold" aria-label={CHECKIN_STYLES[state].label}>
+                      {state === 'exceeded' ? '★' : '✓'}
+                    </span>
                     <span className="absolute right-0 top-0 size-2.5 rounded-tr-[6px] bg-white/30 [clip-path:polygon(0_0,100%_0,100%_100%)]" aria-hidden="true" />
                   </>
                 )}
@@ -303,14 +390,23 @@ function CheckinPage({
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] text-neutral-400">
-          <Legend swatch="bg-blue-600 dark:bg-blue-500" label="已达标" />
-          <Legend swatch="bg-amber-100 border border-amber-300 dark:bg-amber-400/10 dark:border-amber-500/40" label="阅读中" />
-          <Legend swatch="bg-white border border-black/10 dark:bg-white/[0.03] dark:border-white/10" label="未阅读" />
-          <span className="ml-auto">达到 {safeDailyGoalMinutes} 分钟自动打卡</span>
+          {(['exceeded', 'complete', 'partial', 'empty'] as const).map((state) => (
+            <Legend key={state} swatch={CHECKIN_STYLES[state].swatch} label={CHECKIN_STYLES[state].label} />
+          ))}
+          <span className="ml-auto">
+            达到 {safeDailyGoalMinutes} 分钟自动打卡，{safeDailyGoalMinutes * EXCEEDED_GOAL_MULTIPLE} 分钟记为超额
+          </span>
         </div>
       </section>
     </div>
   )
+}
+
+function formatMinutes(minutes: number): string {
+  if (minutes < 60) return `${minutes} 分钟`
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return rest === 0 ? `${hours} 小时` : `${hours} 小时 ${rest} 分`
 }
 
 function Legend({ swatch, label }: { swatch: string; label: string }) {
