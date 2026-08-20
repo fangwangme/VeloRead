@@ -18,8 +18,8 @@ use rusqlite::Connection;
 use tauri::{ipc::Response, AppHandle, Manager, State};
 
 use store::{
-    book_file, Annotation, BookRecord, BookSettings, Bookmark, OverallReadingStats,
-    ReadingProgress, ReadingSession,
+    book_file, Annotation, BookRecord, BookSettings, Bookmark, Collection,
+    OverallReadingStats, ReadingProgress, ReadingSession,
 };
 
 /// Storage primitives, free of any Tauri types.
@@ -29,7 +29,7 @@ mod store {
     use rusqlite::{params, Connection, OptionalExtension};
     use serde::{Deserialize, Serialize};
 
-    pub const SCHEMA_VERSION: i32 = 4;
+    pub const SCHEMA_VERSION: i32 = 5;
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -80,6 +80,17 @@ mod store {
         pub cfi: String,
         pub text: String,
         pub created_at: String,
+    }
+
+    /// A user-made shelf. Membership is a join table because a book can be
+    /// filed under several collections at once.
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct Collection {
+        pub id: String,
+        pub name: String,
+        pub created_at: String,
+        pub updated_at: String,
     }
 
     /// A highlighted passage and its optional note. Separate from `bookmarks`:
@@ -289,6 +300,22 @@ mod store {
                  ON annotations(book_id, created_at);",
         )?;
 
+        connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS collections (
+                 id         TEXT PRIMARY KEY,
+                 name       TEXT NOT NULL,
+                 created_at TEXT NOT NULL,
+                 updated_at TEXT NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS collection_books (
+                 collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+                 book_id       TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                 PRIMARY KEY (collection_id, book_id)
+             );
+             CREATE INDEX IF NOT EXISTS idx_collection_books_book
+                 ON collection_books(book_id);",
+        )?;
+
         connection.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
         Ok(())
     }
@@ -335,6 +362,10 @@ mod store {
     }
 
     pub fn delete_book(connection: &Connection, id: &str) -> rusqlite::Result<()> {
+        connection.execute(
+            "DELETE FROM collection_books WHERE book_id = ?1",
+            params![id],
+        )?;
         connection.execute(
             "DELETE FROM annotations WHERE book_id = ?1",
             params![id],
@@ -538,6 +569,92 @@ mod store {
     pub fn delete_bookmark(connection: &Connection, id: &str) -> rusqlite::Result<()> {
         connection.execute("DELETE FROM bookmarks WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    pub fn list_collections(connection: &Connection) -> rusqlite::Result<Vec<Collection>> {
+        let mut statement = connection.prepare(
+            "SELECT id, name, created_at, updated_at FROM collections ORDER BY name ASC, id ASC",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok(Collection {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                created_at: row.get(2)?,
+                updated_at: row.get(3)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Upsert, so renaming a collection reuses this path.
+    pub fn save_collection(connection: &Connection, collection: &Collection) -> rusqlite::Result<()> {
+        connection.execute(
+            "INSERT INTO collections (id, name, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET
+                 name = excluded.name,
+                 updated_at = excluded.updated_at",
+            params![
+                collection.id,
+                collection.name,
+                collection.created_at,
+                collection.updated_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Deletes the shelf and its memberships. The books themselves stay.
+    pub fn delete_collection(connection: &Connection, id: &str) -> rusqlite::Result<()> {
+        connection.execute(
+            "DELETE FROM collection_books WHERE collection_id = ?1",
+            params![id],
+        )?;
+        connection.execute("DELETE FROM collections WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Replaces one book's membership set wholesale, in a transaction so a
+    /// failure cannot leave the book filed under half the chosen shelves.
+    pub fn set_book_collections(
+        connection: &Connection,
+        book_id: &str,
+        collection_ids: &[String],
+    ) -> rusqlite::Result<()> {
+        // `unchecked_transaction` because the command layer hands out a shared
+        // borrow; there is no second writer, the Mutex serializes access.
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute(
+            "DELETE FROM collection_books WHERE book_id = ?1",
+            params![book_id],
+        )?;
+        for collection_id in collection_ids {
+            transaction.execute(
+                "INSERT OR IGNORE INTO collection_books (collection_id, book_id)
+                 VALUES (?1, ?2)",
+                params![collection_id, book_id],
+            )?;
+        }
+        transaction.commit()
+    }
+
+    pub fn list_collection_membership(
+        connection: &Connection,
+    ) -> rusqlite::Result<std::collections::HashMap<String, Vec<String>>> {
+        let mut statement = connection.prepare(
+            "SELECT book_id, collection_id FROM collection_books ORDER BY book_id ASC",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+
+        let mut membership: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        for row in rows {
+            let (book_id, collection_id) = row?;
+            membership.entry(book_id).or_default().push(collection_id);
+        }
+        Ok(membership)
     }
 
     pub fn list_annotations(connection: &Connection, book_id: &str) -> rusqlite::Result<Vec<Annotation>> {
@@ -929,6 +1046,52 @@ pub fn library_delete_bookmark(
     id: String,
 ) -> Result<(), String> {
     state.with_db(&app, |connection| store::delete_bookmark(connection, &id))
+}
+
+#[tauri::command]
+pub fn library_list_collections(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+) -> Result<Vec<Collection>, String> {
+    state.with_db(&app, store::list_collections)
+}
+
+#[tauri::command]
+pub fn library_save_collection(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+    collection: Collection,
+) -> Result<(), String> {
+    state.with_db(&app, |connection| store::save_collection(connection, &collection))
+}
+
+#[tauri::command]
+pub fn library_delete_collection(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+    id: String,
+) -> Result<(), String> {
+    state.with_db(&app, |connection| store::delete_collection(connection, &id))
+}
+
+#[tauri::command]
+pub fn library_set_book_collections(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+    book_id: String,
+    collection_ids: Vec<String>,
+) -> Result<(), String> {
+    state.with_db(&app, |connection| {
+        store::set_book_collections(connection, &book_id, &collection_ids)
+    })
+}
+
+#[tauri::command]
+pub fn library_list_collection_membership(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+) -> Result<std::collections::HashMap<String, Vec<String>>, String> {
+    state.with_db(&app, store::list_collection_membership)
 }
 
 #[tauri::command]
@@ -1423,6 +1586,80 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["h2"]
         );
+    }
+
+    fn collection(id: &str, name: &str) -> Collection {
+        Collection {
+            id: id.to_string(),
+            name: name.to_string(),
+            created_at: "2026-08-20T10:00:00.000Z".to_string(),
+            updated_at: "2026-08-20T10:00:00.000Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn collections_file_a_book_under_several_shelves_and_replace_the_set() {
+        let connection = db();
+        insert_book(&connection, &book("a1", "One", "2026-08-15T10:00:00.000Z")).unwrap();
+        save_collection(&connection, &collection("c2", "小说")).unwrap();
+        save_collection(&connection, &collection("c1", "工作")).unwrap();
+
+        // Sorted by name, so the shelf filter order does not depend on insert order.
+        assert_eq!(
+            list_collections(&connection)
+                .unwrap()
+                .iter()
+                .map(|item| item.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["小说", "工作"]
+        );
+
+        set_book_collections(&connection, "a1", &["c1".to_string(), "c2".to_string()]).unwrap();
+        let membership = list_collection_membership(&connection).unwrap();
+        let mut shelves = membership.get("a1").cloned().unwrap_or_default();
+        shelves.sort();
+        assert_eq!(shelves, vec!["c1".to_string(), "c2".to_string()]);
+
+        // Setting the membership replaces it rather than adding to it.
+        set_book_collections(&connection, "a1", &["c2".to_string()]).unwrap();
+        assert_eq!(
+            list_collection_membership(&connection).unwrap().get("a1"),
+            Some(&vec!["c2".to_string()])
+        );
+
+        // Re-applying the same set must not duplicate rows.
+        set_book_collections(&connection, "a1", &["c2".to_string()]).unwrap();
+        assert_eq!(
+            list_collection_membership(&connection).unwrap().get("a1"),
+            Some(&vec!["c2".to_string()])
+        );
+    }
+
+    #[test]
+    fn deleting_a_collection_keeps_its_books() {
+        let connection = db();
+        insert_book(&connection, &book("a1", "One", "2026-08-15T10:00:00.000Z")).unwrap();
+        save_collection(&connection, &collection("c1", "工作")).unwrap();
+        set_book_collections(&connection, "a1", &["c1".to_string()]).unwrap();
+
+        delete_collection(&connection, "c1").unwrap();
+
+        assert_eq!(list_collections(&connection).unwrap(), vec![]);
+        assert!(list_collection_membership(&connection).unwrap().is_empty());
+        assert_eq!(list_books(&connection).unwrap().len(), 1, "the book survives");
+    }
+
+    #[test]
+    fn deleting_a_book_removes_it_from_its_collections() {
+        let connection = db();
+        insert_book(&connection, &book("a1", "One", "2026-08-15T10:00:00.000Z")).unwrap();
+        save_collection(&connection, &collection("c1", "工作")).unwrap();
+        set_book_collections(&connection, "a1", &["c1".to_string()]).unwrap();
+
+        delete_book(&connection, "a1").expect("delete");
+
+        assert!(list_collection_membership(&connection).unwrap().is_empty());
+        assert_eq!(list_collections(&connection).unwrap().len(), 1, "the shelf survives");
     }
 
     #[test]

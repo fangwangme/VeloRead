@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createWebStorage } from './storage'
 import { buildFixtureEpub } from '../../test/fixture-epub'
-import type { Annotation, BookRecord, StoragePort } from '../types'
+import type { Annotation, Collection, BookRecord, StoragePort } from '../types'
 
 function record(overrides: Partial<BookRecord> = {}): BookRecord {
   return {
@@ -21,6 +21,10 @@ async function freshStorage(): Promise<StoragePort> {
   const storage = createWebStorage()
   await storage.init()
   for (const book of await storage.listBooks()) await storage.deleteBook(book.id)
+  // Collections outlive their books, so clearing books alone leaks them between tests.
+  for (const collection of await storage.listCollections()) {
+    await storage.deleteCollection(collection.id)
+  }
   return storage
 }
 
@@ -213,6 +217,53 @@ describe('web storage port', () => {
     expect(await storage.listBookmarks(book.id)).toEqual([bm2])
   })
 
+  it('files a book under several collections and replaces the set wholesale', async () => {
+    const storage = await freshStorage()
+    const book = record()
+    await storage.addBook({ record: book, data: await buildFixtureEpub(), cover: null })
+
+    const shelf = (id: string, name: string): Collection => ({
+      id,
+      name,
+      createdAt: '2026-08-20T10:00:00.000Z',
+      updatedAt: '2026-08-20T10:00:00.000Z',
+    })
+    await storage.saveCollection(shelf('c2', '小说'))
+    await storage.saveCollection(shelf('c1', '工作'))
+
+    // Code-point order, matching SQLite's ORDER BY name on the Tauri target.
+    expect((await storage.listCollections()).map((item) => item.name)).toEqual(['小说', '工作'])
+
+    await storage.setBookCollections(book.id, ['c1', 'c2'])
+    expect((await storage.listCollectionMembership())[book.id]?.sort()).toEqual(['c1', 'c2'])
+
+    // Replaces rather than adds, and re-applying must not duplicate a row.
+    await storage.setBookCollections(book.id, ['c2'])
+    await storage.setBookCollections(book.id, ['c2'])
+    expect((await storage.listCollectionMembership())[book.id]).toEqual(['c2'])
+
+    await storage.saveCollection({ ...shelf('c2', '小说'), name: '文学' })
+    expect((await storage.listCollections()).find((item) => item.id === 'c2')?.name).toBe('文学')
+  })
+
+  it('keeps books when a collection is deleted, and vice versa', async () => {
+    const storage = await freshStorage()
+    const book = record()
+    await storage.addBook({ record: book, data: await buildFixtureEpub(), cover: null })
+    await storage.saveCollection({
+      id: 'c1',
+      name: '工作',
+      createdAt: '2026-08-20T10:00:00.000Z',
+      updatedAt: '2026-08-20T10:00:00.000Z',
+    })
+    await storage.setBookCollections(book.id, ['c1'])
+
+    await storage.deleteCollection('c1')
+    expect(await storage.listCollections()).toEqual([])
+    expect(await storage.listCollectionMembership()).toEqual({})
+    expect((await storage.listBooks()).length).toBe(1)
+  })
+
   it('saves, edits, lists, and deletes annotations', async () => {
     const storage = await freshStorage()
     const book = record()
@@ -322,6 +373,13 @@ describe('web storage port', () => {
       createdAt: '2026-08-15T12:00:00.000Z',
       updatedAt: '2026-08-15T12:00:00.000Z',
     })
+    await storage.saveCollection({
+      id: 'col-delete',
+      name: '待删除',
+      createdAt: '2026-08-15T12:00:00.000Z',
+      updatedAt: '2026-08-15T12:00:00.000Z',
+    })
+    await storage.setBookCollections(book.id, ['col-delete'])
     await storage.recordReadingSession({
       id: 'sess-delete',
       bookId: book.id,
@@ -340,6 +398,7 @@ describe('web storage port', () => {
     expect(await storage.getBookSettings(book.id)).toBeNull()
     expect(await storage.listBookmarks(book.id)).toEqual([])
     expect(await storage.listAnnotations(book.id)).toEqual([])
+    expect(await storage.listCollectionMembership()).toEqual({})
     expect((await storage.getReadingStats()).totalBooksRead).toBe(0)
     await expect(storage.readBookFile(book.id)).rejects.toThrow()
   })

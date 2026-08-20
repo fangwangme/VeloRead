@@ -1,6 +1,7 @@
 import type {
   Annotation,
   AppSettings,
+  Collection,
   Bookmark,
   BookImport,
   BookRecord,
@@ -10,11 +11,11 @@ import type {
   ReadingSession,
   StoragePort,
 } from '../types'
-import { compareBooks } from '../sort'
+import { compareBooks, compareCollections } from '../sort'
 import { calculateCurrentStreak } from '../../stats/tracking'
 
 const DB_NAME = 'veloread'
-const DB_VERSION = 4
+const DB_VERSION = 5
 
 /**
  * Up to this version the reading counts were a single mixed `wordsRead` that
@@ -34,6 +35,8 @@ const APP_SETTINGS = 'app_settings'
 const BOOKMARKS = 'bookmarks'
 const READING_SESSIONS = 'reading_sessions'
 const ANNOTATIONS = 'annotations'
+const COLLECTIONS = 'collections'
+const COLLECTION_BOOKS = 'collection_books'
 
 function roundedMinutes(seconds: number): number {
   if (seconds <= 0) return 0
@@ -89,6 +92,17 @@ function open(databaseName: string): Promise<IDBDatabase> {
         const annotationsStore = db.createObjectStore(ANNOTATIONS, { keyPath: 'id' })
         annotationsStore.createIndex('by_bookId', 'bookId', { unique: false })
       }
+      if (!db.objectStoreNames.contains(COLLECTIONS)) {
+        db.createObjectStore(COLLECTIONS, { keyPath: 'id' })
+      }
+      if (!db.objectStoreNames.contains(COLLECTION_BOOKS)) {
+        // Composite key, so re-adding the same pair cannot duplicate a row.
+        const membership = db.createObjectStore(COLLECTION_BOOKS, {
+          keyPath: ['collectionId', 'bookId'],
+        })
+        membership.createIndex('by_bookId', 'bookId', { unique: false })
+        membership.createIndex('by_collectionId', 'collectionId', { unique: false })
+      }
 
     }
     req.onsuccess = () => resolve(req.result)
@@ -133,7 +147,17 @@ export function createWebStorage(databaseName = DB_NAME): StoragePort {
 
     async deleteBook(id: string) {
       const tx = handle().transaction(
-        [BOOKS, FILES, COVERS, PROGRESS, BOOK_SETTINGS, BOOKMARKS, ANNOTATIONS, READING_SESSIONS],
+        [
+          BOOKS,
+          FILES,
+          COVERS,
+          PROGRESS,
+          BOOK_SETTINGS,
+          BOOKMARKS,
+          ANNOTATIONS,
+          COLLECTION_BOOKS,
+          READING_SESSIONS,
+        ],
         'readwrite',
       )
       tx.objectStore(BOOKS).delete(id)
@@ -156,6 +180,16 @@ export function createWebStorage(databaseName = DB_NAME): StoragePort {
       const annotations = await request<Annotation[]>(annotationIndex.getAll(id))
       for (const annotation of annotations) {
         annotationsStore.delete(annotation.id)
+      }
+
+      // Drop this book from every collection it was filed under
+      const membershipStore = tx.objectStore(COLLECTION_BOOKS)
+      const membershipIndex = membershipStore.index('by_bookId')
+      const memberships = await request<{ collectionId: string; bookId: string }[]>(
+        membershipIndex.getAll(id),
+      )
+      for (const membership of memberships) {
+        membershipStore.delete([membership.collectionId, membership.bookId])
       }
 
       // Delete sessions for this book
@@ -246,6 +280,61 @@ export function createWebStorage(databaseName = DB_NAME): StoragePort {
       const tx = handle().transaction(BOOKMARKS, 'readwrite')
       tx.objectStore(BOOKMARKS).delete(id)
       await done(tx)
+    },
+
+    async listCollections() {
+      const tx = handle().transaction(COLLECTIONS, 'readonly')
+      const collections = await request<Collection[]>(tx.objectStore(COLLECTIONS).getAll())
+      return collections.sort(compareCollections)
+    },
+
+    async saveCollection(collection: Collection) {
+      const tx = handle().transaction(COLLECTIONS, 'readwrite')
+      tx.objectStore(COLLECTIONS).put(collection)
+      await done(tx)
+    },
+
+    async deleteCollection(id: string) {
+      const tx = handle().transaction([COLLECTIONS, COLLECTION_BOOKS], 'readwrite')
+      tx.objectStore(COLLECTIONS).delete(id)
+      const membershipStore = tx.objectStore(COLLECTION_BOOKS)
+      const memberships = await request<{ collectionId: string; bookId: string }[]>(
+        membershipStore.index('by_collectionId').getAll(id),
+      )
+      for (const membership of memberships) {
+        membershipStore.delete([membership.collectionId, membership.bookId])
+      }
+      await done(tx)
+    },
+
+    async setBookCollections(bookId: string, collectionIds: string[]) {
+      const tx = handle().transaction(COLLECTION_BOOKS, 'readwrite')
+      const store = tx.objectStore(COLLECTION_BOOKS)
+      const existing = await request<{ collectionId: string; bookId: string }[]>(
+        store.index('by_bookId').getAll(bookId),
+      )
+      const wanted = new Set(collectionIds)
+      for (const membership of existing) {
+        if (!wanted.has(membership.collectionId)) {
+          store.delete([membership.collectionId, membership.bookId])
+        }
+      }
+      for (const collectionId of wanted) {
+        store.put({ collectionId, bookId })
+      }
+      await done(tx)
+    },
+
+    async listCollectionMembership() {
+      const tx = handle().transaction(COLLECTION_BOOKS, 'readonly')
+      const rows = await request<{ collectionId: string; bookId: string }[]>(
+        tx.objectStore(COLLECTION_BOOKS).getAll(),
+      )
+      const membership: Record<string, string[]> = {}
+      for (const row of rows) {
+        ;(membership[row.bookId] ??= []).push(row.collectionId)
+      }
+      return membership
     },
 
     async listAnnotations(bookId: string) {

@@ -4,6 +4,7 @@ import type {
   AppSettings,
   Bookmark,
   BookImport,
+  Collection,
   BookRecord,
   BookSettings,
   OverallReadingStats,
@@ -105,6 +106,26 @@ export function createTauriStorage(): StoragePort {
 
     deleteBookmark(id: string) {
       return invoke<void>('library_delete_bookmark', { id })
+    },
+
+    listCollections() {
+      return invoke<Collection[]>('library_list_collections')
+    },
+
+    saveCollection(collection: Collection) {
+      return invoke<void>('library_save_collection', { collection })
+    },
+
+    deleteCollection(id: string) {
+      return invoke<void>('library_delete_collection', { id })
+    },
+
+    setBookCollections(bookId: string, collectionIds: string[]) {
+      return invoke<void>('library_set_book_collections', { bookId, collectionIds })
+    },
+
+    listCollectionMembership() {
+      return invoke<Record<string, string[]>>('library_list_collection_membership')
     },
 
     listAnnotations(bookId: string) {

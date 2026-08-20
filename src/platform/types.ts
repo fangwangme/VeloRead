@@ -111,6 +111,17 @@ export interface Annotation {
   updatedAt: string
 }
 
+/**
+ * A user-made shelf. A book can belong to several, so membership lives in its
+ * own join rather than as a field on the book.
+ */
+export interface Collection {
+  id: string
+  name: string
+  createdAt: string
+  updatedAt: string
+}
+
 /** Navigation TOC item. */
 export interface TocItem {
   id: string
@@ -171,6 +182,16 @@ export interface StoragePort {
   addBookmark(bookmark: Bookmark): Promise<void>
   deleteBookmark(id: string): Promise<void>
   /** Oldest first, so the list follows reading order within a book. */
+  /** By name in code-point order, matching SQLite's `ORDER BY name`. */
+  listCollections(): Promise<Collection[]>
+  /** Upsert: also used to rename. */
+  saveCollection(collection: Collection): Promise<void>
+  /** Removes the collection and every membership in it; books are untouched. */
+  deleteCollection(id: string): Promise<void>
+  /** Replaces this book's membership set wholesale. */
+  setBookCollections(bookId: string, collectionIds: string[]): Promise<void>
+  /** bookId -> collectionIds, for filtering the shelf without a query per book. */
+  listCollectionMembership(): Promise<Record<string, string[]>>
   listAnnotations(bookId: string): Promise<Annotation[]>
   /** Upsert: also used to edit a note or recolor an existing highlight. */
   saveAnnotation(annotation: Annotation): Promise<void>

@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useLibrary } from './store'
 import { BookCover } from './BookCover'
 import type { AppSettings, BookRecord } from '../platform/types'
 import { StatsModal } from '../stats/StatsModal'
 import { AppSettingsModal } from '../settings/AppSettingsModal'
-import { IconBook, IconImport, IconSettings, IconStats } from '../ui/icons'
+import { IconBook, IconClose, IconCollection, IconImport, IconSettings, IconStats } from '../ui/icons'
+import { ALL_BOOKS, BookCollectionMenu, CollectionBar, UNFILED } from './CollectionBar'
 
 const TOOLBAR_BUTTON_CLASS =
   'flex items-center gap-1.5 rounded-full border border-black/[0.08] bg-white/80 px-3.5 py-1.5 text-xs font-medium text-neutral-800 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-md transition hover:border-black/20 hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 active:scale-95 disabled:pointer-events-none disabled:opacity-50 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-neutral-200 dark:hover:bg-white/[0.1]'
@@ -17,6 +18,11 @@ export function Library({
   onAppSettingsChange: (changes: Partial<AppSettings>) => Promise<void>
 }) {
   const books = useLibrary((s) => s.books)
+  const collections = useLibrary((s) => s.collections)
+  const membership = useLibrary((s) => s.membership)
+  const createCollection = useLibrary((s) => s.createCollection)
+  const renameCollection = useLibrary((s) => s.renameCollection)
+  const removeCollection = useLibrary((s) => s.removeCollection)
   const loading = useLibrary((s) => s.loading)
   const importing = useLibrary((s) => s.importing)
   const error = useLibrary((s) => s.error)
@@ -27,6 +33,23 @@ export function Library({
   const [dragging, setDragging] = useState(false)
   const [showStats, setShowStats] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [activeCollection, setActiveCollection] = useState<string>(ALL_BOOKS)
+
+  const visibleBooks = useMemo(() => {
+    if (activeCollection === ALL_BOOKS) return books
+    if (activeCollection === UNFILED) {
+      return books.filter((book) => (membership[book.id]?.length ?? 0) === 0)
+    }
+    return books.filter((book) => membership[book.id]?.includes(activeCollection))
+  }, [activeCollection, books, membership])
+
+  // A collection deleted elsewhere must not leave the shelf filtered to nothing.
+  const filterExists =
+    activeCollection === ALL_BOOKS ||
+    activeCollection === UNFILED ||
+    collections.some((collection) => collection.id === activeCollection)
+  const effectiveFilter = filterExists ? activeCollection : ALL_BOOKS
+  const shelf = filterExists ? visibleBooks : books
 
   function onDrop(event: React.DragEvent) {
     event.preventDefault()
@@ -108,6 +131,21 @@ export function Library({
         </div>
       )}
 
+      {books.length > 0 && (
+        <div className="px-8 pt-5">
+          <CollectionBar
+            collections={collections}
+            membership={membership}
+            books={books}
+            activeId={effectiveFilter}
+            onSelect={setActiveCollection}
+            onCreate={(name) => void createCollection(name)}
+            onRename={(id, name) => void renameCollection(id, name)}
+            onDelete={(id) => void removeCollection(id)}
+          />
+        </div>
+      )}
+
       {/* Main Bookshelf Grid */}
       <main className="px-8 pt-6 pb-20">
         {loading ? (
@@ -116,9 +154,13 @@ export function Library({
           </div>
         ) : books.length === 0 ? (
           <EmptyState onPick={() => inputRef.current?.click()} />
+        ) : shelf.length === 0 ? (
+          <div className="py-24 text-center text-xs text-neutral-400 dark:text-neutral-500">
+            这个合集里还没有书籍
+          </div>
         ) : (
           <ul className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-x-7 gap-y-9">
-            {books.map((book) => (
+            {shelf.map((book) => (
               <BookTile key={book.id} book={book} />
             ))}
           </ul>
@@ -151,6 +193,11 @@ export function Library({
 }
 
 function BookTile({ book }: { book: BookRecord }) {
+  const collections = useLibrary((s) => s.collections)
+  const membership = useLibrary((s) => s.membership)
+  const setBookCollections = useLibrary((s) => s.setBookCollections)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const selected = membership[book.id] ?? []
   const openBook = useLibrary((s) => s.openBook)
   const removeBook = useLibrary((s) => s.removeBook)
 
@@ -174,17 +221,51 @@ function BookTile({ book }: { book: BookRecord }) {
         )}
       </button>
 
+      {/* Hover actions: file into collections, or remove from the library */}
+      <div className="absolute right-2 top-2 flex items-center gap-1">
+        <button
+          type="button"
+          aria-label={`将 ${book.title} 加入合集`}
+          title="加入合集"
+          aria-expanded={menuOpen}
+          className={`size-6 items-center justify-center rounded-full bg-black/60 text-white shadow-sm backdrop-blur-md transition hover:bg-black/80 focus-visible:flex focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 group-focus-within:flex group-hover:flex ${
+            menuOpen ? 'flex' : 'hidden'
+          }`}
+          onClick={(e) => {
+            e.stopPropagation()
+            setMenuOpen((open) => !open)
+          }}
+        >
+          <IconCollection width={12} height={12} />
+        </button>
+      </div>
+
+      {menuOpen && (
+        <BookCollectionMenu
+          book={book}
+          collections={collections}
+          selected={selected}
+          onToggle={(collectionId, next) => {
+            const ids = next
+              ? [...selected, collectionId]
+              : selected.filter((id) => id !== collectionId)
+            void setBookCollections(book.id, ids)
+          }}
+          onClose={() => setMenuOpen(false)}
+        />
+      )}
+
       {/* Quick delete button */}
       <button
         type="button"
         aria-label={`删除 ${book.title}`}
-        className="absolute top-2 right-2 hidden size-6 items-center justify-center rounded-full bg-black/60 text-xs text-white shadow-sm backdrop-blur-md transition hover:bg-red-600 focus-visible:flex focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 group-hover:flex group-focus-within:flex"
+        className="absolute right-2 top-9 hidden size-6 items-center justify-center rounded-full bg-black/60 text-xs text-white shadow-sm backdrop-blur-md transition hover:bg-red-600 focus-visible:flex focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 group-focus-within:flex group-hover:flex"
         onClick={(e) => {
           e.stopPropagation()
           if (confirm(`确定从书库移除《${book.title}》吗？`)) void removeBook(book.id)
         }}
       >
-        ✕
+        <IconClose width={12} height={12} />
       </button>
     </li>
   )
