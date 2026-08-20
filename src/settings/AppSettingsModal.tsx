@@ -40,7 +40,7 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
-        className="fixed inset-0 bg-black/35 backdrop-blur-sm animate-in fade-in"
+        className="fixed inset-0 bg-black/35 backdrop-blur-sm vr-animate-fade"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -51,7 +51,7 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
         aria-modal="true"
         aria-labelledby="app-settings-title"
         tabIndex={-1}
-        className="relative z-10 flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-black/[0.08] bg-[#FBFBFA]/96 shadow-[0_30px_70px_rgba(0,0,0,0.22)] backdrop-blur-3xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/96 dark:text-neutral-100 animate-in fade-in zoom-in-95 duration-200 motion-reduce:animate-none"
+        className="relative z-10 flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-black/[0.08] bg-[#FBFBFA]/96 shadow-[0_30px_70px_rgba(0,0,0,0.22)] backdrop-blur-3xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/96 dark:text-neutral-100 vr-animate-pop"
       >
         <header className="flex items-center justify-between border-b border-black/[0.06] px-6 py-5 dark:border-white/[0.06]">
           <div className="flex items-center gap-3">

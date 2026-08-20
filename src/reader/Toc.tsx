@@ -33,14 +33,14 @@ export function Toc({
     <div className="fixed inset-0 z-50 overflow-hidden">
       {/* Backdrop with soft blur */}
       <div
-        className="fixed inset-0 bg-black/30 backdrop-blur-sm transition-opacity duration-300 animate-in fade-in"
+        className="fixed inset-0 bg-black/30 backdrop-blur-sm vr-animate-fade"
         onClick={onClose}
         aria-hidden="true"
       />
 
       {/* Floating Left Drawer */}
       <aside
-        className="fixed inset-y-0 left-0 z-50 flex w-92 flex-col border-r border-black/[0.08] bg-white/92 shadow-[0_25px_60px_rgba(0,0,0,0.18)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/92 dark:text-neutral-100 animate-in slide-in-from-left duration-250 ease-out"
+        className="fixed inset-y-0 left-0 z-50 flex w-92 flex-col border-r border-black/[0.08] bg-white/92 shadow-[0_25px_60px_rgba(0,0,0,0.18)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/92 dark:text-neutral-100 vr-animate-drawer"
         aria-label="目录与书签抽屉"
       >
         {/* Header */}

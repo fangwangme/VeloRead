@@ -4,7 +4,7 @@ import { BookCover } from './BookCover'
 import type { AppSettings, BookRecord } from '../platform/types'
 import { StatsModal } from '../stats/StatsModal'
 import { AppSettingsModal } from '../settings/AppSettingsModal'
-import { IconImport, IconSettings, IconStats } from '../ui/icons'
+import { IconBook, IconImport, IconSettings, IconStats } from '../ui/icons'
 
 const TOOLBAR_BUTTON_CLASS =
   'flex items-center gap-1.5 rounded-full border border-black/[0.08] bg-white/80 px-3.5 py-1.5 text-xs font-medium text-neutral-800 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-md transition hover:border-black/20 hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 active:scale-95 disabled:pointer-events-none disabled:opacity-50 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-neutral-200 dark:hover:bg-white/[0.1]'
@@ -194,7 +194,7 @@ function EmptyState({ onPick }: { onPick: () => void }) {
   return (
     <div className="mt-12 flex flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-black/[0.08] dark:border-white/[0.08] bg-black/[0.01] dark:bg-white/[0.01] py-24 text-center px-6">
       <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-black/[0.04] dark:bg-white/[0.06] text-neutral-400 dark:text-neutral-500 mb-1">
-        📖
+        <IconBook className="size-5" />
       </div>
       <p className="text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200">
         书库空空如也

@@ -49,7 +49,7 @@ export function StatsModal({ dailyGoalMinutes, onClose }: StatsModalProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/35 backdrop-blur-sm transition-opacity duration-300 animate-in fade-in"
+        className="fixed inset-0 bg-black/35 backdrop-blur-sm vr-animate-fade"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -61,7 +61,7 @@ export function StatsModal({ dailyGoalMinutes, onClose }: StatsModalProps) {
         aria-modal="true"
         aria-labelledby="reading-stats-title"
         tabIndex={-1}
-        className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col rounded-3xl border border-black/[0.08] bg-white/94 p-6 shadow-[0_30px_70px_rgba(0,0,0,0.22),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-3xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/94 dark:text-neutral-100 animate-in fade-in zoom-in-95 duration-200 motion-reduce:animate-none"
+        className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col rounded-3xl border border-black/[0.08] bg-white/94 p-6 shadow-[0_30px_70px_rgba(0,0,0,0.22),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-3xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/94 dark:text-neutral-100 vr-animate-pop"
       >
         <div className="flex items-center justify-between pb-4 border-b border-black/[0.06] dark:border-white/[0.06]">
           <div className="flex items-center gap-3">
@@ -152,10 +152,17 @@ export function StatsModal({ dailyGoalMinutes, onClose }: StatsModalProps) {
                   </h3>
                   <div className="flex items-center gap-1.5 text-[10px] text-neutral-400">
                     <span>少</span>
-                    <span className="h-2.5 w-2.5 rounded-xs bg-neutral-200 dark:bg-neutral-800" />
-                    <span className="h-2.5 w-2.5 rounded-xs bg-emerald-200 dark:bg-emerald-900/60" />
-                    <span className="h-2.5 w-2.5 rounded-xs bg-emerald-400 dark:bg-emerald-700" />
-                    <span className="h-2.5 w-2.5 rounded-xs bg-emerald-600 dark:bg-emerald-500" />
+                    <span
+                      className="h-2.5 w-2.5 rounded-xs bg-neutral-200/80 dark:bg-neutral-800"
+                      title="未阅读"
+                    />
+                    {[...HEATMAP_LEVELS].reverse().map((level) => (
+                      <span
+                        key={level.min}
+                        className={`h-2.5 w-2.5 rounded-xs ${level.swatch}`}
+                        title={level.label}
+                      />
+                    ))}
                     <span>多</span>
                   </div>
                 </div>
@@ -369,12 +376,21 @@ function formatReadingCount(value: number): string {
   return String(value)
 }
 
+/** Descending, so the first match wins. The legend renders from this same list
+ *  — the two used to disagree on both the number of steps and the shades. */
+const HEATMAP_LEVELS = [
+  { min: 60, swatch: 'bg-emerald-600 dark:bg-emerald-400', label: '60 分钟以上' },
+  { min: 30, swatch: 'bg-emerald-500 dark:bg-emerald-600', label: '30–60 分钟' },
+  { min: 15, swatch: 'bg-emerald-400 dark:bg-emerald-700', label: '15–30 分钟' },
+  { min: 0, swatch: 'bg-emerald-300 dark:bg-emerald-900', label: '15 分钟以内' },
+]
+
 function HeatmapGrid({
   dailyStats,
 }: {
   dailyStats: Record<string, DailyReadingStats>
 }) {
-  // Generate past 24 weeks (168 days)
+  // Generate past 24 weeks (168 days), Sunday-aligned columns ending this week.
   const WEEKS = 24
   const days: {
     dateStr: string
@@ -382,8 +398,10 @@ function HeatmapGrid({
     minutes: number
     latinWords: number
     cjkCharacters: number
+    isFuture: boolean
   }[] = []
   const today = new Date()
+  const todayKey = localDateKey(today)
 
   // Calculate start date (Sunday 24 weeks ago)
   const totalDays = WEEKS * 7
@@ -401,6 +419,9 @@ function HeatmapGrid({
       minutes: record?.durationMinutes ?? 0,
       latinWords: record?.latinWordsRead ?? 0,
       cjkCharacters: record?.cjkCharactersRead ?? 0,
+      // The Sunday-aligned window always runs to this Saturday, so up to six
+      // cells sit past today. Rendering them like unread days reads as a gap.
+      isFuture: dateStr > todayKey,
     })
   }
 
@@ -428,16 +449,18 @@ function HeatmapGrid({
         {columns.map((col, cIdx) => (
           <div key={cIdx} className="flex flex-col gap-1.5">
             {col.map((day) => {
-              let bg = 'bg-neutral-200/80 dark:bg-neutral-800'
-              if (day.minutes > 0 && day.minutes <= 15) {
-                bg = 'bg-emerald-300 dark:bg-emerald-900'
-              } else if (day.minutes > 15 && day.minutes <= 30) {
-                bg = 'bg-emerald-400 dark:bg-emerald-700'
-              } else if (day.minutes > 30 && day.minutes <= 60) {
-                bg = 'bg-emerald-500 dark:bg-emerald-600'
-              } else if (day.minutes > 60) {
-                bg = 'bg-emerald-600 dark:bg-emerald-400'
+              if (day.isFuture) {
+                return (
+                  <div
+                    key={day.dateStr}
+                    aria-hidden="true"
+                    className="h-3 w-3 rounded-xs border border-dashed border-black/[0.07] dark:border-white/[0.07]"
+                  />
+                )
               }
+
+              const bg = HEATMAP_LEVELS.find((level) => day.minutes > level.min)?.swatch
+                ?? 'bg-neutral-200/80 dark:bg-neutral-800'
 
               return (
                 <div
