@@ -25,7 +25,7 @@ src/platform/
 
 | 能力 | 用途 | 状态 |
 | --- | --- | --- |
-| `storage` | 书库、进度、划线、生词 | ✅ 已实现 |
+| `storage` | 书库、进度、按书/应用设置、书签、阅读统计 | ✅ 已实现 |
 | `fs` | 摘抄/生词导出，Kindle 文件导入 | 📋 待 [annotations](annotations.md) 落地时定义 |
 | `dict` | 词典查询 | 📋 待 [vocabulary](vocabulary.md) 落地时定义 |
 
@@ -39,11 +39,16 @@ src/platform/
 | `init()` | 打开/创建底层存储，幂等 |
 | `listBooks()` | 按书架顺序返回全部书籍元数据（不含书本字节） |
 | `addBook({record, data, cover})` | 写入元数据 + 文件字节 + 封面字节 |
-| `deleteBook(id)` | 删除元数据、文件、封面、进度，四者一起 |
+| `deleteBook(id)` | 删除元数据、文件、封面、进度、按书设置、书签与阅读 session |
 | `readBookFile(id)` | 书本字节；缺失时抛错 |
 | `readCover(id)` | 封面字节，无封面返回 `null` |
 | `getProgress(bookId)` | 阅读位置，从未读过返回 `null` |
 | `saveProgress(progress)` | upsert 进度，并把 `books.lastReadAt` 更新为同一时间戳 |
+| `getBookSettings(bookId)` / `saveBookSettings(settings)` | 读取 / upsert 当前书籍的排版与 flow |
+| `getAppSettings()` / `saveAppSettings(partial)` | 读取 / 合并保存全局外观、Pacer 与每日目标 |
+| `listBookmarks(bookId)` / `addBookmark()` / `deleteBookmark()` | 按书管理书签 |
+| `recordReadingSession(session)` | 按稳定 session id 累加有效时长与字数 |
+| `getReadingStats()` | 汇总总量、每日数据、阅读书数与连续天数 |
 
 **书架顺序**：`lastReadAt` 降序（未读的排后面），并列时 `addedAt` 降序。
 web 侧用 `compareBooks()`，Tauri 侧用 `ORDER BY COALESCE(last_read_at,'') DESC, added_at DESC`。
@@ -100,10 +105,14 @@ IndexedDB（库名 `veloread`），字节单独放 store，列书架时不会反
 | `files` | 外部 key = 书 id | `ArrayBuffer` |
 | `covers` | 外部 key = 书 id | `ArrayBuffer` |
 | `progress` | `bookId`（keyPath） | `ReadingProgress` |
+| `book_settings` | `bookId`（keyPath） | `BookSettings` |
+| `app_settings` | `key = global`（keyPath） | `AppSettings` |
+| `bookmarks` | `id`（keyPath），`by_bookId` 索引 | `Bookmark` |
+| `reading_sessions` | `id`（keyPath），`by_date` / `by_bookId` 索引 | `ReadingSession` |
 
 ## 5. SQLite schema
 
-### v1（当前，已实现）
+### v1（历史基线）
 
 ```sql
 CREATE TABLE books (
@@ -124,7 +133,7 @@ CREATE TABLE reading_progress (
 );
 ```
 
-### v2（规划）
+### v2（当前，已实现）
 
 配合多格式与阅读设置：
 
@@ -139,6 +148,7 @@ CREATE TABLE book_settings (
     book_id    TEXT PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
     style_id   TEXT NOT NULL,
     overrides  TEXT NOT NULL,        -- JSON StyleOverride
+    flow       TEXT,
     updated_at TEXT NOT NULL
 );
 
@@ -146,6 +156,24 @@ CREATE TABLE app_settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL              -- JSON
 );
+
+CREATE TABLE bookmarks (
+    id         TEXT PRIMARY KEY,
+    book_id    TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    cfi        TEXT NOT NULL,
+    text       TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE reading_sessions (
+    id               TEXT PRIMARY KEY,
+    book_id          TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    date             TEXT NOT NULL,
+    duration_seconds INTEGER NOT NULL,
+    words_read       INTEGER NOT NULL,
+    updated_at       TEXT NOT NULL
+);
+CREATE INDEX idx_sessions_date ON reading_sessions(date);
 ```
 
 后续模块各自新增的表见
@@ -168,6 +196,6 @@ CREATE TABLE app_settings (
 
 - 两份实现的书架顺序语义一致（各自有测试）
 - 进度写入后读回完全一致
-- 删除书籍后元数据、文件、封面、进度四者都不残留
+- 删除书籍后元数据、文件、封面、进度、设置、书签和阅读 session 都不残留
 - id 校验挡掉所有可能逃出书库目录的输入（`..`、`a/b`、`/absolute`、超长）
 - schema 每次升版有迁移测试

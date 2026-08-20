@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import type { Bookmark, TocItem } from '../platform/types'
 import { IconBook, IconToc } from '../ui/icons'
+import { resolveActiveTocId } from './tocActive'
 
 interface TocProps {
   toc: TocItem[]
   bookmarks: Bookmark[]
   currentHref: string | null
+  currentTocId: string | null
   currentCfi: string | null
   onNavigate: (hrefOrCfi: string) => void
   onAddBookmark: () => void
@@ -17,6 +19,7 @@ export function Toc({
   toc,
   bookmarks,
   currentHref,
+  currentTocId,
   currentCfi,
   onNavigate,
   onAddBookmark,
@@ -24,6 +27,7 @@ export function Toc({
   onClose,
 }: TocProps) {
   const [tab, setTab] = useState<'toc' | 'bookmarks'>('toc')
+  const activeTocId = resolveActiveTocId(toc, currentTocId, currentHref)
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
@@ -88,7 +92,7 @@ export function Toc({
                   此书籍未内置目录结构
                 </div>
               ) : (
-                <TocList items={toc} currentHref={currentHref} onNavigate={onNavigate} depth={0} />
+                <TocList items={toc} activeTocId={activeTocId} onNavigate={onNavigate} depth={0} />
               )}
             </div>
           ) : (
@@ -155,12 +159,12 @@ export function Toc({
 
 function TocList({
   items,
-  currentHref,
+  activeTocId,
   onNavigate,
   depth,
 }: {
   items: TocItem[]
-  currentHref: string | null
+  activeTocId: string | null
   onNavigate: (href: string) => void
   depth: number
 }) {
@@ -171,11 +175,7 @@ function TocList({
       }`}
     >
       {items.map((item) => {
-        const isCurrent =
-          currentHref &&
-          (currentHref.endsWith(item.href) ||
-            item.href.endsWith(currentHref) ||
-            currentHref.split('#')[0] === item.href.split('#')[0])
+        const isCurrent = activeTocId === item.id
         return (
           <li key={item.id || item.href}>
             <button
@@ -195,7 +195,7 @@ function TocList({
             {item.subitems && item.subitems.length > 0 && (
               <TocList
                 items={item.subitems}
-                currentHref={currentHref}
+                activeTocId={activeTocId}
                 onNavigate={onNavigate}
                 depth={depth + 1}
               />

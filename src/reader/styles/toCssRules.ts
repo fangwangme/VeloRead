@@ -66,7 +66,10 @@ export function toCssRules(resolved: ResolvedStyle): Record<string, Record<strin
     '-webkit-column-break-after': 'avoid !important',
   }
 
-  if (elements.headingFontStack) {
+  // An empty body font stack is the explicit "Original" choice. In that
+  // mode headings must keep the EPUB's font as well; otherwise only the body
+  // follows the book while every heading is silently replaced by the preset.
+  if (body.fontStack && elements.headingFontStack) {
     headingBase['font-family'] = `${elements.headingFontStack} !important`
   }
 

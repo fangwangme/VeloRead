@@ -10,6 +10,7 @@ import type {
   StoragePort,
 } from '../types'
 import { compareBooks } from '../sort'
+import { calculateCurrentStreak } from '../../stats/tracking'
 
 const DB_NAME = 'veloread'
 const DB_VERSION = 2
@@ -22,6 +23,11 @@ const BOOK_SETTINGS = 'book_settings'
 const APP_SETTINGS = 'app_settings'
 const BOOKMARKS = 'bookmarks'
 const READING_SESSIONS = 'reading_sessions'
+
+function roundedMinutes(seconds: number): number {
+  if (seconds <= 0) return 0
+  return Math.max(1, Math.round(seconds / 60))
+}
 
 function request<T>(req: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -248,43 +254,16 @@ export function createWebStorage(): StoragePort {
       for (const date of Object.keys(dailySeconds)) {
         const secs = dailySeconds[date]
         dailyStats[date] = {
-          durationMinutes: secs >= 30 ? Math.max(1, Math.round(secs / 60)) : (secs > 0 ? 1 : 0),
+          durationMinutes: roundedMinutes(secs),
           wordsRead: dailyWords[date] ?? 0,
         }
       }
 
-      // Calculate streak
-      let streak = 0
-      const cur = new Date()
-      let curStr = cur.toISOString().slice(0, 10)
-
-      if (dailyStats[curStr] && dailyStats[curStr].durationMinutes > 0) {
-        streak++
-        cur.setDate(cur.getDate() - 1)
-      } else {
-        cur.setDate(cur.getDate() - 1)
-        curStr = cur.toISOString().slice(0, 10)
-        if (dailyStats[curStr] && dailyStats[curStr].durationMinutes > 0) {
-          streak++
-          cur.setDate(cur.getDate() - 1)
-        }
-      }
-
-      while (streak > 0) {
-        curStr = cur.toISOString().slice(0, 10)
-        if (dailyStats[curStr] && dailyStats[curStr].durationMinutes > 0) {
-          streak++
-          cur.setDate(cur.getDate() - 1)
-        } else {
-          break
-        }
-      }
-
       return {
-        totalDurationMinutes: Math.round(totalDurationSeconds / 60),
+        totalDurationMinutes: roundedMinutes(totalDurationSeconds),
         totalWordsRead,
         totalBooksRead: distinctBooks.size,
-        currentStreakDays: streak,
+        currentStreakDays: calculateCurrentStreak(dailyStats),
         dailyStats,
       }
     },

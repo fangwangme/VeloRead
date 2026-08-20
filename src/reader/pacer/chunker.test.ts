@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupWordsIntoChunks, type WordItem } from './chunker'
+import { groupWordsIntoChunks, isCjkChar, type WordItem } from './chunker'
 
 function makeWord(
   text: string,
@@ -95,6 +95,26 @@ describe('Pacer Chunker', () => {
     expect(chunks[0].wordCount).toBe(8)
     expect(chunks[1].text).toBe('海流')
     expect(chunks[1].wordCount).toBe(2)
+  })
+
+  it('treats CJK speed as characters per minute without a hidden conversion', () => {
+    const chars = Array.from('白日依山尽黄河入').map((char, index) =>
+      makeWord(char, index * 20, 10, 20, 20, true),
+    )
+
+    const [chunk] = groupWordsIntoChunks(chars, { wpm: 300, cjkChunkSize: 8 })
+
+    expect(chunk.wordCount).toBe(8)
+    expect(chunk.dwellMs).toBe(1600)
+    expect((chunk.wordCount / chunk.dwellMs) * 60_000).toBe(300)
+  })
+
+  it('recognizes Chinese, Japanese, Korean, and CJK punctuation as character units', () => {
+    expect(isCjkChar('阅')).toBe(true)
+    expect(isCjkChar('あ')).toBe(true)
+    expect(isCjkChar('한')).toBe(true)
+    expect(isCjkChar('。')).toBe(true)
+    expect(isCjkChar('A')).toBe(false)
   })
 
   it('calculates dwell and animation time accurately', () => {

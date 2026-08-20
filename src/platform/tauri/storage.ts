@@ -10,6 +10,7 @@ import type {
   ReadingSession,
   StoragePort,
 } from '../types'
+import { calculateCurrentStreak } from '../../stats/tracking'
 
 /**
  * Tauri implementation of `StoragePort`.
@@ -18,6 +19,10 @@ import type {
  * `src-tauri/src/library.rs`); this module only marshals data across IPC.
  */
 export function createTauriStorage(): StoragePort {
+  // App settings are stored as one JSON value. Serialize read-merge-write
+  // operations so rapid updates to different keys cannot overwrite each other.
+  let appSettingsWrite: Promise<void> = Promise.resolve()
+
   return {
     init() {
       return invoke<void>('library_init')
@@ -76,13 +81,17 @@ export function createTauriStorage(): StoragePort {
       }
     },
 
-    async saveAppSettings(settings: Partial<AppSettings>) {
-      const current = await this.getAppSettings()
-      const merged = { ...current, ...settings }
-      await invoke<void>('library_save_app_settings', {
-        key: 'global',
-        value: JSON.stringify(merged),
+    saveAppSettings(settings: Partial<AppSettings>) {
+      const write = appSettingsWrite.then(async () => {
+        const current = await this.getAppSettings()
+        const merged = { ...current, ...settings }
+        await invoke<void>('library_save_app_settings', {
+          key: 'global',
+          value: JSON.stringify(merged),
+        })
       })
+      appSettingsWrite = write.catch(() => undefined)
+      return write
     },
 
     listBookmarks(bookId: string) {
@@ -103,36 +112,9 @@ export function createTauriStorage(): StoragePort {
 
     async getReadingStats() {
       const raw = await invoke<OverallReadingStats>('library_get_reading_stats')
-      // Calculate current streak
-      let streak = 0
-      const cur = new Date()
-      let curStr = cur.toISOString().slice(0, 10)
-
-      if (raw.dailyStats && raw.dailyStats[curStr]) {
-        streak++
-        cur.setDate(cur.getDate() - 1)
-      } else {
-        cur.setDate(cur.getDate() - 1)
-        curStr = cur.toISOString().slice(0, 10)
-        if (raw.dailyStats && raw.dailyStats[curStr]) {
-          streak++
-          cur.setDate(cur.getDate() - 1)
-        }
-      }
-
-      while (streak > 0) {
-        curStr = cur.toISOString().slice(0, 10)
-        if (raw.dailyStats && raw.dailyStats[curStr]) {
-          streak++
-          cur.setDate(cur.getDate() - 1)
-        } else {
-          break
-        }
-      }
-
       return {
         ...raw,
-        currentStreakDays: streak,
+        currentStreakDays: calculateCurrentStreak(raw.dailyStats ?? {}),
       }
     },
   }

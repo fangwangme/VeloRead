@@ -1,11 +1,18 @@
 import { useRef, useState } from 'react'
 import { useLibrary } from './store'
 import { BookCover } from './BookCover'
-import type { BookRecord } from '../platform/types'
+import type { AppSettings, BookRecord } from '../platform/types'
 import { StatsModal } from '../stats/StatsModal'
-import { IconStats } from '../ui/icons'
+import { AppSettingsModal } from '../settings/AppSettingsModal'
+import { IconSettings, IconStats } from '../ui/icons'
 
-export function Library() {
+export function Library({
+  appSettings,
+  onAppSettingsChange,
+}: {
+  appSettings: AppSettings
+  onAppSettingsChange: (changes: Partial<AppSettings>) => Promise<void>
+}) {
   const books = useLibrary((s) => s.books)
   const loading = useLibrary((s) => s.loading)
   const importing = useLibrary((s) => s.importing)
@@ -16,6 +23,7 @@ export function Library() {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
   const [showStats, setShowStats] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
 
   function onDrop(event: React.DragEvent) {
     event.preventDefault()
@@ -46,6 +54,15 @@ export function Library() {
           </p>
         </div>
         <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            className="flex items-center gap-1.5 rounded-full border border-black/[0.08] bg-white/80 px-3.5 py-1.5 text-xs font-medium text-neutral-800 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-md transition hover:bg-white hover:border-black/20 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-neutral-200 dark:hover:bg-white/[0.1] active:scale-95"
+            onClick={() => setShowSettings(true)}
+            title="调整应用外观与阅读目标"
+          >
+            <IconSettings className="opacity-75" />
+            <span>应用设置</span>
+          </button>
           <button
             type="button"
             className="flex items-center gap-1.5 rounded-full border border-black/[0.08] bg-white/80 px-3.5 py-1.5 text-xs font-medium text-neutral-800 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-md transition hover:bg-white hover:border-black/20 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-neutral-200 dark:hover:bg-white/[0.1] active:scale-95"
@@ -111,7 +128,19 @@ export function Library() {
         </div>
       )}
 
-      {showStats && <StatsModal onClose={() => setShowStats(false)} />}
+      {showStats && (
+        <StatsModal
+          dailyGoalMinutes={appSettings.dailyReadingGoalMinutes ?? 15}
+          onClose={() => setShowStats(false)}
+        />
+      )}
+      {showSettings && (
+        <AppSettingsModal
+          settings={appSettings}
+          onChange={onAppSettingsChange}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
     </div>
   )
 }

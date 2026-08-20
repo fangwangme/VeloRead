@@ -243,6 +243,7 @@ mod store {
     }
 
     pub fn delete_book(connection: &Connection, id: &str) -> rusqlite::Result<()> {
+        connection.execute("DELETE FROM reading_sessions WHERE book_id = ?1", params![id])?;
         connection.execute("DELETE FROM bookmarks WHERE book_id = ?1", params![id])?;
         connection.execute("DELETE FROM book_settings WHERE book_id = ?1", params![id])?;
         connection.execute(
@@ -1001,7 +1002,7 @@ mod tests {
     }
 
     #[test]
-    fn deleting_a_book_takes_its_progress_settings_and_bookmarks_with_it() {
+    fn deleting_a_book_takes_its_progress_settings_bookmarks_and_sessions_with_it() {
         let connection = db();
         insert_book(
             &connection,
@@ -1040,6 +1041,18 @@ mod tests {
             },
         )
         .unwrap();
+        record_reading_session(
+            &connection,
+            &ReadingSession {
+                id: "s1".to_string(),
+                book_id: "a1".to_string(),
+                date: "2026-08-15".to_string(),
+                duration_seconds: 60,
+                words_read: 200,
+                updated_at: "2026-08-15T20:00:00.000Z".to_string(),
+            },
+        )
+        .unwrap();
 
         delete_book(&connection, "a1").expect("delete");
 
@@ -1047,6 +1060,7 @@ mod tests {
         assert_eq!(get_progress(&connection, "a1").unwrap(), None);
         assert_eq!(get_book_settings(&connection, "a1").unwrap(), None);
         assert_eq!(list_bookmarks(&connection, "a1").unwrap(), vec![]);
+        assert_eq!(get_reading_stats(&connection).unwrap().total_books_read, 0);
     }
 
     #[test]

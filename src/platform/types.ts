@@ -57,8 +57,10 @@ export interface AppSettings {
   themeMode?: 'auto' | 'light' | 'dark'
   autoNightMode?: boolean
   pacerWpm?: number
+  pacerCpm?: number
   pacerChunkSize?: number
   pacerCjkCharCount?: number
+  dailyReadingGoalMinutes?: number
   flow?: 'paginated' | 'scrolled-doc'
 }
 

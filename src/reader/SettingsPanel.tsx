@@ -4,21 +4,16 @@ import {
   IconColumnsAuto,
   IconColumnSingle,
   IconColumnsDouble,
-  IconMonitor,
-  IconMoon,
-  IconSun,
 } from '../ui/icons'
 
 interface SettingsPanelProps {
   currentStyleId: StyleId
   overrides: StyleOverride
   flow: 'paginated' | 'scrolled-doc'
-  themeMode: 'auto' | 'light' | 'dark'
   isDark: boolean
   onStyleSelect: (id: StyleId) => void
   onOverridesChange: (overrides: StyleOverride) => void
   onFlowChange: (flow: 'paginated' | 'scrolled-doc') => void
-  onThemeModeChange: (mode: 'auto' | 'light' | 'dark') => void
   onClose: () => void
 }
 
@@ -43,12 +38,10 @@ export function SettingsPanel({
   currentStyleId,
   overrides,
   flow,
-  themeMode,
   isDark,
   onStyleSelect,
   onOverridesChange,
   onFlowChange,
-  onThemeModeChange,
   onClose,
 }: SettingsPanelProps) {
   const currentFont = overrides.fontStack ?? 'original'
@@ -66,7 +59,7 @@ export function SettingsPanel({
       {/* Header */}
       <div className="flex items-center justify-between pb-3.5 border-b border-black/[0.06] dark:border-white/[0.06]">
         <h3 className="text-[11px] font-semibold tracking-wider text-neutral-500 dark:text-neutral-400 uppercase">
-          排版与主题设置
+          当前书籍排版
         </h3>
         <button
           type="button"
@@ -79,34 +72,6 @@ export function SettingsPanel({
       </div>
 
       <div className="mt-4 space-y-4 text-xs">
-        {/* 3-way Appearance Mode Toggle: Auto / Light / Dark */}
-        <div>
-          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-            外观模式
-          </label>
-          <div className="flex rounded-xl bg-black/[0.04] p-1 dark:bg-white/[0.06]">
-            {[
-              { id: 'auto' as const, label: '跟随系统', icon: <IconMonitor /> },
-              { id: 'light' as const, label: '浅色', icon: <IconSun /> },
-              { id: 'dark' as const, label: '深色', icon: <IconMoon /> },
-            ].map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onThemeModeChange(item.id)}
-                className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-center transition text-[11px] font-medium ${
-                  themeMode === item.id
-                    ? 'bg-white text-neutral-900 shadow-[0_1px_3px_rgba(0,0,0,0.1)] dark:bg-[#2C2C2E] dark:text-white font-semibold'
-                    : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
-                }`}
-              >
-                <span className="opacity-75">{item.icon}</span>
-                <span>{item.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* Columns / Spread Layout Toggle: Auto / Single / Double */}
         <div>
           <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">

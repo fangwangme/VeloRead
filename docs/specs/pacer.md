@@ -1,6 +1,6 @@
 # 自动阅读（Pacer）
 
-> 状态：📋 规划中。核心几何方案已通过 spike 验证。
+> 状态：✅ EPUB 已实现；TXT / PDF 随对应格式渲染层落地。
 > 相关：[reader-view](reader-view.md)、[reading-formats](reading-formats.md)
 
 ## 1. 这是什么
@@ -72,8 +72,8 @@ Overlay.tsx   高亮块渲染与动画
 usePacer.ts   薄封装，把 engine 接到 React
 ```
 
-文本来源统一走 `DocumentView.visibleText()`（见 [reading-formats](reading-formats.md)），
-Pacer 不自己摸 DOM。
+文本与几何统一由 `ReaderHandle.getVisibleWords()` 提供（未来格式统一接口见
+[reading-formats](reading-formats.md)），Pacer hook 不直接遍历书页 DOM。
 
 ## 6. 分块规则
 
@@ -102,7 +102,8 @@ dwell = (块内词数 / wpm) * 60000     // 每块停留时长
 
 **滚动模式**：没有「翻页」这个事件，改为「高亮块接近视口底部时平滑滚动」。
 这是一套**独立逻辑**，是本模块最容易被低估的部分。
-若实现后手感不佳，宁可**明确声明滚动模式暂不支持 Pacer**，也不要硬做一个难用的版本。
+当前实现会收集当前 spine section 的正文块，并在高亮接近视口边缘时平滑滚动；章节结束后再进入
+下一 spine section。不能只收集当前可见片段后直接 `next()`，否则会跳过本章尚未滚入视口的正文。
 
 ## 9. 必须重算几何的时机
 
@@ -127,7 +128,8 @@ Pacer 是「训练工具」，没有统计就不成立。应记录：
 每次会话的实际吞吐 wpm、时长、书籍。用于速度趋势，
 以及 [reader-view](reader-view.md) 里「本章还剩约 N 分钟」的个性化估算。
 
-统计本身是独立能力，不阻塞 Pacer 首版。
+基础时长、读字数、连续天数与自动打卡已实现，见 [reading-activity](reading-activity.md)。
+按会话的真实吞吐速度趋势仍是后续增强项。
 
 ## 12. 验收要点
 

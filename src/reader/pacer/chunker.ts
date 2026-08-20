@@ -34,12 +34,13 @@ export interface PacerChunk {
 }
 
 export interface ChunkerOptions {
+  /** Words/minute for Latin chunks; characters/minute for CJK chunks. */
   wpm: number
   chunkSize?: number // default 3 for English
   cjkChunkSize?: number // default 8 for CJK
 }
 
-const CJK_REGEX = /[\u4e00-\u9fa5\u3040-\u30ff\u3400-\u4dbf\uf900-\ufaff]/
+const CJK_REGEX = /[\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]/
 
 export function isCjkChar(char: string): boolean {
   return CJK_REGEX.test(char)
@@ -95,9 +96,10 @@ export function groupWordsIntoChunks(words: WordItem[], options: ChunkerOptions)
       : currentGroup.map((w) => w.text).join(' ')
 
     const count = currentGroup.length
-    // For CJK count is character count; for Latin count is word count.
-    const effectiveUnits = isCjk ? Math.max(1, count / 2.5) : count
-    const rawDwell = (effectiveUnits / safeWpm) * 60000
+    // The configured speed is expressed in the chunk's own unit: words/minute
+    // for Latin text and characters/minute for CJK. Do not convert CJK back to
+    // an estimated English-word count; doing so makes 300 chars/min run at 750.
+    const rawDwell = (count / safeWpm) * 60000
     const dwellMs = Math.max(100, Math.round(rawDwell))
     const animMs = Math.min(Math.round(dwellMs * 0.5), 180)
 

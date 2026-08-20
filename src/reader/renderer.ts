@@ -11,6 +11,7 @@ export interface ReaderLocation {
   href?: string
   chapterTitle?: string | null
   pagesLeftInChapter?: number | null
+  tocId?: string | null
   /**
    * 0–1, or null while epub.js is still generating locations in the
    * background. Null means "not known yet", never "at the beginning".
@@ -39,7 +40,13 @@ export interface ReaderHandle {
   setSpread(mode: 'auto' | 'single' | 'double'): Promise<void>
   getToc(): Promise<TocItem[]>
   getVisibleWords(): WordItem[]
+  getViewportWords(): WordItem[]
   getIframeElement(): HTMLIFrameElement | null
+  getScrollElement(): HTMLElement | null
+  getCurrentLocation(): ReaderLocation | null
+  advancePacerPage(): Promise<boolean>
+  ensurePacerRectVisible(rect: Pick<WordItem['rect'], 'top' | 'height'>): void
+  fontsReady(): Promise<void>
   destroy(): void
 }
 
@@ -104,14 +111,18 @@ export async function createReader(
     if (onClickText) {
       doc.addEventListener('click', (event: MouseEvent) => {
         const selection = doc.getSelection()
-        const text = selection?.toString() || (event.target as HTMLElement)?.innerText || ''
-        onClickText({ text })
+        // Preserve ordinary text selection for the future annotation feature.
+        if (selection && !selection.isCollapsed) return
+        const range = wordRangeAtPoint(doc, event.clientX, event.clientY)
+        const text = range?.toString() || (event.target as HTMLElement)?.innerText || ''
+        onClickText({ text, range: range ?? undefined })
       })
     }
   })
 
   let locationsReady = false
   let tocItems: TocItem[] = []
+  let lastLocation: ReaderLocation | null = null
 
   // Load TOC
   book.loaded.navigation
@@ -122,24 +133,38 @@ export async function createReader(
       // TOC failure is non-fatal
     })
 
-  function findChapterTitle(href?: string): string | null {
+  function findCurrentTocItem(href?: string): TocItem | null {
     if (!href || tocItems.length === 0) return null
-    const cleanHref = href.split('#')[0]
+    const currentDocument = normalizeDocumentHref(href)
+    const candidates = flattenToc(tocItems).filter(
+      (item) => normalizeDocumentHref(item.href) === currentDocument,
+    )
+    if (candidates.length === 0) return null
 
-    function search(items: TocItem[]): string | null {
-      for (const item of items) {
-        if (item.href.includes(cleanHref) || cleanHref.includes(item.href.split('#')[0])) {
-          return item.label.trim()
-        }
-        if (item.subitems && item.subitems.length > 0) {
-          const found = search(item.subitems)
-          if (found) return found
-        }
-      }
-      return null
+    const exact = candidates.find((item) => normalizeHref(item.href) === normalizeHref(href))
+    if (exact && href.includes('#')) return exact
+
+    const iframe = getIframe()
+    const doc = iframe?.contentDocument
+    if (!iframe || !doc) return candidates[0]
+
+    const iframeRect = iframe.getBoundingClientRect()
+    const containerRect = container.getBoundingClientRect()
+    const threshold = currentFlow === 'scrolled-doc'
+      ? containerRect.top + containerRect.height * 0.3
+      : iframeRect.left + iframe.clientWidth * 0.3
+
+    let active = candidates[0]
+    for (const item of candidates) {
+      const fragment = fragmentOf(item.href)
+      if (!fragment) continue
+      const element = doc.getElementById(fragment)
+      if (!element) continue
+      const rect = element.getBoundingClientRect()
+      const position = currentFlow === 'scrolled-doc' ? iframeRect.top + rect.top : iframeRect.left + rect.left
+      if (position <= threshold) active = item
     }
-
-    return search(tocItems)
+    return active
   }
 
   function makeLocationPayload(location: RelocatedEvent): ReaderLocation {
@@ -151,10 +176,12 @@ export async function createReader(
       pagesLeftInChapter = Math.max(0, displayed.total - displayed.page)
     }
 
+    const currentTocItem = findCurrentTocItem(href)
     return {
       cfi,
       href,
-      chapterTitle: findChapterTitle(href),
+      chapterTitle: currentTocItem?.label.trim() || null,
+      tocId: currentTocItem?.id ?? null,
       pagesLeftInChapter,
       percentage: locationsReady ? percentageOf(book, cfi) : null,
       atStart: Boolean(location.atStart),
@@ -163,7 +190,8 @@ export async function createReader(
   }
 
   rendition.on('relocated', (location: RelocatedEvent) => {
-    options.onLocation?.(makeLocationPayload(location))
+    lastLocation = makeLocationPayload(location)
+    options.onLocation?.(lastLocation)
   })
 
   // Display initial position
@@ -177,7 +205,8 @@ export async function createReader(
       locationsReady = true
       const current = rendition.location as unknown as RelocatedEvent | undefined
       if (current?.start?.cfi) {
-        options.onLocation?.(makeLocationPayload(current))
+        lastLocation = makeLocationPayload(current)
+        options.onLocation?.(lastLocation)
       }
     })
     .catch(() => {
@@ -188,7 +217,11 @@ export async function createReader(
     return container.querySelector('iframe')
   }
 
-  function getVisibleWords(): WordItem[] {
+  function getScrollElement(): HTMLElement | null {
+    return container.querySelector<HTMLElement>('.epub-container')
+  }
+
+  function collectWords(includeWholeScrolledSection: boolean): WordItem[] {
     const iframe = getIframe()
     if (!iframe || !iframe.contentDocument || !iframe.contentWindow) return []
 
@@ -196,8 +229,8 @@ export async function createReader(
     const body = doc.body
     if (!body) return []
 
-    const viewWidth = iframe.clientWidth
-    const viewHeight = iframe.clientHeight
+    const iframeRect = iframe.getBoundingClientRect()
+    const containerRect = container.getBoundingClientRect()
 
     const words: WordItem[] = []
     const blacklist = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG', 'CANVAS', 'OBJECT'])
@@ -205,7 +238,11 @@ export async function createReader(
     const walker = doc.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
         const parent = node.parentElement
-        if (!parent || blacklist.has(parent.tagName)) {
+        if (
+          !parent ||
+          blacklist.has(parent.tagName) ||
+          parent.closest('script, style, noscript, svg, canvas, object, figcaption, .caption')
+        ) {
           return NodeFilter.FILTER_REJECT
         }
         if (!node.textContent || node.textContent.trim().length === 0) {
@@ -251,14 +288,20 @@ export async function createReader(
           const rects = range.getClientRects()
           if (rects.length > 0) {
             const r = rects[0]
-            // Visible on the current page / viewport check
+            const screenLeft = iframeRect.left + r.left
+            const screenTop = iframeRect.top + r.top
+            const intersectsPage =
+              screenLeft + r.width >= containerRect.left - 2 &&
+              screenLeft <= containerRect.right + 2 &&
+              screenTop + r.height >= containerRect.top - 2 &&
+              screenTop <= containerRect.bottom + 2
+            // In scrolling mode the Pacer owns a whole spine section and scrolls
+            // the parent viewport as chunks advance. Paginated mode only owns
+            // the currently visible page/spread.
             if (
               r.width > 0 &&
               r.height > 0 &&
-              r.right >= -2 &&
-              r.left <= viewWidth + 2 &&
-              r.bottom >= -2 &&
-              r.top <= viewHeight + 2
+              (includeWholeScrolledSection && currentFlow === 'scrolled-doc' || intersectsPage)
             ) {
               words.push({
                 text: token,
@@ -284,6 +327,34 @@ export async function createReader(
     }
 
     return words
+  }
+
+  function getVisibleWords(): WordItem[] {
+    return collectWords(true)
+  }
+
+  function getViewportWords(): WordItem[] {
+    return collectWords(false)
+  }
+
+  function ensurePacerRectVisible(rect: Pick<WordItem['rect'], 'top' | 'height'>) {
+    if (currentFlow !== 'scrolled-doc') return
+    const iframe = getIframe()
+    const scroller = getScrollElement()
+    if (!iframe || !scroller) return
+
+    const iframeRect = iframe.getBoundingClientRect()
+    const viewportRect = container.getBoundingClientRect()
+    const screenTop = iframeRect.top + rect.top
+    const screenBottom = screenTop + rect.height
+    const lowerThreshold = viewportRect.top + viewportRect.height * 0.78
+    const upperThreshold = viewportRect.top + viewportRect.height * 0.12
+
+    if (screenBottom > lowerThreshold || screenTop < upperThreshold) {
+      const targetTop = viewportRect.top + viewportRect.height * 0.32
+      const nextTop = Math.max(0, scroller.scrollTop + screenTop - targetTop)
+      scroller.scrollTo({ top: nextTop, behavior: 'smooth' })
+    }
   }
 
   return {
@@ -326,7 +397,21 @@ export async function createReader(
       return tocItems
     },
     getVisibleWords,
+    getViewportWords,
     getIframeElement: getIframe,
+    getScrollElement,
+    getCurrentLocation: () => lastLocation,
+    advancePacerPage: async () => {
+      if (lastLocation?.atEnd) return false
+      const before = lastLocation?.cfi ?? null
+      await rendition.next()
+      return Boolean(lastLocation?.cfi && lastLocation.cfi !== before)
+    },
+    ensurePacerRectVisible,
+    fontsReady: async () => {
+      const fonts = getIframe()?.contentDocument?.fonts
+      if (fonts) await fonts.ready
+    },
     destroy() {
       destroyed = true
       rendition.destroy()
@@ -335,14 +420,82 @@ export async function createReader(
   }
 }
 
-function mapToc(items: unknown[]): TocItem[] {
+function mapToc(items: unknown[], parentId = 'toc'): TocItem[] {
   if (!Array.isArray(items)) return []
-  return (items as RawNavItem[]).map((item, index) => ({
-    id: item.id || `toc-${index}`,
-    label: item.label || item.title || '',
-    href: item.href || '',
-    subitems: item.subitems ? mapToc(item.subitems) : undefined,
-  }))
+  return (items as RawNavItem[]).map((item, index) => {
+    const fallbackId = `${parentId}-${index}`
+    return {
+      id: item.id || fallbackId,
+      label: item.label || item.title || '',
+      href: item.href || '',
+      subitems: item.subitems ? mapToc(item.subitems, fallbackId) : undefined,
+    }
+  })
+}
+
+function flattenToc(items: TocItem[]): TocItem[] {
+  return items.flatMap((item) => [item, ...flattenToc(item.subitems ?? [])])
+}
+
+function normalizeHref(href: string): string {
+  try {
+    return decodeURI(href).replace(/^\.\//, '')
+  } catch {
+    return href.replace(/^\.\//, '')
+  }
+}
+
+function normalizeDocumentHref(href: string): string {
+  return normalizeHref(href).split('#')[0]
+}
+
+function fragmentOf(href: string): string | null {
+  const fragment = href.split('#')[1]
+  if (!fragment) return null
+  try {
+    return decodeURIComponent(fragment)
+  } catch {
+    return fragment
+  }
+}
+
+function wordRangeAtPoint(doc: Document, x: number, y: number): Range | null {
+  const caretDocument = doc as Document & {
+    caretRangeFromPoint?: (clientX: number, clientY: number) => Range | null
+    caretPositionFromPoint?: (
+      clientX: number,
+      clientY: number,
+    ) => { offsetNode: Node; offset: number } | null
+  }
+
+  let caret = caretDocument.caretRangeFromPoint?.(x, y) ?? null
+  if (!caret) {
+    const position = caretDocument.caretPositionFromPoint?.(x, y)
+    if (position) {
+      caret = doc.createRange()
+      caret.setStart(position.offsetNode, position.offset)
+      caret.collapse(true)
+    }
+  }
+  if (!caret || caret.startContainer.nodeType !== Node.TEXT_NODE) return null
+
+  const node = caret.startContainer as Text
+  const text = node.textContent ?? ''
+  if (text.length === 0) return null
+  let offset = Math.min(caret.startOffset, text.length - 1)
+  while (offset > 0 && /\s/.test(text[offset])) offset--
+
+  let start = offset
+  let end = offset + 1
+  if (!isCjkChar(text[offset])) {
+    while (start > 0 && !/\s/.test(text[start - 1]) && !isCjkChar(text[start - 1])) start--
+    while (end < text.length && !/\s/.test(text[end]) && !isCjkChar(text[end])) end++
+  }
+
+  const word = doc.createRange()
+  word.setStart(node, start)
+  word.setEnd(node, end)
+  return word
 }
 
 function percentageOf(book: Book, cfi: string): number | null {

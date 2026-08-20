@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getStorage } from '../platform'
-import type { Bookmark, BookSettings, ReadingProgress, ReadingSession, TocItem } from '../platform/types'
+import type {
+  AppSettings,
+  Bookmark,
+  BookSettings,
+  ReadingProgress,
+  ReadingSession,
+  TocItem,
+} from '../platform/types'
 import { useLibrary } from '../library/store'
 import { createReader, type ReaderHandle, type ReaderLocation } from './renderer'
 import { PRESETS } from './styles/presets'
@@ -11,6 +18,11 @@ import { Toc } from './Toc'
 import { PositionInfo } from './PositionInfo'
 import { Overlay } from './pacer/Overlay'
 import { usePacer } from './pacer/usePacer'
+import {
+  localDateKey,
+  shouldAccumulateReading,
+  shouldCreditDepartedPage,
+} from '../stats/tracking'
 import {
   IconArrowLeft,
   IconChevronLeft,
@@ -26,13 +38,22 @@ const RESIZE_DEBOUNCE_MS = 150
 const AUTO_HIDE_CHROME_MS = 3200
 const MAX_PAGE_DWELL_SECONDS = 300 // Max 5 minutes per page to prevent idle tracking
 
-export function Reader({ bookId }: { bookId: string }) {
+export function Reader({
+  bookId,
+  appSettings,
+  onAppSettingsChange,
+}: {
+  bookId: string
+  appSettings: AppSettings
+  onAppSettingsChange: (changes: Partial<AppSettings>) => Promise<void>
+}) {
   const closeBook = useLibrary((s) => s.closeBook)
   const book = useLibrary((s) => s.books.find((candidate) => candidate.id === bookId))
   const bookLanguage = book?.language
 
   const containerRef = useRef<HTMLDivElement>(null)
   const handleRef = useRef<ReaderHandle | null>(null)
+  const initialAppSettingsRef = useRef(appSettings)
   const [handle, setHandle] = useState<ReaderHandle | null>(null)
 
   const [ready, setReady] = useState(false)
@@ -48,7 +69,6 @@ export function Reader({ bookId }: { bookId: string }) {
   const [styleId, setStyleId] = useState<StyleId>('book')
   const [overrides, setOverrides] = useState<StyleOverride>({})
   const [flow, setFlow] = useState<'paginated' | 'scrolled-doc'>('paginated')
-  const [themeMode, setThemeMode] = useState<'auto' | 'light' | 'dark'>('auto')
 
   // UI Panels
   const [showSettings, setShowSettings] = useState(false)
@@ -60,8 +80,10 @@ export function Reader({ bookId }: { bookId: string }) {
   const [jumpOrigin, setJumpOrigin] = useState<string | null>(null)
 
   // Pacer state
-  const [pacerWpm, setPacerWpm] = useState(300)
+  const [pacerWpm, setPacerWpm] = useState(250)
+  const [pacerCpm, setPacerCpm] = useState(300)
   const [pacerChunkSize, setPacerChunkSize] = useState(3)
+  const [pacerCjkChunkSize, setPacerCjkChunkSize] = useState(8)
   const [showPacerControls, setShowPacerControls] = useState(false)
 
   // Active reading tracking refs
@@ -69,6 +91,10 @@ export function Reader({ bookId }: { bookId: string }) {
   const sessionBufferSecondsRef = useRef(0)
   const sessionBufferWordsRef = useRef(0)
   const currentPageWordsRef = useRef(0)
+  const currentPageCfiRef = useRef<string | null>(null)
+  const layoutChangeSuppressedUntilRef = useRef(0)
+  const readerTrackableRef = useRef(false)
+  const sessionFlushInFlightRef = useRef<Promise<void> | null>(null)
 
   // System dark detection
   const [systemDark, setSystemDark] = useState(() =>
@@ -84,7 +110,8 @@ export function Reader({ bookId }: { bookId: string }) {
   }, [])
 
   const isEffectiveDark =
-    themeMode === 'dark' || (themeMode === 'auto' && systemDark)
+    appSettings.themeMode === 'dark' ||
+    ((appSettings.themeMode ?? 'auto') === 'auto' && systemDark)
 
   // Compute resolved style
   const resolvedStyle = useMemo(() => {
@@ -92,12 +119,19 @@ export function Reader({ bookId }: { bookId: string }) {
     return resolveStyle(base, overrides, isEffectiveDark)
   }, [styleId, overrides, isEffectiveDark])
 
+  const pacerUsesCjkUnits =
+    Boolean(resolvedStyle.body.isCjk) || /^(zh|ja|ko)/i.test(bookLanguage ?? '')
+  const pacerSpeed = pacerUsesCjkUnits ? pacerCpm : pacerWpm
+  const activePacerChunkSize = pacerUsesCjkUnits ? pacerCjkChunkSize : pacerChunkSize
+  const pacerUnit = pacerUsesCjkUnits ? '字/分钟' : 'wpm'
+
   // Pacer hook
   const pacer = usePacer({
     readerHandle: handle,
     containerRef,
-    wpm: pacerWpm,
+    wpm: pacerSpeed,
     chunkSize: pacerChunkSize,
+    cjkChunkSize: pacerCjkChunkSize,
     accentColor: resolvedStyle.palette.accent,
   })
 
@@ -170,27 +204,47 @@ export function Reader({ bookId }: { bookId: string }) {
 
   // Flush reading session buffer to storage
   const flushReadingSession = async () => {
+    if (sessionFlushInFlightRef.current) {
+      await sessionFlushInFlightRef.current
+    }
+
     const duration = sessionBufferSecondsRef.current
     const words = sessionBufferWordsRef.current
     if (duration <= 0 && words <= 0) return
 
-    sessionBufferSecondsRef.current = 0
-    sessionBufferWordsRef.current = 0
-
-    const todayStr = new Date().toISOString().slice(0, 10)
+    const now = new Date()
+    const todayStr = localDateKey(now)
     const session: ReadingSession = {
       id: `sess-${bookId}-${todayStr}`,
       bookId,
       date: todayStr,
       durationSeconds: duration,
       wordsRead: words,
-      updatedAt: new Date().toISOString(),
+      updatedAt: now.toISOString(),
     }
-    try {
+
+    const task = (async () => {
       const storage = await getStorage()
       await storage.recordReadingSession(session)
+      // Seconds and words may continue accumulating while storage is writing.
+      // Subtract only the successfully persisted snapshot so those increments
+      // remain buffered, and preserve everything when persistence fails.
+      sessionBufferSecondsRef.current = Math.max(
+        0,
+        sessionBufferSecondsRef.current - duration,
+      )
+      sessionBufferWordsRef.current = Math.max(0, sessionBufferWordsRef.current - words)
+    })()
+    sessionFlushInFlightRef.current = task
+
+    try {
+      await task
     } catch {
-      // Non-fatal
+      // Non-fatal. Keep the buffer intact so a later flush can retry it.
+    } finally {
+      if (sessionFlushInFlightRef.current === task) {
+        sessionFlushInFlightRef.current = null
+      }
     }
   }
 
@@ -202,9 +256,17 @@ export function Reader({ bookId }: { bookId: string }) {
   // Active reading second ticker with 5-minute page dwell limit & visibility pause
   useEffect(() => {
     const interval = setInterval(() => {
-      // Pause if tab is hidden or modals are open
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-      if (showSettings || showToc) return
+      if (
+        !shouldAccumulateReading({
+          ready: readerTrackableRef.current,
+          hasError: Boolean(error),
+          visibilityState: document.visibilityState,
+          windowFocused: document.hasFocus(),
+          panelOpen: showSettings || showToc,
+        })
+      ) {
+        return
+      }
 
       // Anti-idle check: capped at MAX_PAGE_DWELL_SECONDS (300s = 5 mins) per page
       if (pageDwellSecondsRef.current < MAX_PAGE_DWELL_SECONDS) {
@@ -237,7 +299,7 @@ export function Reader({ bookId }: { bookId: string }) {
       window.removeEventListener('beforeunload', onBeforeUnload)
       void flushReadingSessionRef.current()
     }
-  }, [bookId, showSettings, showToc])
+  }, [bookId, error, showSettings, showToc])
 
   // Main reader lifecycle
   useEffect(() => {
@@ -247,15 +309,23 @@ export function Reader({ bookId }: { bookId: string }) {
     let unsaved: ReadingProgress | null = null
     let lastKnownPercentage: number | null = 0
 
+    readerTrackableRef.current = false
+    currentPageCfiRef.current = null
+    currentPageWordsRef.current = 0
+    pageDwellSecondsRef.current = 0
+
     async function flush() {
       clearTimeout(saveTimer)
       const progress = unsaved
-      unsaved = null
       if (!progress) return
       try {
         await (await getStorage()).saveProgress(progress)
+        // A newer relocation may arrive while this write is in flight. Only
+        // clear the exact snapshot that was persisted; otherwise leave the
+        // newer location queued for its own debounce/cleanup flush.
+        if (unsaved === progress) unsaved = null
       } catch {
-        // Non-fatal
+        // Non-fatal. Keep the last location queued so cleanup can retry it.
       }
     }
 
@@ -317,27 +387,19 @@ export function Reader({ bookId }: { bookId: string }) {
     void (async () => {
       try {
         const storage = await getStorage()
-        const [data, savedProgress, savedSettings, savedBookmarks, appSettings] = await Promise.all([
+        const [data, savedProgress, savedSettings, savedBookmarks] = await Promise.all([
           storage.readBookFile(bookId),
           storage.getProgress(bookId),
           storage.getBookSettings(bookId),
           storage.listBookmarks(bookId),
-          storage.getAppSettings(),
         ])
 
         if (cancelled || !containerRef.current) return
 
         const isChinese = bookLanguage?.toLowerCase().startsWith('zh')
         let rawStyleId = savedSettings?.styleId as StyleId | 'night' | undefined
-        let initialThemeMode: 'auto' | 'light' | 'dark' = 'auto'
-        if (appSettings.themeMode) {
-          initialThemeMode = appSettings.themeMode
-        } else if (appSettings.autoNightMode !== undefined) {
-          initialThemeMode = appSettings.autoNightMode ? 'auto' : 'light'
-        }
         if (rawStyleId === 'night') {
           rawStyleId = 'book'
-          initialThemeMode = 'dark'
         }
         const initialStyleId: StyleId = (rawStyleId && PRESETS[rawStyleId as StyleId] ? rawStyleId as StyleId : undefined) ?? (isChinese ? 'song' : 'book')
         const initialOverrides: StyleOverride = savedSettings?.overrides ?? {}
@@ -347,13 +409,16 @@ export function Reader({ bookId }: { bookId: string }) {
         setOverrides(initialOverrides)
         setFlow(initialFlow)
         setBookmarks(savedBookmarks)
-        setThemeMode(initialThemeMode)
-        if (appSettings.pacerWpm) setPacerWpm(appSettings.pacerWpm)
-        if (appSettings.pacerChunkSize) setPacerChunkSize(appSettings.pacerChunkSize)
+        const initialAppSettings = initialAppSettingsRef.current
+        if (initialAppSettings.pacerWpm) setPacerWpm(initialAppSettings.pacerWpm)
+        if (initialAppSettings.pacerCpm) setPacerCpm(initialAppSettings.pacerCpm)
+        if (initialAppSettings.pacerChunkSize) setPacerChunkSize(initialAppSettings.pacerChunkSize)
+        if (initialAppSettings.pacerCjkCharCount) setPacerCjkChunkSize(initialAppSettings.pacerCjkCharCount)
 
         lastKnownPercentage = savedProgress?.percentage ?? null
         setPercentage(lastKnownPercentage)
 
+        const initialThemeMode = initialAppSettings.themeMode ?? 'auto'
         const isInitialDark = initialThemeMode === 'dark' || (initialThemeMode === 'auto' && (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)')?.matches))
         const initialResolved = resolveStyle(
           PRESETS[initialStyleId] ?? PRESETS.book,
@@ -366,10 +431,11 @@ export function Reader({ bookId }: { bookId: string }) {
           spreadMode: initialOverrides.spreadMode ?? 'auto',
           style: initialResolved,
           onKeyDown,
-          onClickText() {
+          onClickText({ range }) {
             pingActivity()
             setShowPacerControls(false)
             setShowSettings(false)
+            if (range) pacerRef.current.seekToRange(range, true)
           },
           onLocation(loc) {
             if (cancelled) return
@@ -387,21 +453,30 @@ export function Reader({ bookId }: { bookId: string }) {
             clearTimeout(saveTimer)
             saveTimer = setTimeout(() => void flush(), SAVE_DEBOUNCE_MS)
 
-            // Credit words read from previous page if user genuinely read it (dwell >= 3s or Pacer was active)
-            if (pageDwellSecondsRef.current >= 3 || pacerRef.current.isPlaying) {
-              if (currentPageWordsRef.current > 0) {
+            const previousCfi = currentPageCfiRef.current
+            const locationChanged = previousCfi !== loc.cfi
+            if (locationChanged) {
+              const layoutChangeSuppressed = Date.now() < layoutChangeSuppressedUntilRef.current
+              if (
+                shouldCreditDepartedPage(
+                  previousCfi,
+                  loc.cfi,
+                  pageDwellSecondsRef.current,
+                  pacerRef.current.isPlaying,
+                  layoutChangeSuppressed,
+                ) && currentPageWordsRef.current > 0
+              ) {
                 sessionBufferWordsRef.current += currentPageWordsRef.current
               }
-            }
 
-            // Page turned: reset page dwell seconds for new page
-            pageDwellSecondsRef.current = 0
+              currentPageCfiRef.current = loc.cfi
+              pageDwellSecondsRef.current = 0
+            }
 
             // Measure visible words on the newly rendered page
             setTimeout(() => {
-              if (reader) {
-                const words = reader.getVisibleWords()
-                currentPageWordsRef.current = words.length > 0 ? words.length : 250
+              if (reader && locationChanged) {
+                currentPageWordsRef.current = reader.getViewportWords().length
               }
               if (!pacerRef.current.isPlaying) {
                 pacerRef.current.recalculateGeometry(false)
@@ -417,6 +492,7 @@ export function Reader({ bookId }: { bookId: string }) {
 
         handleRef.current = reader
         setHandle(reader)
+        readerTrackableRef.current = true
 
         // Load TOC
         void reader.getToc().then((items) => {
@@ -432,19 +508,24 @@ export function Reader({ bookId }: { bookId: string }) {
 
     return () => {
       cancelled = true
+      readerTrackableRef.current = false
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('mousemove', pingActivity)
       if (hideChromeTimerRef.current) clearTimeout(hideChromeTimerRef.current)
 
-      // Credit final page words if spent >= 3s
-      if (pageDwellSecondsRef.current >= 3 || pacerRef.current.isPlaying) {
+      // Credit the final visible page only when a real page was rendered and
+      // the close was not caused by a layout-only relocation.
+      if (
+        currentPageCfiRef.current &&
+        Date.now() >= layoutChangeSuppressedUntilRef.current &&
+        (pageDwellSecondsRef.current >= 3 || pacerRef.current.isPlaying)
+      ) {
         if (currentPageWordsRef.current > 0) {
           sessionBufferWordsRef.current += currentPageWordsRef.current
         }
       }
 
       void flushAndRefreshShelf()
-      void flushReadingSessionRef.current()
       handleRef.current = null
       setHandle(null)
       reader?.destroy()
@@ -454,6 +535,7 @@ export function Reader({ bookId }: { bookId: string }) {
   // Apply style updates
   useEffect(() => {
     if (handleRef.current && ready) {
+      layoutChangeSuppressedUntilRef.current = Date.now() + 750
       handleRef.current.applyStyle(resolvedStyle)
       setTimeout(() => {
         pacerRef.current.recalculateGeometry()
@@ -492,6 +574,7 @@ export function Reader({ bookId }: { bookId: string }) {
     const nextSpread = newOverrides.spreadMode ?? 'auto'
     setOverrides(newOverrides)
     if (prevSpread !== nextSpread && handleRef.current) {
+      layoutChangeSuppressedUntilRef.current = Date.now() + 750
       void handleRef.current.setSpread(nextSpread).then(() => {
         setTimeout(() => {
           pacerRef.current.recalculateGeometry(false)
@@ -504,20 +587,11 @@ export function Reader({ bookId }: { bookId: string }) {
   const handleFlowChange = async (newFlow: 'paginated' | 'scrolled-doc') => {
     setFlow(newFlow)
     if (handleRef.current) {
+      layoutChangeSuppressedUntilRef.current = Date.now() + 750
       await handleRef.current.setFlow(newFlow)
       pacer.recalculateGeometry()
     }
     void saveCurrentSettings(styleId, overrides, newFlow)
-  }
-
-  const handleThemeModeChange = async (mode: 'auto' | 'light' | 'dark') => {
-    setThemeMode(mode)
-    try {
-      const storage = await getStorage()
-      await storage.saveAppSettings({ themeMode: mode, autoNightMode: mode === 'auto' })
-    } catch {
-      // Non-fatal
-    }
   }
 
   const handleNavigate = (target: string) => {
@@ -580,6 +654,7 @@ export function Reader({ bookId }: { bookId: string }) {
         if (width === 0 || height === 0) return
         if (width === applied.width && height === applied.height) return
         applied = { width, height }
+        layoutChangeSuppressedUntilRef.current = Date.now() + 750
         handleRef.current?.resize(width, height)
         pacerRef.current.recalculateGeometry()
       }, RESIZE_DEBOUNCE_MS)
@@ -591,6 +666,43 @@ export function Reader({ bookId }: { bookId: string }) {
       observer.disconnect()
     }
   }, [])
+
+  const updatePacerSpeed = (value: number) => {
+    const next = Math.max(100, Math.min(1000, value))
+    if (pacerUsesCjkUnits) {
+      setPacerCpm(next)
+      void onAppSettingsChange({ pacerCpm: next }).catch(() => undefined)
+    } else {
+      setPacerWpm(next)
+      void onAppSettingsChange({ pacerWpm: next }).catch(() => undefined)
+    }
+  }
+
+  const updatePacerChunkSize = (value: number) => {
+    if (pacerUsesCjkUnits) {
+      setPacerCjkChunkSize(value)
+      void onAppSettingsChange({ pacerCjkCharCount: value }).catch(() => undefined)
+    } else {
+      setPacerChunkSize(value)
+      void onAppSettingsChange({ pacerChunkSize: value }).catch(() => undefined)
+    }
+  }
+
+  const pacerSpeedTiers = pacerUsesCjkUnits
+    ? [
+        { label: '舒适', wpm: 200, sub: '200 字/分' },
+        { label: '标准', wpm: 300, sub: '300 字/分' },
+        { label: '进阶', wpm: 420, sub: '420 字/分' },
+        { label: '极速', wpm: 600, sub: '600 字/分' },
+      ]
+    : [
+        { label: '初学', wpm: 200, sub: '200 wpm' },
+        { label: '母语', wpm: 300, sub: '300 wpm' },
+        { label: '进阶', wpm: 420, sub: '420 wpm' },
+        { label: '极速', wpm: 600, sub: '600 wpm' },
+      ]
+
+  const pacerChunkOptions = pacerUsesCjkUnits ? [4, 6, 8, 10, 12] : [1, 2, 3, 4, 5]
 
   return (
     <div
@@ -712,7 +824,7 @@ export function Reader({ bookId }: { bookId: string }) {
               }`}
               title="设置自动阅读速度与分块"
             >
-              <span>{pacerWpm} wpm</span>
+              <span>{pacerSpeed} {pacerUsesCjkUnits ? '字/分' : 'wpm'}</span>
               {pacer.speedWarning && (
                 <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" title="极速模式" />
               )}
@@ -846,20 +958,14 @@ export function Reader({ bookId }: { bookId: string }) {
                 )}
               </div>
               <div className="grid grid-cols-4 gap-1.5">
-                {[
-                  { label: '初学', wpm: 200, sub: '200 wpm' },
-                  { label: '母语', wpm: 300, sub: '300 wpm' },
-                  { label: '进阶', wpm: 420, sub: '420 wpm' },
-                  { label: '极速', wpm: 600, sub: '600 wpm' },
-                ].map((tier) => {
-                  const isSelected = pacerWpm === tier.wpm
+                {pacerSpeedTiers.map((tier) => {
+                  const isSelected = pacerSpeed === tier.wpm
                   return (
                     <button
                       key={tier.wpm}
                       type="button"
                       onClick={() => {
-                        setPacerWpm(tier.wpm)
-                        void getStorage().then((s) => s.saveAppSettings({ pacerWpm: tier.wpm }))
+                        updatePacerSpeed(tier.wpm)
                       }}
                       className={`flex flex-col items-center justify-center py-2 px-1.5 rounded-2xl border transition ${
                         isSelected
@@ -884,18 +990,16 @@ export function Reader({ bookId }: { bookId: string }) {
                 <div className="flex items-center gap-1">
                   <input
                     type="number"
-                    min={80}
-                    max={1200}
+                    min={100}
+                    max={1000}
                     step={10}
-                    value={pacerWpm}
+                    value={pacerSpeed}
                     onChange={(e) => {
-                      const val = Math.max(50, Math.min(1500, Number(e.target.value) || 100))
-                      setPacerWpm(val)
-                      void getStorage().then((s) => s.saveAppSettings({ pacerWpm: val }))
+                      updatePacerSpeed(Number(e.target.value) || 100)
                     }}
                     className="w-14 rounded-lg border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] px-1.5 py-0.5 text-center font-mono font-bold text-xs text-neutral-900 dark:text-white focus:border-blue-500 focus:outline-none"
                   />
-                  <span className="text-[10px] text-neutral-400 font-mono">wpm</span>
+                  <span className="text-[10px] text-neutral-400 font-mono">{pacerUnit}</span>
                 </div>
               </div>
 
@@ -903,37 +1007,31 @@ export function Reader({ bookId }: { bookId: string }) {
                 <button
                   type="button"
                   onClick={() => {
-                    const next = Math.max(80, pacerWpm - 20)
-                    setPacerWpm(next)
-                    void getStorage().then((s) => s.saveAppSettings({ pacerWpm: next }))
+                    updatePacerSpeed(pacerSpeed - 20)
                   }}
                   className="flex h-7 w-7 items-center justify-center rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 font-bold transition text-xs"
-                  title="减少 20 wpm"
+                  title={`减少 20 ${pacerUnit}`}
                 >
                   -
                 </button>
                 <input
                   type="range"
                   min={100}
-                  max={800}
+                  max={1000}
                   step={10}
-                  value={pacerWpm}
+                  value={pacerSpeed}
                   onChange={(e) => {
-                    const val = Number(e.target.value)
-                    setPacerWpm(val)
-                    void getStorage().then((s) => s.saveAppSettings({ pacerWpm: val }))
+                    updatePacerSpeed(Number(e.target.value))
                   }}
                   className="flex-1 accent-blue-600 cursor-pointer h-1.5 rounded-lg bg-black/10 dark:bg-white/10"
                 />
                 <button
                   type="button"
                   onClick={() => {
-                    const next = Math.min(1200, pacerWpm + 20)
-                    setPacerWpm(next)
-                    void getStorage().then((s) => s.saveAppSettings({ pacerWpm: next }))
+                    updatePacerSpeed(pacerSpeed + 20)
                   }}
                   className="flex h-7 w-7 items-center justify-center rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 font-bold transition text-xs"
-                  title="增加 20 wpm"
+                  title={`增加 20 ${pacerUnit}`}
                 >
                   +
                 </button>
@@ -943,24 +1041,23 @@ export function Reader({ bookId }: { bookId: string }) {
             {/* Chunk Size Selector */}
             <div className="pt-3 border-t border-black/[0.06] dark:border-white/[0.06] flex items-center justify-between">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                每次高亮词数
+                每次高亮{pacerUsesCjkUnits ? '字数' : '词数'}
               </span>
               <div className="flex rounded-xl bg-black/[0.04] p-1 dark:bg-white/[0.06]">
-                {[1, 2, 3, 4, 5].map((size) => (
+                {pacerChunkOptions.map((size) => (
                   <button
                     key={size}
                     type="button"
                     onClick={() => {
-                      setPacerChunkSize(size)
-                      void getStorage().then((s) => s.saveAppSettings({ pacerChunkSize: size }))
+                      updatePacerChunkSize(size)
                     }}
                     className={`px-2.5 py-1 rounded-lg transition text-[11px] font-medium ${
-                      pacerChunkSize === size
+                      activePacerChunkSize === size
                         ? 'bg-white text-neutral-900 shadow-[0_1px_3px_rgba(0,0,0,0.08)] dark:bg-[#2C2C2E] dark:text-white font-semibold'
                         : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
                     }`}
                   >
-                    {size}词
+                    {size}{pacerUsesCjkUnits ? '字' : '词'}
                   </button>
                 ))}
               </div>
@@ -975,12 +1072,10 @@ export function Reader({ bookId }: { bookId: string }) {
           currentStyleId={styleId}
           overrides={overrides}
           flow={flow}
-          themeMode={themeMode}
           isDark={isEffectiveDark}
           onStyleSelect={handleStyleSelect}
           onOverridesChange={handleOverridesChange}
           onFlowChange={handleFlowChange}
-          onThemeModeChange={handleThemeModeChange}
           onClose={() => setShowSettings(false)}
         />
       )}
@@ -991,6 +1086,7 @@ export function Reader({ bookId }: { bookId: string }) {
           toc={toc}
           bookmarks={bookmarks}
           currentHref={location?.href ?? null}
+          currentTocId={location?.tocId ?? null}
           currentCfi={location?.cfi ?? null}
           onNavigate={handleNavigate}
           onAddBookmark={handleAddBookmark}

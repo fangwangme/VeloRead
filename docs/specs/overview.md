@@ -37,8 +37,9 @@
 | --- | --- | --- |
 | 书库 | [library.md](library.md) | 🚧 部分实现 |
 | 格式支持（EPUB / TXT / PDF） | [reading-formats.md](reading-formats.md) | 🚧 仅 EPUB |
-| 阅读视图（排版 / 风格 / 导航） | [reader-view.md](reader-view.md) | 🚧 仅基础翻页 |
-| 自动阅读（Pacer） | [pacer.md](pacer.md) | 📋 规划中 |
+| 阅读视图（排版 / 风格 / 导航） | [reader-view.md](reader-view.md) | ✅ EPUB 已实现 |
+| 自动阅读（Pacer） | [pacer.md](pacer.md) | ✅ EPUB 已实现 |
+| 阅读统计与打卡 | [reading-activity.md](reading-activity.md) | ✅ 已实现 |
 | 划线摘抄 | [annotations.md](annotations.md) | 📋 规划中 |
 | 划词与生词本 | [vocabulary.md](vocabulary.md) | 📋 规划中 |
 | 平台适配层与存储 | [platform-and-storage.md](platform-and-storage.md) | 🚧 storage 已实现 |
@@ -82,8 +83,8 @@ PDF 是**独立的一条轨**，功能对等性天然打折。详见 [reading-fo
 按依赖顺序，不是承诺排期：
 
 1. **阅读闭环**（✅ 已完成）：导入 EPUB → 渲染翻页 → 进度持久化 → 平台适配层
-2. **像样的阅读器**：排版与风格系统、字体设置、目录、位置信息、书签、滚动模式
-3. **自动阅读**：Pacer 引擎
+2. **像样的阅读器**（✅ 已完成）：排版与风格系统、字体设置、目录、位置信息、书签、滚动模式
+3. **自动阅读与统计**（✅ 已完成）：Pacer 引擎、可信计时、趋势总览与每日打卡
 4. **格式扩展**：TXT（与 EPUB 共用引擎），之后 PDF（独立轨）
 5. **沉淀**：划线摘抄 + Kindle 格式导入导出
 6. **词汇**：词典入 SQLite、划词、生词本、导出
@@ -97,7 +98,7 @@ PDF 是**独立的一条轨**，功能对等性天然打折。详见 [reading-fo
   用户正是从 Kindle 迁过来的，这是留住人的第一步。
 - **按个人速度估算剩余时间**：「本章还剩 12 分钟」。Kindle 最被低估的小功能，
   而我们有 Pacer 的真实速度数据，能比 Kindle 估得准。
-- **阅读统计**：速度趋势、时长、连续天数。Pacer 是「训练工具」，没有统计就不成立。
+- **更深入的速度趋势**：按会话展示 Pacer 实际吞吐与理解训练变化。基础时长、字数、连续天数与打卡已实现。
 - **书内全文搜索**：Apple Books / Kindle 都有，属于基础预期。
 
 **中等价值**

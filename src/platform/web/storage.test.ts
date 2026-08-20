@@ -96,8 +96,18 @@ describe('web storage port', () => {
     await storage.saveBookSettings(bookSettings)
     expect(await storage.getBookSettings(book.id)).toEqual(bookSettings)
 
-    await storage.saveAppSettings({ defaultStyleId: 'sepia', pacerWpm: 300 })
-    expect(await storage.getAppSettings()).toEqual({ defaultStyleId: 'sepia', pacerWpm: 300 })
+    await storage.saveAppSettings({
+      defaultStyleId: 'sepia',
+      pacerWpm: 300,
+      dailyReadingGoalMinutes: 20,
+    })
+    await storage.saveAppSettings({ themeMode: 'dark' })
+    expect(await storage.getAppSettings()).toEqual({
+      defaultStyleId: 'sepia',
+      pacerWpm: 300,
+      dailyReadingGoalMinutes: 20,
+      themeMode: 'dark',
+    })
   })
 
   it('adds, lists, and deletes bookmarks', async () => {
@@ -150,6 +160,14 @@ describe('web storage port', () => {
       text: 'Bookmark',
       createdAt: '2026-08-15T12:00:00.000Z',
     })
+    await storage.recordReadingSession({
+      id: 'sess-delete',
+      bookId: book.id,
+      date: '2026-08-15',
+      durationSeconds: 1,
+      wordsRead: 3,
+      updatedAt: '2026-08-15T12:00:01.000Z',
+    })
 
     await storage.deleteBook(book.id)
 
@@ -158,6 +176,7 @@ describe('web storage port', () => {
     expect(await storage.getProgress(book.id)).toBeNull()
     expect(await storage.getBookSettings(book.id)).toBeNull()
     expect(await storage.listBookmarks(book.id)).toEqual([])
+    expect((await storage.getReadingStats()).totalBooksRead).toBe(0)
     await expect(storage.readBookFile(book.id)).rejects.toThrow()
   })
 
@@ -191,5 +210,22 @@ describe('web storage port', () => {
     expect(stats.totalBooksRead).toBe(1)
     expect(stats.dailyStats['2026-08-16'].durationMinutes).toBe(5)
     expect(stats.dailyStats['2026-08-16'].wordsRead).toBe(1200)
+  })
+
+  it('reports a non-zero total for a positive sub-minute session', async () => {
+    const book = record()
+    await storage.addBook({ record: book, data: new Uint8Array([1]), cover: null })
+    await storage.recordReadingSession({
+      id: 'sess-short',
+      bookId: book.id,
+      date: '2026-08-16',
+      durationSeconds: 1,
+      wordsRead: 2,
+      updatedAt: '2026-08-16T10:00:00.000Z',
+    })
+
+    const stats = await storage.getReadingStats()
+    expect(stats.totalDurationMinutes).toBe(1)
+    expect(stats.dailyStats['2026-08-16'].durationMinutes).toBe(1)
   })
 })

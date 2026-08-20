@@ -13,8 +13,9 @@
 | [overview.md](overview.md) | 产品定位、模块地图、格式矩阵、术语、候选功能 | — |
 | [library.md](library.md) | 书库：导入、书架、组织 | 🚧 |
 | [reading-formats.md](reading-formats.md) | EPUB / TXT / PDF、`Locator` 抽象、元数据解析 | 🚧 |
-| [reader-view.md](reader-view.md) | 排版、视觉风格、字体设置、目录、书签、键盘 | 🚧 |
-| [pacer.md](pacer.md) | 自动阅读 / 速读训练 | 📋 |
+| [reader-view.md](reader-view.md) | 排版、视觉风格、字体设置、目录、书签、键盘 | ✅ |
+| [pacer.md](pacer.md) | 自动阅读 / 速读训练 | ✅ |
+| [reading-activity.md](reading-activity.md) | 有效阅读计时、字数、连续天数与自动打卡 | ✅ |
 | [annotations.md](annotations.md) | 划线摘抄、Kindle 格式导入导出 | 📋 |
 | [vocabulary.md](vocabulary.md) | 划词、词典、生词本、导出 | 📋 |
 | [platform-and-storage.md](platform-and-storage.md) | 平台适配层、SQLite / IndexedDB 数据模型 | ✅ |
