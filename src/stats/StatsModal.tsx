@@ -77,12 +77,9 @@ export function StatsModal({ dailyGoalMinutes, onClose }: StatsModalProps) {
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:bg-blue-400/15 dark:text-blue-400">
               <IconStats />
             </div>
-            <div>
-              <h2 id="reading-stats-title" className="text-base font-semibold tracking-tight">阅读数据与统计</h2>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-                记录专注阅读，见证心智成长
-              </p>
-            </div>
+            <h2 id="reading-stats-title" className="text-base font-semibold tracking-tight">
+              阅读数据与统计
+            </h2>
           </div>
           <button
             type="button"
@@ -184,8 +181,8 @@ export function StatsModal({ dailyGoalMinutes, onClose }: StatsModalProps) {
                 <div className="flex items-start gap-3">
                   <span className="text-blue-500 mt-0.5"><IconInfo /></span>
                   <p className="leading-relaxed text-[11px] opacity-90">
-                    <strong className="text-neutral-900 dark:text-white">智能防挂机机制：</strong>
-                    为保证统计客观真实，单页累计 5 分钟后将暂停计时；页面切至后台或窗口失焦时也会立即暂停，翻到新页后自动续接。
+                    <strong className="text-neutral-900 dark:text-white">防挂机：</strong>
+                    单页累计 5 分钟后暂停计时；切到后台或窗口失焦时立即暂停，翻到新页后自动续接。
                   </p>
                 </div>
               </div>

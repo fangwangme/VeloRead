@@ -17,6 +17,9 @@ interface AppSettingsModalProps {
 }
 
 const GOAL_OPTIONS = [10, 15, 20, 30, 45, 60]
+/** A day is 1440 minutes; anything past this is a typo, not a reading goal. */
+const GOAL_MIN = 1
+const GOAL_MAX = 600
 
 export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsModalProps) {
   const [error, setError] = useState<string | null>(null)
@@ -178,6 +181,13 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
                 </button>
               ))}
             </div>
+
+            <DailyGoalInput
+              key={dailyGoal}
+              value={dailyGoal}
+              isPreset={GOAL_OPTIONS.includes(dailyGoal)}
+              onCommit={(minutes) => void save({ dailyReadingGoalMinutes: minutes })}
+            />
           </SettingSection>
 
           {error && (
@@ -187,6 +197,69 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
           )}
         </div>
       </section>
+    </div>
+  )
+}
+
+/**
+ * Free-form goal, alongside the presets rather than replacing them: the presets
+ * stay the one-tap path, and this covers the person who wants 25 or 90.
+ * Remounted by key when the value changes elsewhere, matching how the pacer
+ * editors below keep their draft in sync.
+ */
+function DailyGoalInput({
+  value,
+  isPreset,
+  onCommit,
+}: {
+  value: number
+  isPreset: boolean
+  onCommit: (minutes: number) => void
+}) {
+  const [draft, setDraft] = useState(String(value))
+
+  const commit = () => {
+    const parsed = Number(draft)
+    const next = Number.isFinite(parsed)
+      ? Math.max(GOAL_MIN, Math.min(GOAL_MAX, Math.round(parsed)))
+      : value
+    setDraft(String(next))
+    if (next !== value) onCommit(next)
+  }
+
+  return (
+    <div className="mt-2.5 flex items-center justify-between gap-3 border-t border-black/[0.05] pt-2.5 dark:border-white/[0.06]">
+      <span className="text-[10px] text-neutral-400">
+        也可以直接填一个数，{GOAL_MIN}–{GOAL_MAX} 分钟
+      </span>
+      <label
+        className={`flex items-center gap-1 rounded-lg border px-2 py-1 transition focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 ${
+          isPreset
+            ? 'border-black/[0.07] bg-white/70 dark:border-white/[0.08] dark:bg-black/15'
+            : 'border-blue-500/70 bg-blue-500/10'
+        }`}
+      >
+        <span className="sr-only">自定义每日阅读目标分钟数</span>
+        <input
+          type="number"
+          min={GOAL_MIN}
+          max={GOAL_MAX}
+          step={5}
+          name="daily-reading-goal"
+          autoComplete="off"
+          inputMode="numeric"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') event.currentTarget.blur()
+          }}
+          className={`w-12 bg-transparent text-right font-mono text-[11px] font-bold outline-none ${
+            isPreset ? '' : 'text-blue-600 dark:text-blue-400'
+          }`}
+        />
+        <span className="text-[9px] font-medium text-neutral-400">分钟</span>
+      </label>
     </div>
   )
 }

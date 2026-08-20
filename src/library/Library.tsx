@@ -75,9 +75,11 @@ export function Library({
       <header className="sticky top-0 z-30 flex items-center justify-between gap-4 px-8 pt-8 pb-5 backdrop-blur-md bg-[#FBFBFA]/80 dark:bg-[#121214]/80 border-b border-black/[0.04] dark:border-white/[0.04]">
         <div>
           <h1 className="text-xl font-bold tracking-tight">书库</h1>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5 font-medium">
-            {books.length > 0 ? `已收录 ${books.length} 本图书` : '藏书阁'}
-          </p>
+          {books.length > 0 && (
+            <p className="mt-0.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+              已收录 {books.length} 本图书
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2.5">
           <button
