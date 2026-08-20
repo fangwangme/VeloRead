@@ -1,12 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLibrary } from './library/store'
 import { Library } from './library/Library'
 import { Reader } from './reader/Reader'
 import { getStorage } from './platform'
 import type { AppSettings } from './platform/types'
+import { I18nProvider } from './i18n/I18nProvider'
+import { resolveLanguage } from './i18n/resolveLanguage'
+import { useT } from './i18n/useT'
 
 const DEFAULT_APP_SETTINGS: AppSettings = {
   themeMode: 'auto',
+  language: 'auto',
   pacerWpm: 250,
   pacerCpm: 300,
   pacerChunkSize: 3,
@@ -67,6 +71,17 @@ export default function App() {
     return () => media.removeEventListener('change', applyTheme)
   }, [appSettings.themeMode])
 
+  // `navigator.languages` is stable for the life of the window, so resolving on
+  // every settings change is enough to react to the picker.
+  const language = useMemo(
+    () =>
+      resolveLanguage(
+        appSettings.language,
+        typeof navigator === 'undefined' ? [] : navigator.languages,
+      ),
+    [appSettings.language],
+  )
+
   const updateAppSettings = useCallback(async (changes: Partial<AppSettings>) => {
     appSettingsVersionRef.current += 1
     const previous = appSettingsRef.current
@@ -90,22 +105,24 @@ export default function App() {
     }
   }, [])
 
-  if (!settingsHydrated) {
-    return (
-      <div className="flex min-h-dvh items-center justify-center bg-[#FBFBFA] text-xs text-neutral-400 dark:bg-[#121214]">
-        正在载入 VeloRead…
-      </div>
-    )
-  }
+  return (
+    <I18nProvider language={language}>
+      {!settingsHydrated ? (
+        <BootScreen />
+      ) : view.name === 'reader' ? (
+        <Reader key={view.bookId} bookId={view.bookId} appSettings={appSettings} />
+      ) : (
+        <Library appSettings={appSettings} onAppSettingsChange={updateAppSettings} />
+      )}
+    </I18nProvider>
+  )
+}
 
-  if (view.name === 'reader') {
-    return (
-      <Reader
-        key={view.bookId}
-        bookId={view.bookId}
-        appSettings={appSettings}
-      />
-    )
-  }
-  return <Library appSettings={appSettings} onAppSettingsChange={updateAppSettings} />
+function BootScreen() {
+  const t = useT()
+  return (
+    <div className="flex min-h-dvh items-center justify-center bg-[#FBFBFA] text-xs text-neutral-400 dark:bg-[#121214]">
+      {t('app.loading')}
+    </div>
+  )
 }

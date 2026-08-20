@@ -34,6 +34,7 @@ import {
   shouldCreditDepartedPage,
 } from '../stats/tracking'
 import { ReadingSessionBuffer } from '../stats/sessionBuffer'
+import { useT } from '../i18n/useT'
 import {
   IconArrowLeft,
   IconChevronLeft,
@@ -73,6 +74,7 @@ export function Reader({
   bookId: string
   appSettings: AppSettings
 }) {
+  const t = useT()
   const closeBook = useLibrary((s) => s.closeBook)
   const book = useLibrary((s) => s.books.find((candidate) => candidate.id === bookId))
   const bookLanguage = book?.language
@@ -252,7 +254,7 @@ export function Reader({
   const pacerUsesCjkUnits = pacer.dominantUnit === 'cjk'
   const pacerSpeed = pacerUsesCjkUnits ? pacerCpm : pacerWpm
   const activePacerChunkSize = pacerUsesCjkUnits ? pacerCjkChunkSize : pacerChunkSize
-  const pacerUnit = pacerUsesCjkUnits ? '字/分钟' : 'wpm'
+  const pacerUnit = t(pacerUsesCjkUnits ? 'pacer.unitCjk' : 'pacer.unitLatin')
 
   const pacerRef = useRef(pacer)
   const annotationsRef = useRef(annotations)
@@ -976,7 +978,9 @@ export function Reader({
     // The chapter title repeats across every bookmark in a chapter, which makes
     // the list unreadable. Prefer the first words actually on the page.
     const excerpt =
-      firstWordsOnPage() || location.chapterTitle || `位置 ${Math.round((percentage ?? 0) * 100)}%`
+      firstWordsOnPage() ||
+      location.chapterTitle ||
+      t('reader.bookmarkFallback', { percent: Math.round((percentage ?? 0) * 100) })
     const newBm: Bookmark = {
       id: newId(),
       bookId,
@@ -1072,19 +1076,25 @@ export function Reader({
     })
   }
 
-  const pacerSpeedTiers = pacerUsesCjkUnits
-    ? [
-        { label: '舒适', wpm: 200, sub: '200 字/分' },
-        { label: '标准', wpm: 300, sub: '300 字/分' },
-        { label: '进阶', wpm: 420, sub: '420 字/分' },
-        { label: '极速', wpm: 600, sub: '600 字/分' },
-      ]
-    : [
-        { label: '初学', wpm: 200, sub: '200 wpm' },
-        { label: '母语', wpm: 300, sub: '300 wpm' },
-        { label: '进阶', wpm: 420, sub: '420 wpm' },
-        { label: '极速', wpm: 600, sub: '600 wpm' },
-      ]
+  const pacerSpeedTiers = (
+    pacerUsesCjkUnits
+      ? ([
+          ['pacer.tier.comfortable', 200],
+          ['pacer.tier.standard', 300],
+          ['pacer.tier.advanced', 420],
+          ['pacer.tier.turbo', 600],
+        ] as const)
+      : ([
+          ['pacer.tier.beginner', 200],
+          ['pacer.tier.native', 300],
+          ['pacer.tier.advanced', 420],
+          ['pacer.tier.turbo', 600],
+        ] as const)
+  ).map(([labelKey, wpm]) => ({
+    label: t(labelKey),
+    wpm,
+    sub: t(pacerUsesCjkUnits ? 'pacer.tierSubCjk' : 'pacer.tierSubLatin', { n: wpm }),
+  }))
 
   const pacerChunkOptions = pacerUsesCjkUnits ? [2, 4, 6, 8, 10] : [1, 2, 3, 4, 5]
   const pacerMaxRate = pacerUsesCjkUnits || activePacerChunkSize > 1 ? 1000 : 600
@@ -1116,7 +1126,7 @@ export function Reader({
             onClick={closeBook}
           >
             <IconArrowLeft className="opacity-70" />
-            <span>书库</span>
+            <span>{t('reader.backToLibrary')}</span>
           </button>
           <button
             type="button"
@@ -1130,10 +1140,10 @@ export function Reader({
               setChromeVisible(true)
             }}
             disabled={!ready}
-            title="目录、书签与划线 (T)"
+            title={t('reader.tocHint')}
           >
             <IconToc className="opacity-70" />
-            <span>目录</span>
+            <span>{t('reader.toc')}</span>
           </button>
           <button
             type="button"
@@ -1147,16 +1157,16 @@ export function Reader({
               setChromeVisible(true)
             }}
             disabled={!ready}
-            title="书内搜索 (/)"
+            title={t('reader.searchHint')}
           >
             <IconSearch className="opacity-70" />
-            <span>搜索</span>
+            <span>{t('reader.search')}</span>
           </button>
         </div>
 
         <div className="min-w-0 flex-1 text-center px-4">
           <p className="truncate text-xs font-semibold tracking-tight opacity-90">
-            {book?.title ?? '正在阅读'}
+            {book?.title ?? t('reader.reading')}
           </p>
           {location?.chapterTitle && (
             <p className="truncate text-[10px] opacity-60 tracking-normal mt-0.5">{location.chapterTitle}</p>
@@ -1170,10 +1180,10 @@ export function Reader({
               onClick={handleJumpBack}
               disabled={!ready || pacer.isPlaying}
               className={`${HEADER_CONTROL} border-blue-500/35 bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 active:scale-95 dark:border-blue-400/35 dark:bg-blue-400/10 dark:text-blue-400`}
-              title={pacer.isPlaying ? '请先暂停自动阅读' : '返回跳转前的位置'}
+              title={t(pacer.isPlaying ? 'reader.jumpBackBlocked' : 'reader.jumpBackHint')}
             >
               <IconReturn />
-              <span>返回原位</span>
+              <span>{t('reader.jumpBack')}</span>
             </button>
           )}
 
@@ -1195,7 +1205,7 @@ export function Reader({
               setChromeVisible(true)
             }}
             disabled={!ready}
-            title="排版与显示设置 (A)"
+            title={t('reader.typographyHint')}
           >
             Aa
           </button>
@@ -1212,10 +1222,12 @@ export function Reader({
                   ? 'bg-amber-600 text-white'
                   : 'bg-blue-600 text-white hover:bg-blue-700'
               }`}
-              title={pacer.isPlaying ? '暂停自动阅读 (Space)' : '开启自动阅读 (Space)'}
+              title={t(pacer.isPlaying ? 'pacer.pauseHint' : 'pacer.playHint')}
             >
               {pacer.isPlaying ? <IconPause /> : <IconPlay />}
-              <span className="hidden sm:inline font-medium">{pacer.isPlaying ? '暂停' : '自动阅读'}</span>
+              <span className="hidden font-medium sm:inline">
+                {t(pacer.isPlaying ? 'pacer.pause' : 'pacer.play')}
+              </span>
             </button>
 
             {/* Speed Pill trigger */}
@@ -1235,14 +1247,17 @@ export function Reader({
                   ? 'bg-blue-50 font-semibold text-blue-600 dark:bg-blue-950/80 dark:text-blue-400'
                   : 'text-neutral-700 hover:bg-black/5 dark:text-neutral-300 dark:hover:bg-white/10'
               }`}
-              title="设置自动阅读速度与分块"
+              title={t('pacer.speedHint')}
             >
               <span>
                 <span className="font-mono">{pacerSpeed}</span>{' '}
-                {pacerUsesCjkUnits ? '字/分' : 'wpm'}
+                {t(pacerUsesCjkUnits ? 'pacer.unitCjkShort' : 'pacer.unitLatin')}
               </span>
               {pacer.speedWarning && (
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" title="极速模式" />
+                <span
+                  className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500"
+                  title={t('pacer.turbo')}
+                />
               )}
             </button>
           </div>
@@ -1303,14 +1318,16 @@ export function Reader({
         {!ready && !error && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-xs opacity-50">
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            <span>正在载入排版…</span>
+            <span>{t('reader.loading')}</span>
           </div>
         )}
         {error && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
-            <p className="text-xs text-red-600 dark:text-red-400">无法打开此书籍: {error}</p>
+            <p className="text-xs text-red-600 dark:text-red-400">
+              {t('reader.error', { message: error })}
+            </p>
             <button type="button" className="text-xs underline font-medium" onClick={closeBook}>
-              返回书库
+              {t('reader.errorBack')}
             </button>
           </div>
         )}
@@ -1330,8 +1347,8 @@ export function Reader({
             className="flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.08)] backdrop-blur-xl text-neutral-700 hover:bg-white hover:text-neutral-900 dark:border-white/10 dark:bg-black/60 dark:text-neutral-300 dark:hover:bg-black/90 dark:hover:text-white transition active:scale-95"
             onClick={() => void handleRef.current?.prev()}
             disabled={pageNavigationDisabled}
-            title="上一页 (←)"
-            aria-label="上一页"
+            title={t('reader.prevPage')}
+            aria-label={t('reader.prevPageLabel')}
           >
             <IconChevronLeft />
           </button>
@@ -1351,8 +1368,8 @@ export function Reader({
             className="flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.08)] backdrop-blur-xl text-neutral-700 hover:bg-white hover:text-neutral-900 dark:border-white/10 dark:bg-black/60 dark:text-neutral-300 dark:hover:bg-black/90 dark:hover:text-white transition active:scale-95"
             onClick={() => void handleRef.current?.next()}
             disabled={pageNavigationDisabled}
-            title="下一页 (→)"
-            aria-label="下一页"
+            title={t('reader.nextPage')}
+            aria-label={t('reader.nextPageLabel')}
           >
             <IconChevronRight />
           </button>
@@ -1371,10 +1388,10 @@ export function Reader({
           <div className="flex items-start justify-between gap-3 pb-3.5 border-b border-black/[0.06] dark:border-white/[0.06]">
             <div>
               <h3 id="pacer-settings-title" className="text-[11px] font-semibold tracking-wider text-neutral-500 dark:text-neutral-400 uppercase">
-                本书自动阅读
+                {t('pacer.title')}
               </h3>
               <p className="mt-1 text-[10px] text-neutral-400">
-                当前页以{pacerUsesCjkUnits ? '中日韩字符' : '英文词语'}为主 · 混排内容会自动切换计速单位
+                {t(pacerUsesCjkUnits ? 'pacer.unitNoteCjk' : 'pacer.unitNoteLatin')}
               </p>
             </div>
             <div className="flex items-center gap-1.5">
@@ -1384,14 +1401,14 @@ export function Reader({
                   onClick={resetPacerToAppDefaults}
                   className="rounded-lg px-2 py-1 text-[10px] font-medium text-blue-600 transition hover:bg-blue-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:text-blue-400"
                 >
-                  恢复默认
+                  {t('pacer.restoreDefaults')}
                 </button>
               )}
               <button
                 type="button"
                 onClick={() => setShowPacerControls(false)}
                 className="flex h-6 w-6 items-center justify-center rounded-full text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-white/10 dark:hover:text-neutral-200"
-                aria-label="关闭设置"
+                aria-label={t('pacer.closeSettings')}
               >
                 ✕
               </button>
@@ -1403,12 +1420,12 @@ export function Reader({
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                  速度档位
+                  {t('pacer.tiers')}
                 </span>
                 {pacer.speedWarning && (
                   <span className="flex items-center text-[10px] text-amber-600 dark:text-amber-400 font-medium">
                     <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500 mr-1 animate-pulse" />
-                    极速模式
+                    {t('pacer.turbo')}
                   </span>
                 )}
               </div>
@@ -1441,7 +1458,7 @@ export function Reader({
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                  微调速度 (输入或拖动)
+                  {t('pacer.fineTune')}
                 </span>
                 <div className="flex items-center gap-1">
                   <input
@@ -1453,7 +1470,7 @@ export function Reader({
                     name="book-pacer-speed"
                     autoComplete="off"
                     inputMode="numeric"
-                    aria-label={`本书自动阅读速度，单位${pacerUnit}`}
+                    aria-label={t('pacer.speedLabel', { unit: pacerUnit })}
                     defaultValue={pacerSpeed}
                     onBlur={(event) => {
                       updatePacerSpeed(Number(event.currentTarget.value) || 100)
@@ -1474,8 +1491,8 @@ export function Reader({
                     updatePacerSpeed(pacerSpeed - 20)
                   }}
                   className="flex h-7 w-7 items-center justify-center rounded-lg border border-black/10 text-xs font-bold transition hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-white/10 dark:hover:bg-white/10"
-                  title={`减少 20 ${pacerUnit}`}
-                  aria-label={`减少 20 ${pacerUnit}`}
+                  title={t('pacer.decrease', { unit: pacerUnit })}
+                  aria-label={t('pacer.decrease', { unit: pacerUnit })}
                 >
                   -
                 </button>
@@ -1488,7 +1505,7 @@ export function Reader({
                   onChange={(e) => {
                     updatePacerSpeed(Number(e.target.value))
                   }}
-                  aria-label={`本书自动阅读速度，单位${pacerUnit}`}
+                  aria-label={t('pacer.speedLabel', { unit: pacerUnit })}
                   className="h-1.5 flex-1 cursor-pointer rounded-lg bg-black/10 accent-blue-600 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-500 dark:bg-white/10"
                 />
                 <button
@@ -1497,8 +1514,8 @@ export function Reader({
                     updatePacerSpeed(pacerSpeed + 20)
                   }}
                   className="flex h-7 w-7 items-center justify-center rounded-lg border border-black/10 text-xs font-bold transition hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-white/10 dark:hover:bg-white/10"
-                  title={`增加 20 ${pacerUnit}`}
-                  aria-label={`增加 20 ${pacerUnit}`}
+                  title={t('pacer.increase', { unit: pacerUnit })}
+                  aria-label={t('pacer.increase', { unit: pacerUnit })}
                 >
                   +
                 </button>
@@ -1508,7 +1525,7 @@ export function Reader({
             {/* Chunk Size Selector */}
             <div className="pt-3 border-t border-black/[0.06] dark:border-white/[0.06] flex items-center justify-between">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                每次高亮{pacerUsesCjkUnits ? '字数' : '词数'}
+                {t(pacerUsesCjkUnits ? 'pacer.chunkCjk' : 'pacer.chunkLatin')}
               </span>
               <div className="flex rounded-xl bg-black/[0.04] p-1 dark:bg-white/[0.06]">
                 {pacerChunkOptions.map((size) => (
@@ -1525,7 +1542,9 @@ export function Reader({
                     }`}
                     aria-pressed={activePacerChunkSize === size}
                   >
-                    {size}{pacerUsesCjkUnits ? '字' : '词'}
+                    {t(pacerUsesCjkUnits ? 'pacer.chunkUnitCjk' : 'pacer.chunkUnitLatin', {
+                      n: size,
+                    })}
                   </button>
                 ))}
               </div>

@@ -5,6 +5,8 @@ import {
   IconColumnSingle,
   IconColumnsDouble,
 } from '../ui/icons'
+import { useT } from '../i18n/useT'
+import type { MessageKey } from '../i18n/types'
 
 interface SettingsPanelProps {
   currentStyleId: StyleId
@@ -23,21 +25,30 @@ interface SettingsPanelProps {
   onClose: () => void
 }
 
-const FONT_OPTIONS = [
-  { label: '书籍原字体 (Original)', value: 'original' },
+const FONT_OPTIONS: { labelKey: MessageKey; value: string }[] = [
+  { labelKey: 'fonts.original', value: 'original' },
   {
-    label: 'New York (苹果经典衬线)',
+    labelKey: 'fonts.newYork',
     value:
       '-apple-system-ui-serif, "New York", "Iowan Old Style", "Charter", "Georgia", serif',
   },
   {
-    label: 'Palatino (典雅精读)',
+    labelKey: 'fonts.palatino',
     value:
       '"Palatino", "Palatino Linotype", "Iowan Old Style", -apple-system-ui-serif, serif',
   },
-  { label: 'Charter (报刊体)', value: '"Charter", "Bitstream Charter", -apple-system-ui-serif, serif' },
-  { label: 'SF Pro (现代无衬线)', value: '-apple-system, "SF Pro Text", "SF Pro", "Helvetica Neue", sans-serif' },
-  { label: '中文宋体 (标准阅读)', value: '-apple-system-ui-serif, "Songti SC", "STSong", "Noto Serif CJK SC", serif' },
+  {
+    labelKey: 'fonts.charter',
+    value: '"Charter", "Bitstream Charter", -apple-system-ui-serif, serif',
+  },
+  {
+    labelKey: 'fonts.sfPro',
+    value: '-apple-system, "SF Pro Text", "SF Pro", "Helvetica Neue", sans-serif',
+  },
+  {
+    labelKey: 'fonts.songti',
+    value: '-apple-system-ui-serif, "Songti SC", "STSong", "Noto Serif CJK SC", serif',
+  },
 ]
 
 export function SettingsPanel({
@@ -51,6 +62,7 @@ export function SettingsPanel({
   onFlowChange,
   onClose,
 }: SettingsPanelProps) {
+  const t = useT()
   const currentFont = overrides.fontStack ?? 'original'
   const fontSizeStep = overrides.fontSizeStep ?? 0
   const lineHeightStep = overrides.lineHeightStep ?? 0
@@ -66,13 +78,13 @@ export function SettingsPanel({
       {/* Header */}
       <div className="flex items-center justify-between pb-3.5 border-b border-black/[0.06] dark:border-white/[0.06]">
         <h3 className="text-[11px] font-semibold tracking-wider text-neutral-500 dark:text-neutral-400 uppercase">
-          当前书籍排版
+          {t('typography.title')}
         </h3>
         <button
           type="button"
           onClick={onClose}
           className="flex h-6 w-6 items-center justify-center rounded-full text-neutral-400 hover:bg-black/5 hover:text-neutral-700 dark:hover:bg-white/10 dark:hover:text-neutral-200 transition"
-          aria-label="关闭"
+          aria-label={t('common.close')}
         >
           ✕
         </button>
@@ -82,13 +94,13 @@ export function SettingsPanel({
         {/* Columns / Spread Layout Toggle: Auto / Single / Double */}
         <div>
           <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-            页面分栏
+            {t('typography.spread')}
           </label>
           <div className="flex rounded-xl bg-black/[0.04] p-1 dark:bg-white/[0.06]">
             {[
-              { id: 'auto' as const, label: '自适应', icon: <IconColumnsAuto /> },
-              { id: 'single' as const, label: '单栏', icon: <IconColumnSingle /> },
-              { id: 'double' as const, label: '双栏', icon: <IconColumnsDouble /> },
+              { id: 'auto' as const, label: t('typography.spread.auto'), icon: <IconColumnsAuto /> },
+              { id: 'single' as const, label: t('typography.spread.single'), icon: <IconColumnSingle /> },
+              { id: 'double' as const, label: t('typography.spread.double'), icon: <IconColumnsDouble /> },
             ].map((item) => (
               <button
                 key={item.id}
@@ -110,7 +122,7 @@ export function SettingsPanel({
         {/* 6 Preset theme swatches with theme-aware preview palette */}
         <div>
           <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-            排版风格
+            {t('typography.style')}
           </label>
           <div className="grid grid-cols-3 gap-2">
             {(Object.keys(PRESETS) as StyleId[]).map((id) => {
@@ -133,7 +145,7 @@ export function SettingsPanel({
                       : 'opacity-85 hover:opacity-100 hover:shadow-2xs'
                   }`}
                 >
-                  <span className="text-xs tracking-tight">{preset.name}</span>
+                  <span className="text-xs tracking-tight">{t(preset.nameKey)}</span>
                   <span className="mt-0.5 text-[10px] opacity-60 font-serif">Aa</span>
                   {isSelected && (
                     <span
@@ -150,7 +162,7 @@ export function SettingsPanel({
         {/* Font Family selector */}
         <div>
           <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-            字体族
+            {t('typography.fontFamily')}
           </label>
           <div className="relative">
             <select
@@ -160,7 +172,7 @@ export function SettingsPanel({
             >
               {FONT_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
-                  {opt.label}
+                  {t(opt.labelKey)}
                 </option>
               ))}
             </select>
@@ -173,13 +185,17 @@ export function SettingsPanel({
         {/* Font Size Steps: A- / A+ */}
         <div>
           <div className="mb-1.5 flex justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-            <span>字号大小</span>
+            <span>{t('typography.fontSize')}</span>
             <span className="flex items-baseline gap-1.5 font-normal">
               <span className="font-mono text-xs font-semibold normal-case text-neutral-800 dark:text-neutral-200">
                 {resolved.fontSizePx}px
               </span>
               <span className="font-mono text-[10px] normal-case text-neutral-400">
-                {fontSizeStep > 0 ? `+${fontSizeStep}` : fontSizeStep === 0 ? '标准' : fontSizeStep}
+                {fontSizeStep > 0
+                  ? `+${fontSizeStep}`
+                  : fontSizeStep === 0
+                    ? t('typography.fontSizeStandard')
+                    : fontSizeStep}
               </span>
             </span>
           </div>
@@ -208,16 +224,16 @@ export function SettingsPanel({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="mb-1.5 flex items-baseline justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-              <span>行距</span>
+              <span>{t('typography.lineHeight')}</span>
               <span className="font-mono text-neutral-600 normal-case dark:text-neutral-300">
                 {resolved.lineHeight.toFixed(2)}
               </span>
             </label>
             <div className="flex rounded-xl bg-black/[0.04] p-1 dark:bg-white/[0.06]">
               {[
-                { label: '紧凑', step: -1 },
-                { label: '适中', step: 0 },
-                { label: '宽松', step: 1 },
+                { label: t('typography.lineHeight.tight'), step: -1 },
+                { label: t('typography.lineHeight.normal'), step: 0 },
+                { label: t('typography.lineHeight.loose'), step: 1 },
               ].map((item) => (
                 <button
                   key={item.step}
@@ -237,16 +253,16 @@ export function SettingsPanel({
 
           <div>
             <label className="mb-1.5 flex items-baseline justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-              <span>页边距</span>
+              <span>{t('typography.margin')}</span>
               <span className="font-mono text-neutral-600 normal-case dark:text-neutral-300">
-                {resolved.measureCh} 字符
+                {t('typography.measure', { n: resolved.measureCh })}
               </span>
             </label>
             <div className="flex rounded-xl bg-black/[0.04] p-1 dark:bg-white/[0.06]">
               {[
-                { label: '宽版', step: -1 },
-                { label: '标准', step: 0 },
-                { label: '紧凑', step: 1 },
+                { label: t('typography.margin.wide'), step: -1 },
+                { label: t('typography.margin.normal'), step: 0 },
+                { label: t('typography.margin.narrow'), step: 1 },
               ].map((item) => (
                 <button
                   key={item.step}
@@ -269,7 +285,7 @@ export function SettingsPanel({
         <div className="space-y-2.5 pt-3 border-t border-black/[0.06] dark:border-white/[0.06]">
           <label className="flex items-center justify-between cursor-pointer py-0.5 group">
             <span className="text-neutral-700 dark:text-neutral-300 text-xs font-medium group-hover:text-neutral-900 dark:group-hover:text-white transition">
-              两端对齐排版
+              {t('typography.justify')}
             </span>
             <input
               type="checkbox"
@@ -281,7 +297,7 @@ export function SettingsPanel({
 
           <label className="flex items-center justify-between cursor-pointer py-0.5 group">
             <span className="text-neutral-700 dark:text-neutral-300 text-xs font-medium group-hover:text-neutral-900 dark:group-hover:text-white transition">
-              字重加粗 (提高对比度)
+              {t('typography.bold')}
             </span>
             <input
               type="checkbox"
@@ -293,7 +309,7 @@ export function SettingsPanel({
 
           <label className="flex items-center justify-between cursor-pointer py-0.5 group">
             <span className="text-neutral-700 dark:text-neutral-300 text-xs font-medium group-hover:text-neutral-900 dark:group-hover:text-white transition">
-              连续垂直滚动模式
+              {t('typography.scrolled')}
             </span>
             <input
               type="checkbox"

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { BookRecord, Collection } from '../platform/types'
 import { IconPlus, IconTrash } from '../ui/icons'
+import { useT } from '../i18n/useT'
+import type { Translate } from '../i18n/types'
 
 export const ALL_BOOKS = '__all__'
 export const UNFILED = '__unfiled__'
@@ -17,8 +19,8 @@ interface CollectionBarProps {
 }
 
 /**
- * Shelf filter. Collections are optional organisation, so 全部 always exists and
- * 未分类 only appears when something is actually unfiled — an empty bucket the
+ * Shelf filter. Collections are optional organisation, so All always exists and
+ * Unfiled only appears when something is actually unfiled — an empty bucket the
  * user can never fill is noise.
  */
 export function CollectionBar({
@@ -37,6 +39,7 @@ export function CollectionBar({
   const [editDraft, setEditDraft] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const editRef = useRef<HTMLInputElement>(null)
+  const t = useT()
 
   useEffect(() => {
     if (creating) inputRef.current?.focus()
@@ -68,19 +71,21 @@ export function CollectionBar({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="合集筛选">
+    <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={t('collections.filterLabel')}>
       <Chip
-        label="全部"
+        label={t('collections.all')}
         count={books.length}
         active={activeId === ALL_BOOKS}
         onSelect={() => onSelect(ALL_BOOKS)}
+        t={t}
       />
       {unfiled > 0 && (
         <Chip
-          label="未分类"
+          label={t('collections.unfiled')}
           count={unfiled}
           active={activeId === UNFILED}
           onSelect={() => onSelect(UNFILED)}
+          t={t}
         />
       )}
 
@@ -96,7 +101,7 @@ export function CollectionBar({
               if (event.key === 'Enter') commitRename(collection.id)
               if (event.key === 'Escape') setEditingId(null)
             }}
-            aria-label={`重命名合集 ${collection.name}`}
+            aria-label={t('collections.renameLabel', { name: collection.name })}
             className="w-28 rounded-full border border-blue-500 bg-white px-3 py-1.5 text-xs outline-none dark:bg-[#1C1C1E]"
           />
         ) : (
@@ -106,6 +111,7 @@ export function CollectionBar({
             count={counts.get(collection.id) ?? 0}
             active={activeId === collection.id}
             onSelect={() => onSelect(collection.id)}
+            t={t}
             onRename={() => {
               setEditDraft(collection.name)
               setEditingId(collection.id)
@@ -128,8 +134,8 @@ export function CollectionBar({
               setCreating(false)
             }
           }}
-          placeholder="合集名称"
-          aria-label="新建合集名称"
+          placeholder={t('collections.namePlaceholder')}
+          aria-label={t('collections.newNameLabel')}
           className="w-28 rounded-full border border-blue-500 bg-white px-3 py-1.5 text-xs outline-none dark:bg-[#1C1C1E]"
         />
       ) : (
@@ -139,7 +145,7 @@ export function CollectionBar({
           className="flex items-center gap-1 rounded-full border border-dashed border-black/15 px-3 py-1.5 text-xs font-medium text-neutral-500 transition hover:border-black/30 hover:text-neutral-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-white/15 dark:text-neutral-400 dark:hover:border-white/30 dark:hover:text-neutral-200"
         >
           <IconPlus />
-          <span>新建合集</span>
+          <span>{t('collections.new')}</span>
         </button>
       )}
     </div>
@@ -153,6 +159,7 @@ function Chip({
   onSelect,
   onRename,
   onDelete,
+  t,
 }: {
   label: string
   count: number
@@ -160,6 +167,7 @@ function Chip({
   onSelect: () => void
   onRename?: () => void
   onDelete?: () => void
+  t: Translate
 }) {
   return (
     <span
@@ -173,7 +181,7 @@ function Chip({
         type="button"
         onClick={onSelect}
         onDoubleClick={onRename}
-        title={onRename ? `${label}（双击重命名）` : label}
+        title={onRename ? t('collections.chipHint', { name: label }) : label}
         className="rounded-full px-3 py-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
       >
         {label}
@@ -183,8 +191,8 @@ function Chip({
         <button
           type="button"
           onClick={() => onDelete()}
-          aria-label={`删除合集 ${label}`}
-          title="删除合集（书籍不会被删除）"
+          aria-label={t('collections.deleteLabel', { name: label })}
+          title={t('collections.deleteHint')}
           className="mr-1.5 flex size-5 items-center justify-center rounded-full text-neutral-400 opacity-0 transition hover:bg-red-500/10 hover:text-red-600 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-red-500 group-focus-within:opacity-100 group-hover:opacity-100 dark:hover:text-red-400"
         >
           <IconTrash width={11} height={11} />
@@ -211,6 +219,7 @@ export function BookCollectionMenu({
   onClose,
 }: BookCollectionMenuProps) {
   const panelRef = useRef<HTMLDivElement>(null)
+  const t = useT()
 
   useEffect(() => {
     const onPointerDown = (event: MouseEvent) => {
@@ -231,14 +240,14 @@ export function BookCollectionMenu({
     <div
       ref={panelRef}
       role="dialog"
-      aria-label={`将《${book.title}》加入合集`}
+      aria-label={t('collections.menuLabel', { title: book.title })}
       className="absolute right-0 top-8 z-30 w-44 rounded-2xl border border-black/[0.08] bg-white/97 p-1.5 shadow-[0_18px_40px_rgba(0,0,0,0.18)] backdrop-blur-2xl vr-animate-pop dark:border-white/[0.08] dark:bg-[#1C1C1E]/97"
     >
       {collections.length === 0 ? (
         <p className="px-2.5 py-3 text-center text-[11px] leading-relaxed text-neutral-400">
-          还没有合集
+          {t('collections.menuEmpty')}
           <br />
-          先在上方新建一个
+          {t('collections.menuEmptyHint')}
         </p>
       ) : (
         <ul className="max-h-56 overflow-y-auto">

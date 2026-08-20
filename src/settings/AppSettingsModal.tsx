@@ -12,6 +12,7 @@ import {
 } from '../reader/pacer/overlayStyle'
 import {
   IconClock,
+  IconGlobe,
   IconHighlight,
   IconMonitor,
   IconMoon,
@@ -20,6 +21,9 @@ import {
   IconSun,
 } from '../ui/icons'
 import { useModalDialog } from '../ui/useModalDialog'
+import { useT } from '../i18n/useT'
+import type { MessageKey, Translate } from '../i18n/types'
+import { LANGUAGE_OPTIONS } from '../i18n/resolveLanguage'
 
 interface AppSettingsModalProps {
   settings: AppSettings
@@ -36,9 +40,11 @@ const GOAL_MIN = 1
 const GOAL_MAX = 600
 
 export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsModalProps) {
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<MessageKey | null>(null)
+  const t = useT()
   const dialogRef = useModalDialog<HTMLElement>(onClose)
   const themeMode = settings.themeMode ?? 'auto'
+  const languagePreference = settings.language ?? 'auto'
   const dailyGoal = settings.dailyReadingGoalMinutes ?? 15
   const pacerWpm = settings.pacerWpm ?? 250
   const pacerCpm = settings.pacerCpm ?? 300
@@ -58,7 +64,7 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
     try {
       await onChange(changes)
     } catch {
-      setError('设置未能保存，请重试。')
+      setError('settings.saveFailed')
     }
   }
 
@@ -84,9 +90,11 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
               <IconSettings />
             </span>
             <div>
-              <h2 id="app-settings-title" className="text-base font-semibold tracking-tight">应用设置</h2>
+              <h2 id="app-settings-title" className="text-base font-semibold tracking-tight">
+                {t('settings.title')}
+              </h2>
               <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
-                控制整个 VeloRead；书内排版请使用阅读器的 Aa。
+                {t('settings.subtitle')}
               </p>
             </div>
           </div>
@@ -94,7 +102,7 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
             type="button"
             onClick={onClose}
             className="flex size-8 items-center justify-center rounded-full text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-white/10 dark:hover:text-neutral-200"
-            aria-label="关闭应用设置"
+            aria-label={t('settings.close')}
           >
             ✕
           </button>
@@ -103,14 +111,14 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
         <div className="space-y-5 overflow-y-auto overscroll-contain p-6">
           <SettingSection
             icon={<IconMonitor />}
-            title="外观"
-            description="应用工具栏、书库和数据页面的显示方式"
+            title={t('settings.appearance')}
+            description={t('settings.appearanceHint')}
           >
             <div className="mt-4 grid grid-cols-3 gap-2 rounded-2xl bg-black/[0.035] p-1.5 dark:bg-white/[0.055]">
               {[
-                { id: 'auto' as const, label: '跟随系统', icon: <IconMonitor /> },
-                { id: 'light' as const, label: '浅色', icon: <IconSun /> },
-                { id: 'dark' as const, label: '深色', icon: <IconMoon /> },
+                { id: 'auto' as const, label: t('settings.theme.auto'), icon: <IconMonitor /> },
+                { id: 'light' as const, label: t('settings.theme.light'), icon: <IconSun /> },
+                { id: 'dark' as const, label: t('settings.theme.dark'), icon: <IconMoon /> },
               ].map((option) => (
                 <button
                   key={option.id}
@@ -131,19 +139,44 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
           </SettingSection>
 
           <SettingSection
+            icon={<IconGlobe />}
+            title={t('settings.language')}
+            description={t('settings.languageHint')}
+          >
+            <div className="mt-4 grid grid-cols-3 gap-2 rounded-2xl bg-black/[0.035] p-1.5 dark:bg-white/[0.055]">
+              {LANGUAGE_OPTIONS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => void save({ language: option })}
+                  className={`rounded-xl py-2 text-[11px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
+                    languagePreference === option
+                      ? 'bg-white text-neutral-900 shadow-[0_1px_4px_rgba(0,0,0,0.1)] dark:bg-[#303033] dark:text-white'
+                      : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
+                  }`}
+                  aria-pressed={languagePreference === option}
+                >
+                  {t(`settings.language.${option}`)}
+                </button>
+              ))}
+            </div>
+          </SettingSection>
+
+          <SettingSection
             icon={<IconPlay />}
-            title="自动阅读默认值"
-            description="未单独覆盖的书籍跟随这两套参数；书内调整只影响当前书籍"
+            title={t('settings.pacerDefaults')}
+            description={t('settings.pacerDefaultsHint')}
           >
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <PacerProfileEditor
                 key={`latin-${pacerWpm}`}
-                title="英文与拉丁文本"
-                caption="按词计速"
+                title={t('settings.pacerLatin')}
+                caption={t('settings.pacerLatinCaption')}
                 speed={pacerWpm}
-                unit="WPM"
+                unit={t('pacer.unitLatin')}
                 chunkSize={pacerChunkSize}
-                chunkUnit="词"
+                chunkUnit="latin"
+                t={t}
                 chunkOptions={[1, 2, 3, 4, 5]}
                 onSpeedCommit={(value) => void save({ pacerWpm: value })}
                 onChunkChange={(value) => {
@@ -153,19 +186,20 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
               />
               <PacerProfileEditor
                 key={`cjk-${pacerCpm}`}
-                title="中文与中日韩文本"
-                caption="按字素计速"
+                title={t('settings.pacerCjk')}
+                caption={t('settings.pacerCjkCaption')}
                 speed={pacerCpm}
-                unit="字/分"
+                unit={t('pacer.unitCjkShort')}
                 chunkSize={pacerCjkCharCount}
-                chunkUnit="字"
+                chunkUnit="cjk"
+                t={t}
                 chunkOptions={[2, 4, 6, 8, 10]}
                 onSpeedCommit={(value) => void save({ pacerCpm: value })}
                 onChunkChange={(value) => void save({ pacerCjkCharCount: value })}
               />
             </div>
             <div className="mt-3 flex items-center justify-between gap-4 border-t border-black/[0.05] pt-3 text-[10px] text-neutral-400 dark:border-white/[0.06]">
-              <span>推荐：英文 250 WPM / 3 词；CJK 300 字/分 / 4 字</span>
+              <span>{t('settings.pacerRecommended')}</span>
               <button
                 type="button"
                 onClick={() => void save({
@@ -176,27 +210,28 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
                 })}
                 className="shrink-0 rounded-lg px-2 py-1 font-medium text-blue-600 transition hover:bg-blue-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:text-blue-400"
               >
-                恢复推荐值
+                {t('settings.pacerRestore')}
               </button>
             </div>
           </SettingSection>
 
           <SettingSection
             icon={<IconHighlight />}
-            title="自动阅读高亮"
-            description="自动阅读时跟随视线移动的那条高亮的颜色、浓度与形态"
+            title={t('settings.highlight')}
+            description={t('settings.highlightHint')}
           >
             <HighlightStyleEditor
               style={highlight}
               isDark={previewDark}
               onChange={(changes) => void save(changes)}
+              t={t}
             />
           </SettingSection>
 
           <SettingSection
             icon={<IconClock />}
-            title="每日阅读目标"
-            description="达到目标分钟数后，当天会自动记为完成打卡"
+            title={t('settings.goal')}
+            description={t('settings.goalHint')}
           >
             <div className="mt-4 grid grid-cols-6 gap-1.5">
               {GOAL_OPTIONS.map((minutes) => (
@@ -211,7 +246,7 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
                   }`}
                   aria-pressed={dailyGoal === minutes}
                 >
-                  {minutes} 分
+                  {t('settings.goalPreset', { n: minutes })}
                 </button>
               ))}
             </div>
@@ -221,12 +256,13 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
               value={dailyGoal}
               isPreset={GOAL_OPTIONS.includes(dailyGoal)}
               onCommit={(minutes) => void save({ dailyReadingGoalMinutes: minutes })}
+              t={t}
             />
           </SettingSection>
 
           {error && (
             <p aria-live="polite" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
-              {error}
+              {t(error)}
             </p>
           )}
         </div>
@@ -245,10 +281,12 @@ function DailyGoalInput({
   value,
   isPreset,
   onCommit,
+  t,
 }: {
   value: number
   isPreset: boolean
   onCommit: (minutes: number) => void
+  t: Translate
 }) {
   const [draft, setDraft] = useState(String(value))
 
@@ -264,7 +302,7 @@ function DailyGoalInput({
   return (
     <div className="mt-2.5 flex items-center justify-between gap-3 border-t border-black/[0.05] pt-2.5 dark:border-white/[0.06]">
       <span className="text-[10px] text-neutral-400">
-        也可以直接填一个数，{GOAL_MIN}–{GOAL_MAX} 分钟
+        {t('settings.goalCustomHint', { min: GOAL_MIN, max: GOAL_MAX })}
       </span>
       <label
         className={`flex items-center gap-1 rounded-lg border px-2 py-1 transition focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 ${
@@ -273,7 +311,7 @@ function DailyGoalInput({
             : 'border-blue-500/70 bg-blue-500/10'
         }`}
       >
-        <span className="sr-only">自定义每日阅读目标分钟数</span>
+        <span className="sr-only">{t('settings.goalCustomLabel')}</span>
         <input
           type="number"
           min={GOAL_MIN}
@@ -292,7 +330,7 @@ function DailyGoalInput({
             isPreset ? '' : 'text-blue-600 dark:text-blue-400'
           }`}
         />
-        <span className="text-[9px] font-medium text-neutral-400">分钟</span>
+        <span className="text-[9px] font-medium text-neutral-400">{t('settings.minutes')}</span>
       </label>
     </div>
   )
@@ -308,19 +346,22 @@ function PacerProfileEditor({
   chunkOptions,
   onSpeedCommit,
   onChunkChange,
+  t,
 }: {
   title: string
   caption: string
   speed: number
   unit: string
   chunkSize: number
-  chunkUnit: string
+  /** Which profile this editor drives, not a display string. */
+  chunkUnit: 'latin' | 'cjk'
   chunkOptions: number[]
   onSpeedCommit: (value: number) => void
   onChunkChange: (value: number) => void
+  t: Translate
 }) {
   const [draft, setDraft] = useState(String(speed))
-  const maxSpeed = chunkUnit === '词' && chunkSize === 1 ? 600 : 1000
+  const maxSpeed = chunkUnit === 'latin' && chunkSize === 1 ? 600 : 1000
 
   const commit = () => {
     const parsed = Number(draft)
@@ -339,13 +380,13 @@ function PacerProfileEditor({
           <p className="mt-0.5 text-[9px] text-neutral-400">{caption}</p>
         </div>
         <label className="flex items-center gap-1 rounded-lg border border-black/[0.07] bg-white/70 px-2 py-1 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 dark:border-white/[0.08] dark:bg-black/15">
-          <span className="sr-only">{title}默认速度</span>
+          <span className="sr-only">{t('settings.pacerSpeedLabel', { profile: title })}</span>
           <input
             type="number"
             min={100}
             max={maxSpeed}
             step={10}
-            name={`${chunkUnit === '词' ? 'latin' : 'cjk'}-pacer-speed`}
+            name={`${chunkUnit}-pacer-speed`}
             autoComplete="off"
             inputMode="numeric"
             value={draft}
@@ -360,7 +401,7 @@ function PacerProfileEditor({
         </label>
       </div>
       <div className="mt-3 flex items-center justify-between gap-2">
-        <span className="text-[9px] font-medium text-neutral-400">每次高亮</span>
+        <span className="text-[9px] font-medium text-neutral-400">{t('settings.pacerChunk')}</span>
         <div className="flex rounded-lg bg-black/[0.04] p-0.5 dark:bg-white/[0.06]">
           {chunkOptions.map((option) => (
             <button
@@ -374,7 +415,9 @@ function PacerProfileEditor({
               }`}
               aria-pressed={chunkSize === option}
             >
-              {option}{chunkUnit}
+              {t(chunkUnit === 'latin' ? 'pacer.chunkUnitLatin' : 'pacer.chunkUnitCjk', {
+                n: option,
+              })}
             </button>
           ))}
         </div>
@@ -392,10 +435,12 @@ function HighlightStyleEditor({
   style,
   isDark,
   onChange,
+  t,
 }: {
   style: PacerHighlightStyle
   isDark: boolean
   onChange: (changes: Partial<AppSettings>) => void
+  t: Translate
 }) {
   const resolved = resolveOverlayStyle(style, PREVIEW_ACCENT, isDark)
   const customHex = style.color === AUTO_HIGHLIGHT_COLOR ? PREVIEW_ACCENT : style.color
@@ -404,16 +449,16 @@ function HighlightStyleEditor({
     !PACER_HIGHLIGHT_SWATCHES.some((swatch) => swatch.hex === style.color)
 
   const shapes: { id: PacerHighlightShape; label: string }[] = [
-    { id: 'block', label: '色块' },
-    { id: 'block-underline', label: '色块+下划线' },
-    { id: 'underline', label: '下划线' },
+    { id: 'block', label: t('settings.highlight.shapeBlock') },
+    { id: 'block-underline', label: t('settings.highlight.shapeBlockUnderline') },
+    { id: 'underline', label: t('settings.highlight.shapeUnderline') },
   ]
 
   return (
     <div className="mt-4 space-y-3.5">
       <div className="flex items-center justify-between gap-3">
         <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-          颜色
+          {t('settings.highlight.color')}
         </span>
         <div className="flex items-center gap-1.5">
           {PACER_HIGHLIGHT_SWATCHES.map((swatch) => {
@@ -425,8 +470,12 @@ function HighlightStyleEditor({
                 type="button"
                 onClick={() => onChange({ pacerHighlightColor: swatch.hex ?? AUTO_HIGHLIGHT_COLOR })}
                 aria-pressed={selected}
-                aria-label={auto ? '跟随阅读风格的强调色' : `高亮色 ${swatch.hex}`}
-                title={auto ? '跟随阅读风格' : swatch.hex ?? ''}
+                aria-label={
+                  auto
+                    ? t('settings.highlight.autoLabel')
+                    : t('settings.highlight.swatchLabel', { hex: swatch.hex ?? '' })
+                }
+                title={auto ? t('settings.highlight.auto') : swatch.hex ?? ''}
                 style={auto ? undefined : { backgroundColor: swatch.hex ?? undefined }}
                 className={`size-5 rounded-full border transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
                   auto
@@ -437,13 +486,13 @@ function HighlightStyleEditor({
             )
           })}
           <label
-            title="自定义颜色"
+            title={t('settings.highlight.custom')}
             className={`flex size-5 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-black/10 dark:border-white/15 ${
               isCustom ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-white dark:ring-offset-[#1C1C1E]' : ''
             }`}
             style={{ backgroundColor: customHex }}
           >
-            <span className="sr-only">自定义高亮颜色</span>
+            <span className="sr-only">{t('settings.highlight.customLabel')}</span>
             <input
               type="color"
               value={customHex}
@@ -456,7 +505,7 @@ function HighlightStyleEditor({
 
       <div className="flex items-center justify-between gap-3">
         <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-          浓度
+          {t('settings.highlight.opacity')}
         </span>
         <div className="flex flex-1 items-center gap-2.5">
           <input
@@ -469,7 +518,7 @@ function HighlightStyleEditor({
             onChange={(event) =>
               onChange({ pacerHighlightOpacity: Number(event.target.value) / 100 })
             }
-            aria-label="高亮浓度"
+            aria-label={t('settings.highlight.opacityLabel')}
             className="h-1.5 flex-1 cursor-pointer rounded-lg bg-black/10 accent-blue-600 disabled:opacity-40 dark:bg-white/10"
           />
           <span className="w-8 text-right font-mono text-[10px] text-neutral-400">
@@ -480,7 +529,7 @@ function HighlightStyleEditor({
 
       <div className="flex items-center justify-between gap-3">
         <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-          形态
+          {t('settings.highlight.shape')}
         </span>
         <div className="flex rounded-xl bg-black/[0.04] p-1 dark:bg-white/[0.06]">
           {shapes.map((shape) => (
@@ -509,7 +558,7 @@ function HighlightStyleEditor({
           className="font-serif text-[13px] leading-loose"
           style={{ color: isDark ? '#D8D4CC' : '#2B2622' }}
         >
-          <span>他抬起头，</span>
+          <span>{t('settings.highlight.previewBefore')}</span>
           <span
             className="rounded-xs px-0.5"
             style={{
@@ -520,9 +569,9 @@ function HighlightStyleEditor({
               mixBlendMode: resolved.mixBlendMode,
             }}
           >
-            看见远处的灯塔
+            {t('settings.highlight.previewHighlighted')}
           </span>
-          <span>还亮着。</span>
+          <span>{t('settings.highlight.previewAfter')}</span>
         </p>
       </div>
     </div>

@@ -11,7 +11,7 @@ const APPLE_SONG =
 export const PRESETS: Record<StyleId, ReadingStyle> = {
   book: {
     id: 'book',
-    name: '经典书籍',
+    nameKey: 'styles.book',
     lightPalette: {
       background: '#FBF8F3',
       text: '#24211E',
@@ -50,7 +50,7 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
   },
   sepia: {
     id: 'sepia',
-    name: '复古羊皮纸',
+    nameKey: 'styles.parchment',
     lightPalette: {
       background: '#F4ECD8',
       text: '#36291C',
@@ -89,7 +89,7 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
   },
   modern: {
     id: 'modern',
-    name: '现代散文',
+    nameKey: 'styles.prose',
     lightPalette: {
       background: '#FFFFFF',
       text: '#1A1A1A',
@@ -128,7 +128,7 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
   },
   journal: {
     id: 'journal',
-    name: '学术论著',
+    nameKey: 'styles.academic',
     lightPalette: {
       background: '#FBFBFA',
       text: '#181A1C',
@@ -167,7 +167,7 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
   },
   news: {
     id: 'news',
-    name: '报刊社论',
+    nameKey: 'styles.editorial',
     lightPalette: {
       background: '#F6F6F5',
       text: '#111111',
@@ -206,7 +206,7 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
   },
   song: {
     id: 'song',
-    name: '中文宋体',
+    nameKey: 'styles.song',
     lightPalette: {
       background: '#FAF6EE',
       text: '#242220',

@@ -1,3 +1,5 @@
+import { useT } from '../i18n/useT'
+
 interface PositionInfoProps {
   chapterTitle?: string | null
   pagesLeftInChapter?: number | null
@@ -5,6 +7,7 @@ interface PositionInfoProps {
 }
 
 export function PositionInfo({ chapterTitle, pagesLeftInChapter, percentage }: PositionInfoProps) {
+  const t = useT()
   const parts: string[] = []
 
   if (chapterTitle && chapterTitle.trim()) {
@@ -12,15 +15,17 @@ export function PositionInfo({ chapterTitle, pagesLeftInChapter, percentage }: P
   }
 
   if (pagesLeftInChapter !== null && pagesLeftInChapter !== undefined && pagesLeftInChapter >= 0) {
-    parts.push(`本章还剩 ${pagesLeftInChapter} 页`)
+    parts.push(t.plural('position.pagesLeft', pagesLeftInChapter))
   }
 
   if (percentage !== null) {
-    parts.push(`全书 ${Math.round(percentage * 100)}%`)
+    parts.push(t('position.wholeBook', { percent: Math.round(percentage * 100) }))
   }
 
   if (parts.length === 0) {
-    return <span className="text-[11px] text-neutral-400 font-normal">定位中...</span>
+    return (
+      <span className="text-[11px] font-normal text-neutral-400">{t('position.locating')}</span>
+    )
   }
 
   return (

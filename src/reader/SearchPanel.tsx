@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { SearchHit, SearchOptions } from './renderer'
 import { IconClose, IconSearch } from '../ui/icons'
 import { useModalDialog } from '../ui/useModalDialog'
+import { useT } from '../i18n/useT'
 
 interface SearchPanelProps {
   onSearch: (query: string, options: SearchOptions) => Promise<SearchHit[]>
@@ -22,6 +23,7 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
   const abortRef = useRef<AbortController | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const panelRef = useModalDialog<HTMLElement>(onClose)
+  const t = useT()
 
   // Declared after useModalDialog, so this wins over the trap's first-focusable
   // rule: the point of opening this panel is to type.
@@ -56,7 +58,7 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
       })
       // Only a *newer* search may discard this one's results. An aborted scan
       // still returns everything it found before stopping, and throwing that
-      // away is what makes "停止" feel like "取消".
+      // away is what makes Stop feel like Cancel.
       if (controller !== abortRef.current) return
       setHits(found)
       setStatus(controller.signal.aborted ? 'cancelled' : 'done')
@@ -90,18 +92,18 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
         aria-modal="true"
         tabIndex={-1}
         className="fixed inset-y-0 left-0 z-50 flex w-92 flex-col border-r border-black/[0.08] bg-white/92 shadow-[0_25px_60px_rgba(0,0,0,0.18)] backdrop-blur-2xl vr-animate-drawer dark:border-white/[0.08] dark:bg-[#1C1C1E]/92 dark:text-neutral-100"
-        aria-label="书内搜索"
+        aria-label={t('search.title')}
       >
         <div className="border-b border-black/[0.06] px-5 py-4 dark:border-white/[0.06]">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-xs font-semibold tracking-wide text-neutral-700 dark:text-neutral-300">
-              书内搜索
+              {t('search.title')}
             </h2>
             <button
               type="button"
               onClick={onClose}
               className="flex size-7 items-center justify-center rounded-full text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-white/10 dark:hover:text-neutral-200"
-              aria-label="关闭搜索"
+              aria-label={t('search.close')}
             >
               <IconClose />
             </button>
@@ -123,8 +125,8 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
                 type="search"
                 name="in-book-search"
                 autoComplete="off"
-                placeholder="搜索全书…"
-                aria-label="搜索全书"
+                placeholder={t('search.placeholder')}
+                aria-label={t('search.inputLabel')}
                 className="w-full bg-transparent text-xs outline-none placeholder:text-neutral-400"
               />
             </div>
@@ -134,7 +136,7 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
                 onClick={cancel}
                 className="shrink-0 rounded-xl border border-black/[0.08] px-3 py-1.5 text-xs font-medium text-neutral-600 transition hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-white/[0.08] dark:text-neutral-300 dark:hover:bg-white/10"
               >
-                停止
+                {t('search.stop')}
               </button>
             ) : (
               <button
@@ -142,7 +144,7 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
                 disabled={query.trim().length === 0}
                 className="shrink-0 rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:opacity-40"
               >
-                搜索
+                {t('search.submit')}
               </button>
             )}
           </form>
@@ -151,7 +153,7 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
           {status === 'searching' && (
             <div className="mt-2.5" aria-live="polite">
               <div className="flex items-center justify-between text-[10px] text-neutral-400">
-                <span>正在逐章搜索…</span>
+                <span>{t('search.scanning')}</span>
                 <span className="font-mono">{percent}%</span>
               </div>
               <div className="mt-1 h-1 overflow-hidden rounded-full bg-black/[0.06] dark:bg-white/[0.08]">
@@ -166,14 +168,16 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
           {status !== 'searching' && submitted && (
             <p className="mt-2.5 text-[10px] text-neutral-400" aria-live="polite">
               {hits.length === 0
-                ? status === 'cancelled'
-                  ? '已停止搜索'
-                  : `没有找到「${submitted}」`
-                : `${status === 'cancelled' ? '已停止 · ' : ''}找到 ${hits.length}${
-                    hits.length >= MAX_HITS ? '+' : ''
-                  } 处「${submitted}」`}
-              {status === 'cancelled' && hits.length > 0 && ' · 仅为已扫描章节的结果'}
-              {hits.length >= MAX_HITS && ' · 已达上限，请用更具体的词'}
+                ? t(status === 'cancelled' ? 'search.stopped' : 'search.noResults', {
+                    query: submitted,
+                  })
+                : `${status === 'cancelled' ? t('search.stoppedPrefix') : ''}${t.plural(
+                    'search.results',
+                    hits.length,
+                    { more: hits.length >= MAX_HITS ? '+' : '', query: submitted },
+                  )}`}
+              {status === 'cancelled' && hits.length > 0 && t('search.partialNote')}
+              {hits.length >= MAX_HITS && t('search.capNote')}
             </p>
           )}
         </div>
@@ -181,9 +185,11 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
         <div className="flex-1 overflow-y-auto p-4">
           {status === 'idle' && !submitted ? (
             <div className="space-y-2 py-20 text-center">
-              <p className="text-xs text-neutral-400 dark:text-neutral-500">输入关键词搜索全书</p>
+              <p className="text-xs text-neutral-400 dark:text-neutral-500">
+                {t('search.idleTitle')}
+              </p>
               <p className="mx-auto max-w-[220px] text-[11px] text-neutral-400/80">
-                EPUB 没有内置索引，搜索会逐章加载正文，大部头需要几秒
+                {t('search.idleHint')}
               </p>
             </div>
           ) : (

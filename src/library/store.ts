@@ -4,8 +4,19 @@ import type { BookRecord, Collection } from '../platform/types'
 import { parseEpubMetadata } from '../epub/metadata'
 import { compareCollections } from '../platform/sort'
 import { newId } from '../platform/ids'
+import type { MessageKey } from '../i18n/types'
 
 export type View = { name: 'library' } | { name: 'reader'; bookId: string }
+
+/**
+ * The store has no access to the translate function — it is not a component —
+ * so it reports *which* message to show and lets the view render it. Keeping
+ * the key here is also what makes an error survive a language change.
+ */
+export interface LibraryError {
+  key: MessageKey
+  values?: Record<string, string | number>
+}
 
 interface LibraryState {
   books: BookRecord[]
@@ -16,7 +27,7 @@ interface LibraryState {
   loading: boolean
   /** Filename currently being imported, or null. */
   importing: string | null
-  error: string | null
+  error: LibraryError | null
   view: View
 
   load: () => Promise<void>
@@ -50,14 +61,14 @@ export const useLibrary = create<LibraryState>((set, get) => ({
       ])
       set({ books, collections, membership, loading: false })
     } catch (cause) {
-      set({ loading: false, error: `Could not open the library: ${message(cause)}` })
+      set({ loading: false, error: { key: 'library.error.open', values: { message: message(cause) } } })
     }
   },
 
   async importFiles(files) {
     const epubs = files.filter((file) => file.name.toLowerCase().endsWith('.epub'))
     if (epubs.length === 0) {
-      set({ error: 'Only .epub files can be imported.' })
+      set({ error: { key: 'library.error.onlyEpub' } })
       return
     }
 
@@ -82,7 +93,12 @@ export const useLibrary = create<LibraryState>((set, get) => ({
           cover: metadata.cover?.data ?? null,
         })
       } catch (cause) {
-        set({ error: `Could not import "${file.name}": ${message(cause)}` })
+        set({
+          error: {
+            key: 'library.error.import',
+            values: { name: file.name, message: message(cause) },
+          },
+        })
       }
     }
 
@@ -98,7 +114,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
       delete membership[id]
       set({ books: get().books.filter((book) => book.id !== id), membership })
     } catch (cause) {
-      set({ error: `Could not delete the book: ${message(cause)}` })
+      set({ error: { key: 'library.error.delete', values: { message: message(cause) } } })
     }
   },
 
@@ -116,7 +132,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
       await (await getStorage()).saveCollection(collection)
       set({ collections: [...get().collections, collection].sort(compareCollections) })
     } catch (cause) {
-      set({ error: `Could not create the collection: ${message(cause)}` })
+      set({ error: { key: 'library.error.createCollection', values: { message: message(cause) } } })
     }
   },
 
@@ -133,7 +149,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
           .sort(compareCollections),
       })
     } catch (cause) {
-      set({ error: `Could not rename the collection: ${message(cause)}` })
+      set({ error: { key: 'library.error.renameCollection', values: { message: message(cause) } } })
     }
   },
 
@@ -147,7 +163,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
       }
       set({ collections: get().collections.filter((item) => item.id !== id), membership })
     } catch (cause) {
-      set({ error: `Could not delete the collection: ${message(cause)}` })
+      set({ error: { key: 'library.error.deleteCollection', values: { message: message(cause) } } })
     }
   },
 
@@ -159,7 +175,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
       else delete membership[bookId]
       set({ membership })
     } catch (cause) {
-      set({ error: `Could not update the collections: ${message(cause)}` })
+      set({ error: { key: 'library.error.setCollections', values: { message: message(cause) } } })
     }
   },
 

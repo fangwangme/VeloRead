@@ -8,6 +8,7 @@
 
 import type { StyleId, StyleOverride } from '../reader/styles/types'
 import type { PacerHighlightShape } from '../reader/pacer/overlayStyle'
+import type { LanguagePreference } from '../i18n/types'
 
 /** A book in the library, without its bytes. */
 export interface BookRecord {
@@ -61,6 +62,8 @@ export interface BookSettings {
 export interface AppSettings {
   defaultStyleId?: StyleId
   themeMode?: 'auto' | 'light' | 'dark'
+  /** UI language. `auto` follows the system. */
+  language?: LanguagePreference
   autoNightMode?: boolean
   pacerWpm?: number
   pacerCpm?: number

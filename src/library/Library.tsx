@@ -7,6 +7,7 @@ import { AppSettingsModal } from '../settings/AppSettingsModal'
 import { IconBook, IconClose, IconCollection, IconImport, IconSettings, IconStats } from '../ui/icons'
 import { ALL_BOOKS, BookCollectionMenu, CollectionBar, UNFILED } from './CollectionBar'
 import { useConfirm } from '../ui/useConfirm'
+import { useT } from '../i18n/useT'
 
 const TOOLBAR_BUTTON_CLASS =
   'flex items-center gap-1.5 rounded-full border border-black/[0.08] bg-white/80 px-3.5 py-1.5 text-xs font-medium text-neutral-800 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-md transition hover:border-black/20 hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 active:scale-95 disabled:pointer-events-none disabled:opacity-50 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-neutral-200 dark:hover:bg-white/[0.1]'
@@ -36,6 +37,7 @@ export function Library({
   const [showSettings, setShowSettings] = useState(false)
   const [activeCollection, setActiveCollection] = useState<string>(ALL_BOOKS)
   const { confirm, confirmDialog } = useConfirm()
+  const t = useT()
 
   const visibleBooks = useMemo(() => {
     if (activeCollection === ALL_BOOKS) return books
@@ -76,10 +78,10 @@ export function Library({
       {/* Top Navbar */}
       <header className="sticky top-0 z-30 flex items-center justify-between gap-4 px-8 pt-8 pb-5 backdrop-blur-md bg-[#FBFBFA]/80 dark:bg-[#121214]/80 border-b border-black/[0.04] dark:border-white/[0.04]">
         <div>
-          <h1 className="text-xl font-bold tracking-tight">书库</h1>
+          <h1 className="text-xl font-bold tracking-tight">{t('library.title')}</h1>
           {books.length > 0 && (
             <p className="mt-0.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
-              已收录 {books.length} 本图书
+              {t.plural('library.bookCount', books.length)}
             </p>
           )}
         </div>
@@ -89,28 +91,32 @@ export function Library({
             className={TOOLBAR_BUTTON_CLASS}
             disabled={importing !== null}
             onClick={() => inputRef.current?.click()}
-            title={importing ? `正在导入 ${importing}` : '从本地选择 EPUB；也可以直接拖入书库'}
+            title={
+              importing
+                ? t('library.importingHint', { name: importing })
+                : t('library.importHint')
+            }
           >
             <IconImport className="opacity-75" />
-            <span>{importing ? '导入中…' : '导入 EPUB'}</span>
+            <span>{t(importing ? 'library.importing' : 'library.import')}</span>
           </button>
           <button
             type="button"
             className={TOOLBAR_BUTTON_CLASS}
             onClick={() => setShowStats(true)}
-            title="查看阅读数据与热力图"
+            title={t('library.statsHint')}
           >
             <IconStats className="opacity-75" />
-            <span>阅读统计</span>
+            <span>{t('library.stats')}</span>
           </button>
           <button
             type="button"
             className={TOOLBAR_BUTTON_CLASS}
             onClick={() => setShowSettings(true)}
-            title="调整应用外观与阅读目标"
+            title={t('library.settingsHint')}
           >
             <IconSettings className="opacity-75" />
-            <span>应用设置</span>
+            <span>{t('library.settings')}</span>
           </button>
         </div>
         <input
@@ -128,9 +134,9 @@ export function Library({
 
       {error && (
         <div aria-live="polite" className="mx-8 mt-4 flex items-start justify-between gap-4 rounded-2xl border border-red-200 bg-red-50/80 px-4 py-3 text-xs text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
-          <span>{error}</span>
+          <span>{t(error.key, error.values)}</span>
           <button type="button" className="shrink-0 underline font-medium" onClick={dismissError}>
-            忽略
+            {t('library.dismissError')}
           </button>
         </div>
       )}
@@ -150,10 +156,10 @@ export function Library({
               if (!collection) return
               void (async () => {
                 const ok = await confirm({
-                  title: `删除合集「${collection.name}」？`,
-                  body: '合集里的书籍会保留在书库中，只是不再归入这个合集。',
-                  confirmLabel: '删除合集',
-                  cancelLabel: '取消',
+                  title: t('collections.confirmDelete.title', { name: collection.name }),
+                  body: t('collections.confirmDelete.body'),
+                  confirmLabel: t('collections.confirmDelete.confirm'),
+                  cancelLabel: t('common.cancel'),
                 })
                 if (ok) void removeCollection(id)
               })()
@@ -166,13 +172,13 @@ export function Library({
       <main className="px-8 pt-6 pb-20">
         {loading ? (
           <div className="flex items-center justify-center py-32 text-xs text-neutral-400">
-            正在载入书库…
+            {t('library.loading')}
           </div>
         ) : books.length === 0 ? (
           <EmptyState onPick={() => inputRef.current?.click()} />
         ) : shelf.length === 0 ? (
           <div className="py-24 text-center text-xs text-neutral-400 dark:text-neutral-500">
-            这个合集里还没有书籍
+            {t('library.emptyCollection')}
           </div>
         ) : (
           <ul className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-x-7 gap-y-9">
@@ -186,7 +192,7 @@ export function Library({
       {dragging && (
         <div className="pointer-events-none fixed inset-4 z-40 rounded-3xl border-2 border-dashed border-blue-500/80 bg-blue-500/[0.06] backdrop-blur-xs flex items-center justify-center">
           <div className="rounded-2xl bg-white/90 dark:bg-neutral-900/90 px-6 py-3 shadow-xl text-xs font-semibold text-blue-600 dark:text-blue-400">
-            释放鼠标即可导入书籍
+            {t('library.dropHint')}
           </div>
         </div>
       )}
@@ -218,6 +224,7 @@ function BookTile({ book }: { book: BookRecord }) {
   const openBook = useLibrary((s) => s.openBook)
   const removeBook = useLibrary((s) => s.removeBook)
   const { confirm, confirmDialog } = useConfirm()
+  const t = useT()
 
   return (
     <li className="group relative">
@@ -243,8 +250,8 @@ function BookTile({ book }: { book: BookRecord }) {
       <div className="absolute right-2 top-2 flex items-center gap-1">
         <button
           type="button"
-          aria-label={`将 ${book.title} 加入合集`}
-          title="加入合集"
+          aria-label={t('library.tile.addToCollectionsLabel', { title: book.title })}
+          title={t('library.tile.addToCollections')}
           aria-expanded={menuOpen}
           className={`size-6 items-center justify-center rounded-full bg-black/60 text-white shadow-sm backdrop-blur-md transition hover:bg-black/80 focus-visible:flex focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 group-focus-within:flex group-hover:flex ${
             menuOpen ? 'flex' : 'hidden'
@@ -276,16 +283,16 @@ function BookTile({ book }: { book: BookRecord }) {
       {/* Quick delete button */}
       <button
         type="button"
-        aria-label={`删除 ${book.title}`}
+        aria-label={t('library.tile.deleteLabel', { title: book.title })}
         className="absolute right-2 top-9 hidden size-6 items-center justify-center rounded-full bg-black/60 text-xs text-white shadow-sm backdrop-blur-md transition hover:bg-red-600 focus-visible:flex focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 group-focus-within:flex group-hover:flex"
         onClick={(e) => {
           e.stopPropagation()
           void (async () => {
             const ok = await confirm({
-              title: `从书库移除《${book.title}》？`,
-              body: '书籍文件、阅读进度、书签与划线都会一并删除，无法恢复。',
-              confirmLabel: '移除书籍',
-              cancelLabel: '取消',
+              title: t('library.confirmDelete.title', { title: book.title }),
+              body: t('library.confirmDelete.body'),
+              confirmLabel: t('library.confirmDelete.confirm'),
+              cancelLabel: t('common.cancel'),
             })
             if (ok) void removeBook(book.id)
           })()
@@ -299,23 +306,25 @@ function BookTile({ book }: { book: BookRecord }) {
 }
 
 function EmptyState({ onPick }: { onPick: () => void }) {
+  const t = useT()
+
   return (
     <div className="mt-12 flex flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-black/[0.08] dark:border-white/[0.08] bg-black/[0.01] dark:bg-white/[0.01] py-24 text-center px-6">
       <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-black/[0.04] dark:bg-white/[0.06] text-neutral-400 dark:text-neutral-500 mb-1">
         <IconBook className="size-5" />
       </div>
       <p className="text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200">
-        书库空空如也
+        {t('library.empty.title')}
       </p>
       <p className="max-w-xs text-xs text-neutral-400 dark:text-neutral-500 leading-relaxed">
-        将 <code>.epub</code> 电子书拖拽到此处，或点击下方按钮从本地选取书籍。
+        {t('library.empty.body')}
       </p>
       <button
         type="button"
         className="mt-2 rounded-full border border-black/[0.1] dark:border-white/[0.1] bg-white dark:bg-neutral-800 px-4 py-2 text-xs font-medium text-neutral-800 dark:text-neutral-200 shadow-2xs transition hover:bg-neutral-50 dark:hover:bg-neutral-700 active:scale-95"
         onClick={onPick}
       >
-        选择文件
+        {t('library.empty.pick')}
       </button>
     </div>
   )
