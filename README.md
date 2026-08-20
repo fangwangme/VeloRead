@@ -7,19 +7,33 @@ unlike Kindle, everything can be exported back out.
 
 ## Status
 
-Rebuilt from scratch on 2026-08-15. The reading core loop (import → render → paginate →
-persist position) works; everything else is in progress. Start at
-[`docs/specs/overview.md`](docs/specs/overview.md) for what is being built and where it stands.
+Rebuilt from scratch on 2026-08-15. EPUB is usable end to end today; TXT and PDF are not
+started, and nothing exports yet. Start at
+[`docs/specs/overview.md`](docs/specs/overview.md) for the module-by-module state.
 
-## Planned Features
+## Features
 
-- **Reader** — EPUB, TXT and PDF; TOC navigation, per-book typography, and Apple Books-style
-  visual presets (Book / News / Journal / Sepia / Night)
+**Working (EPUB only)**
+
+- **Reader** — TOC, bookmarks, per-book typography, six visual presets (经典书籍 / 复古羊皮纸 /
+  现代散文 / 学术论著 / 报刊社论 / 中文宋体), light and dark, paginated or scrolling
 - **Pacer** — an auto-advancing highlight that paces your eyes a few words at a time, to train
-  reading speed past subvocalization
-- **Highlights** — annotate as you read; export *and import* Kindle's `My Clippings.txt`
+  reading speed past subvocalization. One engine, separate profiles for Latin (words/min) and
+  CJK (graphemes/min), applied per chunk so mixed text paces correctly
+- **Highlights** — five colours with optional notes, listed alongside the TOC and bookmarks
+- **Full-text search** — across the whole book, loading each chapter on demand
+- **Library** — collections, with a book able to sit on several shelves
+- **Reading activity** — honest active-reading time, words and CJK characters counted
+  separately, streaks, and a four-tier daily check-in
+
+**Not started**
+
+- **TXT and PDF** — TXT will share the EPUB engine; PDF is a separate track with unequal
+  capabilities by nature. See [`docs/specs/reading-formats.md`](docs/specs/reading-formats.md)
+- **Export and import** — highlights as Kindle's `My Clippings.txt`, both directions.
+  The data model is in place; the file layer is not
 - **Vocabulary** — look up a word, keep the sentence it came from, export it as plain text.
-  Kindle records this too, but won't let you take it with you. This will.
+  Kindle records this too, but won't let you take it with you. This will
 
 ## Development
 

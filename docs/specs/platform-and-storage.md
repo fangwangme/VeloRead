@@ -111,7 +111,13 @@ IndexedDB（库名 `veloread`），字节单独放 store，列书架时不会反
 | `book_settings` | `bookId`（keyPath） | `BookSettings` |
 | `app_settings` | `key = global`（keyPath） | `AppSettings` |
 | `bookmarks` | `id`（keyPath），`by_bookId` 索引 | `Bookmark` |
+| `annotations` | `id`（keyPath），`by_bookId` 索引 | `Annotation` |
+| `collections` | `id`（keyPath） | `Collection` |
+| `collection_books` | 复合 keyPath `[collectionId, bookId]`，`by_bookId` / `by_collectionId` 索引 | 关联行 |
 | `reading_sessions` | `id`（keyPath），`by_date` / `by_bookId` 索引 | `ReadingSession` |
+
+`collection_books` 用复合主键而不是自增 id：同一对「合集 × 书」重复写入只会覆盖同一行，
+归类操作因此天然幂等。
 
 ## 5. SQLite schema
 
@@ -179,7 +185,7 @@ CREATE TABLE reading_sessions (
 CREATE INDEX idx_sessions_date ON reading_sessions(date);
 ```
 
-### v3（当前，已实现）
+### v3（英文 / CJK 两套阅读量）
 
 Pacer 使用英文 / CJK 两套参数，统计也拆成含义明确的两类阅读量：
 
@@ -208,13 +214,55 @@ CREATE TABLE reading_sessions (
 CREATE INDEX idx_sessions_date ON reading_sessions(date);
 ```
 
+### v4 / v5（当前，已实现）
+
+划线笔记与书库合集各自新增表，都只是 `CREATE TABLE IF NOT EXISTS`，不触碰已有数据：
+
+```sql
+-- v4：划线与笔记。字段说明与设计取舍见 annotations.md
+CREATE TABLE annotations (
+    id            TEXT PRIMARY KEY,
+    book_id       TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    cfi_range     TEXT NOT NULL,
+    text          TEXT NOT NULL,
+    note          TEXT NOT NULL DEFAULT '',
+    color         TEXT NOT NULL,
+    chapter_title TEXT,
+    source        TEXT NOT NULL DEFAULT 'local',
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+CREATE INDEX idx_annotations_book ON annotations(book_id, created_at);
+
+-- v5：书库合集。一本书可属于多个，成员关系单独成表
+CREATE TABLE collections (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE collection_books (
+    collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    book_id       TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    PRIMARY KEY (collection_id, book_id)
+);
+CREATE INDEX idx_collection_books_book ON collection_books(book_id);
+```
+
+`collections` 的列表顺序是 `ORDER BY name`（码点序），**web 端必须给出同样的顺序** ——
+两端对同一份数据返回不同排序是真实的实现分歧，排序规则因此收在 `platform/sort.ts`。
+
 后续模块各自新增的表见
-[annotations](annotations.md#5-数据模型)、[vocabulary](vocabulary.md#4-数据模型借鉴-kindle-vocabdb)。
+[vocabulary](vocabulary.md#4-数据模型借鉴-kindle-vocabdb)。
 
 schema 版本由 Tauri 的 `PRAGMA user_version` 与 Web IndexedDB version 共同维护。当前应用尚未发布，
 v2 的 `words_read` 是英文词与 CJK 字符的混合值，无法可靠拆分；升级到 v3 时会重建
 `book_settings` 与 `reading_sessions`，不承担这两类开发数据的迁移。`books`、书籍文件、封面与
 `reading_progress` 必须保留，并由两端测试锁定。正式发布后，schema 升级必须提供非破坏性迁移。
+
+**那段重建逻辑的上界必须钉死在 3，不能写成 `< SCHEMA_VERSION`。** 它存在的唯一理由是 v3 之前
+的混合字数，写成开放上界的话，此后每次抬版本号都会顺带删掉用户真实的按书设置与阅读统计。
+两端各有一处：Rust 的 `version > 0 && version < 3`，web 的 `MIXED_WORD_COUNT_VERSION`。
 
 ## 6. 测试约定
 
