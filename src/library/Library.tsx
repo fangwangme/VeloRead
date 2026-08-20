@@ -4,7 +4,10 @@ import { BookCover } from './BookCover'
 import type { AppSettings, BookRecord } from '../platform/types'
 import { StatsModal } from '../stats/StatsModal'
 import { AppSettingsModal } from '../settings/AppSettingsModal'
-import { IconSettings, IconStats } from '../ui/icons'
+import { IconImport, IconSettings, IconStats } from '../ui/icons'
+
+const TOOLBAR_BUTTON_CLASS =
+  'flex items-center gap-1.5 rounded-full border border-black/[0.08] bg-white/80 px-3.5 py-1.5 text-xs font-medium text-neutral-800 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-md transition hover:border-black/20 hover:bg-white active:scale-95 disabled:pointer-events-none disabled:opacity-50 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-neutral-200 dark:hover:bg-white/[0.1]'
 
 export function Library({
   appSettings,
@@ -56,16 +59,17 @@ export function Library({
         <div className="flex items-center gap-2.5">
           <button
             type="button"
-            className="flex items-center gap-1.5 rounded-full border border-black/[0.08] bg-white/80 px-3.5 py-1.5 text-xs font-medium text-neutral-800 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-md transition hover:bg-white hover:border-black/20 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-neutral-200 dark:hover:bg-white/[0.1] active:scale-95"
-            onClick={() => setShowSettings(true)}
-            title="调整应用外观与阅读目标"
+            className={TOOLBAR_BUTTON_CLASS}
+            disabled={importing !== null}
+            onClick={() => inputRef.current?.click()}
+            title={importing ? `正在导入 ${importing}` : '从本地选择 EPUB；也可以直接拖入书库'}
           >
-            <IconSettings className="opacity-75" />
-            <span>应用设置</span>
+            <IconImport className="opacity-75" />
+            <span>{importing ? '导入中…' : '导入 EPUB'}</span>
           </button>
           <button
             type="button"
-            className="flex items-center gap-1.5 rounded-full border border-black/[0.08] bg-white/80 px-3.5 py-1.5 text-xs font-medium text-neutral-800 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-md transition hover:bg-white hover:border-black/20 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-neutral-200 dark:hover:bg-white/[0.1] active:scale-95"
+            className={TOOLBAR_BUTTON_CLASS}
             onClick={() => setShowStats(true)}
             title="查看阅读数据与热力图"
           >
@@ -74,11 +78,12 @@ export function Library({
           </button>
           <button
             type="button"
-            className="rounded-full bg-neutral-900 px-4 py-1.5 text-xs font-medium text-white shadow-[0_1px_4px_rgba(0,0,0,0.12)] transition hover:bg-neutral-800 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 active:scale-95"
-            disabled={importing !== null}
-            onClick={() => inputRef.current?.click()}
+            className={TOOLBAR_BUTTON_CLASS}
+            onClick={() => setShowSettings(true)}
+            title="调整应用外观与阅读目标"
           >
-            {importing ? `导入中 ${importing}…` : '+ 导入 EPUB'}
+            <IconSettings className="opacity-75" />
+            <span>应用设置</span>
           </button>
         </div>
         <input
