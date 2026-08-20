@@ -44,10 +44,10 @@ src/platform/
 | `readCover(id)` | 封面字节，无封面返回 `null` |
 | `getProgress(bookId)` | 阅读位置，从未读过返回 `null` |
 | `saveProgress(progress)` | upsert 进度，并把 `books.lastReadAt` 更新为同一时间戳 |
-| `getBookSettings(bookId)` / `saveBookSettings(settings)` | 读取 / upsert 当前书籍的排版与 flow |
+| `getBookSettings(bookId)` / `saveBookSettings(settings)` | 读取 / upsert 当前书籍的排版、flow 与 Pacer 覆盖值 |
 | `getAppSettings()` / `saveAppSettings(partial)` | 读取 / 合并保存全局外观、Pacer 与每日目标 |
 | `listBookmarks(bookId)` / `addBookmark()` / `deleteBookmark()` | 按书管理书签 |
-| `recordReadingSession(session)` | 按稳定 session id 累加有效时长与字数 |
+| `recordReadingSession(session)` | 按稳定 session id 累加有效时长、英文词数与 CJK 字符数 |
 | `getReadingStats()` | 汇总总量、每日数据、阅读书数与连续天数 |
 
 **书架顺序**：`lastReadAt` 降序（未读的排后面），并列时 `addedAt` 降序。
@@ -133,7 +133,7 @@ CREATE TABLE reading_progress (
 );
 ```
 
-### v2（当前，已实现）
+### v2（历史开发基线）
 
 配合多格式与阅读设置：
 
@@ -176,11 +176,42 @@ CREATE TABLE reading_sessions (
 CREATE INDEX idx_sessions_date ON reading_sessions(date);
 ```
 
+### v3（当前，已实现）
+
+Pacer 使用英文 / CJK 两套参数，统计也拆成含义明确的两类阅读量：
+
+```sql
+CREATE TABLE book_settings (
+    book_id              TEXT PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+    style_id             TEXT NOT NULL,
+    overrides            TEXT NOT NULL,
+    flow                 TEXT,
+    pacer_wpm            INTEGER,
+    pacer_cpm            INTEGER,
+    pacer_chunk_size     INTEGER,
+    pacer_cjk_char_count INTEGER,
+    updated_at           TEXT NOT NULL
+);
+
+CREATE TABLE reading_sessions (
+    id                  TEXT PRIMARY KEY,
+    book_id             TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    date                TEXT NOT NULL,
+    duration_seconds    INTEGER NOT NULL,
+    latin_words_read    INTEGER NOT NULL,
+    cjk_characters_read INTEGER NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+CREATE INDEX idx_sessions_date ON reading_sessions(date);
+```
+
 后续模块各自新增的表见
 [annotations](annotations.md#5-数据模型)、[vocabulary](vocabulary.md#4-数据模型借鉴-kindle-vocabdb)。
 
-迁移按 `PRAGMA user_version` 递进，写在 `library.rs` 的 `migrate()` 里。
-**每次升版都要有一条「旧版库升级后老数据仍可读」的测试。**
+schema 版本由 Tauri 的 `PRAGMA user_version` 与 Web IndexedDB version 共同维护。当前应用尚未发布，
+v2 的 `words_read` 是英文词与 CJK 字符的混合值，无法可靠拆分；升级到 v3 时会重建
+`book_settings` 与 `reading_sessions`，不承担这两类开发数据的迁移。`books`、书籍文件、封面与
+`reading_progress` 必须保留，并由两端测试锁定。正式发布后，schema 升级必须提供非破坏性迁移。
 
 ## 6. 测试约定
 
@@ -198,4 +229,4 @@ CREATE INDEX idx_sessions_date ON reading_sessions(date);
 - 进度写入后读回完全一致
 - 删除书籍后元数据、文件、封面、进度、设置、书签和阅读 session 都不残留
 - id 校验挡掉所有可能逃出书库目录的输入（`..`、`a/b`、`/absolute`、超长）
-- schema 每次升版有迁移测试
+- 开发期 v2 → v3 重建设置/统计时，书籍与阅读进度仍可读；正式发布后的升版必须有数据迁移测试

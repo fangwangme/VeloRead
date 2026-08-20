@@ -50,7 +50,7 @@ export function Toc({
             <button
               type="button"
               onClick={() => setTab('toc')}
-              className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-medium transition-all ${
+              className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-medium transition-[color,background-color,box-shadow] ${
                 tab === 'toc'
                   ? 'bg-white text-neutral-900 shadow-[0_1px_4px_rgba(0,0,0,0.08)] dark:bg-[#2C2C2E] dark:text-white font-semibold'
                   : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-white'
@@ -62,7 +62,7 @@ export function Toc({
             <button
               type="button"
               onClick={() => setTab('bookmarks')}
-              className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-medium transition-all ${
+              className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-medium transition-[color,background-color,box-shadow] ${
                 tab === 'bookmarks'
                   ? 'bg-white text-neutral-900 shadow-[0_1px_4px_rgba(0,0,0,0.08)] dark:bg-[#2C2C2E] dark:text-white font-semibold'
                   : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-white'

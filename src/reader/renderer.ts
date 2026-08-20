@@ -3,7 +3,8 @@ import type { Book, Contents, Rendition } from 'epubjs'
 import type { ResolvedStyle } from './styles/types'
 import { toCssRules } from './styles/toCssRules'
 import type { TocItem } from '../platform/types'
-import { isCjkChar, type WordItem } from './pacer/chunker'
+import type { WordItem } from './pacer/chunker'
+import { tokenizeText } from './pacer/tokenizer'
 
 export interface ReaderLocation {
   /** CFI of the first visible position on the current page. */
@@ -25,6 +26,7 @@ export interface ReaderOptions {
   onLocation?: (location: ReaderLocation) => void
   onKeyDown?: (event: KeyboardEvent) => void
   onClickText?: (target: { text: string; range?: Range }) => void
+  onLinkClick?: () => void
   flow?: 'paginated' | 'scrolled-doc'
   spreadMode?: 'auto' | 'single' | 'double'
   style?: ResolvedStyle
@@ -102,6 +104,7 @@ export async function createReader(
 
   const onKeyDown = options.onKeyDown
   const onClickText = options.onClickText
+  const onLinkClick = options.onLinkClick
 
   rendition.hooks.content.register((contents: Contents) => {
     const doc = contents.document
@@ -110,11 +113,18 @@ export async function createReader(
     }
     if (onClickText) {
       doc.addEventListener('click', (event: MouseEvent) => {
+        const target = event.target as Element | null
+        // epub.js owns hyperlink navigation. Treating the same click as a
+        // Pacer seek would leave the engine bound to the departing document.
+        if (target?.closest?.('a[href]')) {
+          onLinkClick?.()
+          return
+        }
         const selection = doc.getSelection()
         // Preserve ordinary text selection for the future annotation feature.
         if (selection && !selection.isCollapsed) return
         const range = wordRangeAtPoint(doc, event.clientX, event.clientY)
-        const text = range?.toString() || (event.target as HTMLElement)?.innerText || ''
+        const text = range?.toString() || (target as HTMLElement | null)?.innerText || ''
         onClickText({ text, range: range ?? undefined })
       })
     }
@@ -255,30 +265,8 @@ export async function createReader(
     let textNode: Text | null = walker.nextNode() as Text | null
     while (textNode) {
       const text = textNode.textContent ?? ''
-      let index = 0
-
-      while (index < text.length) {
-        // Skip whitespace
-        while (index < text.length && /\s/.test(text[index])) {
-          index++
-        }
-        if (index >= text.length) break
-
-        const start = index
-        const char = text[index]
-        const isCjk = isCjkChar(char)
-
-        let end = start + 1
-        if (!isCjk) {
-          // English / Latin word: gather letters until whitespace or CJK
-          while (end < text.length && !/\s/.test(text[end]) && !isCjkChar(text[end])) {
-            end++
-          }
-        }
-        index = end
-
-        const token = text.slice(start, end).trim()
-        if (token.length === 0) continue
+      for (const token of tokenizeText(text)) {
+        const { start, end } = token
 
         try {
           const range = doc.createRange()
@@ -304,7 +292,7 @@ export async function createReader(
               (includeWholeScrolledSection && currentFlow === 'scrolled-doc' || intersectsPage)
             ) {
               words.push({
-                text: token,
+                text: token.text,
                 rect: {
                   left: r.left,
                   top: r.top,
@@ -313,7 +301,8 @@ export async function createReader(
                   bottom: r.bottom,
                   right: r.right,
                 },
-                isCjk,
+                kind: token.kind,
+                wordBoundaryAfter: token.wordBoundaryAfter,
                 range,
               })
             }
@@ -483,18 +472,14 @@ function wordRangeAtPoint(doc: Document, x: number, y: number): Range | null {
   const text = node.textContent ?? ''
   if (text.length === 0) return null
   let offset = Math.min(caret.startOffset, text.length - 1)
-  while (offset > 0 && /\s/.test(text[offset])) offset--
-
-  let start = offset
-  let end = offset + 1
-  if (!isCjkChar(text[offset])) {
-    while (start > 0 && !/\s/.test(text[start - 1]) && !isCjkChar(text[start - 1])) start--
-    while (end < text.length && !/\s/.test(text[end]) && !isCjkChar(text[end])) end++
-  }
+  while (offset > 0 && /\s/u.test(text[offset])) offset--
+  const tokens = tokenizeText(text)
+  const token = tokens.find((candidate) => candidate.start <= offset && offset < candidate.end)
+  if (!token) return null
 
   const word = doc.createRange()
-  word.setStart(node, start)
-  word.setEnd(node, end)
+  word.setStart(node, token.start)
+  word.setEnd(node, token.end)
   return word
 }
 

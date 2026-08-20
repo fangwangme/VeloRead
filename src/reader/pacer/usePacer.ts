@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { groupWordsIntoChunks, type PacerChunk } from './chunker'
+import {
+  dominantPacerUnit,
+  groupWordsIntoChunks,
+  type ChunkerOptions,
+  type PacerChunk,
+  type PacerUnitKind,
+} from './chunker'
 import { chunkToOverlayRect, type Rect } from './geometry'
 import { PacerEngine, type PacerState } from './engine'
 import type { ReaderHandle } from '../renderer'
@@ -7,27 +13,54 @@ import type { ReaderHandle } from '../renderer'
 interface UsePacerOptions {
   readerHandle: ReaderHandle | null
   containerRef: React.RefObject<HTMLDivElement | null>
-  wpm: number
-  chunkSize?: number
+  latinWpm: number
+  cjkCpm: number
+  latinChunkSize?: number
   cjkChunkSize?: number
+  defaultUnit?: PacerUnitKind
+  onPageConsumed?: () => void
+  canAdvancePage?: () => boolean
+  canCreditPage?: () => boolean
   accentColor?: string
 }
 
 export function usePacer({
   readerHandle,
   containerRef,
-  wpm,
-  chunkSize = 3,
-  cjkChunkSize = 8,
+  latinWpm,
+  cjkCpm,
+  latinChunkSize = 3,
+  cjkChunkSize = 4,
+  defaultUnit = 'latin',
+  onPageConsumed,
+  canAdvancePage,
+  canCreditPage,
 }: UsePacerOptions) {
   const [pacerState, setPacerState] = useState<PacerState>('idle')
   const [currentChunk, setCurrentChunk] = useState<PacerChunk | null>(null)
   const [overlayRect, setOverlayRect] = useState<Rect | null>(null)
   const [totalChunks, setTotalChunks] = useState(0)
   const [chunkIndex, setChunkIndex] = useState(0)
+  const [dominantUnit, setDominantUnit] = useState<PacerUnitKind>(defaultUnit)
 
   const engineRef = useRef<PacerEngine | null>(null)
-  const configRef = useRef({ wpm, chunkSize, cjkChunkSize })
+  const configRef = useRef<ChunkerOptions>({
+    latinWpm,
+    cjkCpm,
+    latinChunkSize,
+    cjkChunkSize,
+  })
+  const defaultUnitRef = useRef(defaultUnit)
+  const onPageConsumedRef = useRef(onPageConsumed)
+  const canAdvancePageRef = useRef(canAdvancePage)
+  const canCreditPageRef = useRef(canCreditPage)
+
+  useEffect(() => {
+    defaultUnitRef.current = defaultUnit
+    onPageConsumedRef.current = onPageConsumed
+    canAdvancePageRef.current = canAdvancePage
+    canCreditPageRef.current = canCreditPage
+  }, [defaultUnit, onPageConsumed, canAdvancePage, canCreditPage])
 
   const updateOverlay = useCallback(
     (chunk: PacerChunk | null, ensureVisible = true) => {
@@ -63,19 +96,29 @@ export function usePacer({
     (preserveIndex = true) => {
       if (!readerHandle) return
       const words = readerHandle.getVisibleWords()
-      const chunks = groupWordsIntoChunks(words, { wpm, chunkSize, cjkChunkSize })
+      const config = configRef.current
+      const chunks = groupWordsIntoChunks(words, config)
+      setDominantUnit(dominantPacerUnit(words, defaultUnitRef.current))
       setTotalChunks(chunks.length)
 
       const engine = engineRef.current
       if (engine) {
-        engine.setWpm(wpm)
-        engine.setChunks(chunks, preserveIndex)
+        const previous = preserveIndex ? engine.getCurrentChunk() : null
+        const mappedIndex = previous
+          ? chunkIndexContainingRange(chunks, previous.range) ??
+            nearestChunkIndex(chunks, previous.rect)
+          : null
+        engine.setChunks(chunks, false)
+        if (mappedIndex !== null) engine.seek(mappedIndex)
+        if (canCreditPageRef.current && !canCreditPageRef.current()) {
+          engine.invalidatePageConsumption()
+        }
         const current = engine.getCurrentChunk()
         setCurrentChunk(current)
         updateOverlay(current)
       }
     },
-    [readerHandle, wpm, chunkSize, cjkChunkSize, updateOverlay],
+    [readerHandle, updateOverlay],
   )
 
   // Initialize engine
@@ -88,7 +131,6 @@ export function usePacer({
       setOverlayRect(null)
     })
     const engine = new PacerEngine({
-      wpm: configRef.current.wpm,
       onChunkChange(index, chunk) {
         setChunkIndex(index)
         setCurrentChunk(chunk)
@@ -97,9 +139,19 @@ export function usePacer({
       onStateChange(state) {
         setPacerState(state)
       },
-      async onPageTurnNeeded() {
+      async onPageTurnNeeded(fullyConsumed) {
         if (!readerHandle) return false
+        // Do not advance or credit a page after the app has become inactive or
+        // a reading panel has opened. The parent pauses synchronously too; this
+        // guard covers a page-turn callback that was already queued.
+        if (canAdvancePageRef.current && !canAdvancePageRef.current()) return false
         try {
+          if (
+            fullyConsumed &&
+            (!canCreditPageRef.current || canCreditPageRef.current())
+          ) {
+            onPageConsumedRef.current?.()
+          }
           const advanced = await readerHandle.advancePacerPage()
           if (!advanced) return false
           // Wait for new page DOM to render with active polling
@@ -117,9 +169,13 @@ export function usePacer({
 
           const config = configRef.current
           const chunks = groupWordsIntoChunks(words, config)
+          setDominantUnit(dominantPacerUnit(words, defaultUnitRef.current))
           setTotalChunks(chunks.length)
           if (chunks.length > 0) {
             engineRef.current?.setChunks(chunks, false)
+            if (canCreditPageRef.current && !canCreditPageRef.current()) {
+              engineRef.current?.invalidatePageConsumption()
+            }
             return true
           }
           return false
@@ -138,14 +194,13 @@ export function usePacer({
     }
   }, [readerHandle, updateOverlay])
 
-  // Recalculate on wpm or chunkSize change
+  // Recalculate when either language profile changes.
   useEffect(() => {
-    configRef.current = { wpm, chunkSize, cjkChunkSize }
+    configRef.current = { latinWpm, cjkCpm, latinChunkSize, cjkChunkSize }
     if (engineRef.current) {
-      engineRef.current.setWpm(wpm)
       recalculateGeometry()
     }
-  }, [wpm, chunkSize, cjkChunkSize, recalculateGeometry])
+  }, [latinWpm, cjkCpm, latinChunkSize, cjkChunkSize, recalculateGeometry])
 
   // Keep the parent-document overlay attached to its chunk during smooth
   // scrolling. getBoundingClientRect() already includes the scroller offset.
@@ -169,7 +224,11 @@ export function usePacer({
   }, [readerHandle, recalculateGeometry])
 
   const play = useCallback(() => {
-    engineRef.current?.play()
+    const engine = engineRef.current
+    engine?.play()
+    if (canCreditPageRef.current && !canCreditPageRef.current()) {
+      engine?.invalidatePageConsumption()
+    }
   }, [])
 
   const pause = useCallback(() => {
@@ -177,7 +236,15 @@ export function usePacer({
   }, [])
 
   const toggle = useCallback(() => {
-    engineRef.current?.toggle()
+    const engine = engineRef.current
+    engine?.toggle()
+    if (engine?.getState() === 'playing' && canCreditPageRef.current && !canCreditPageRef.current()) {
+      engine.invalidatePageConsumption()
+    }
+  }, [])
+
+  const invalidatePageConsumption = useCallback(() => {
+    engineRef.current?.invalidatePageConsumption()
   }, [])
 
   const seek = useCallback((index: number) => {
@@ -214,11 +281,13 @@ export function usePacer({
     currentChunk,
     chunkIndex,
     totalChunks,
+    dominantUnit,
     overlayRect,
-    speedWarning: wpm > 500,
+    speedWarning: (dominantUnit === 'cjk' ? cjkCpm : latinWpm) > 500,
     play,
     pause,
     toggle,
+    invalidatePageConsumption,
     seek,
     nextChunk,
     prevChunk,
@@ -250,4 +319,25 @@ export function nearestChunkIndex(
     }
   }
   return bestIndex
+}
+
+export function chunkIndexContainingRange(
+  chunks: PacerChunk[],
+  targetRange?: Range,
+): number | null {
+  if (!targetRange) return null
+  for (let index = 0; index < chunks.length; index++) {
+    const chunkRange = chunks[index].range
+    if (!chunkRange) continue
+    try {
+      if (chunkRange.isPointInRange(targetRange.startContainer, targetRange.startOffset)) {
+        return index
+      }
+    } catch {
+      // A flow change may replace the iframe document. Geometry is the safe
+      // fallback when old and new ranges no longer share a document.
+      return null
+    }
+  }
+  return null
 }

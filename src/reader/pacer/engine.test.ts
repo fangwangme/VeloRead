@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PacerChunk } from './chunker'
 import { PacerEngine } from './engine'
-import { nearestChunkIndex } from './usePacer'
+import { chunkIndexContainingRange, nearestChunkIndex } from './usePacer'
 
 function chunk(id: number, left = id * 100): PacerChunk {
   return {
     id,
     text: `chunk-${id}`,
     wordCount: 1,
+    unitKind: 'latin',
     rect: { left, top: 10, width: 80, height: 20 },
     rects: [{ left, top: 10, width: 80, height: 20 }],
     dwellMs: 100,
@@ -30,21 +31,63 @@ describe('PacerEngine', () => {
     await vi.advanceTimersByTimeAsync(100)
 
     expect(onPageTurnNeeded).toHaveBeenCalledTimes(1)
+    expect(onPageTurnNeeded).toHaveBeenCalledWith(true)
     expect(engine.getState()).toBe('paused')
     expect(engine.getCurrentIndex()).toBe(0)
   })
 
-  it('keeps playing when speed and chunk geometry are updated', () => {
+  it('does not report a fully consumed page after seeking to the final chunk', async () => {
+    vi.useFakeTimers()
+    const onPageTurnNeeded = vi.fn().mockResolvedValue(false)
+    const engine = new PacerEngine({ onPageTurnNeeded })
+    engine.setChunks([chunk(0), chunk(1), chunk(2)])
+    engine.seek(2)
+    engine.play()
+
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(onPageTurnNeeded).toHaveBeenCalledWith(false)
+  })
+
+  it('can conservatively invalidate consumption without pausing playback', async () => {
+    vi.useFakeTimers()
+    const onPageTurnNeeded = vi.fn().mockResolvedValue(false)
+    const engine = new PacerEngine({ onPageTurnNeeded })
+    engine.setChunks([chunk(0)])
+    engine.play()
+    engine.invalidatePageConsumption()
+
+    expect(engine.getState()).toBe('playing')
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(onPageTurnNeeded).toHaveBeenCalledWith(false)
+  })
+
+  it('invalidates page consumption when the last chunk is skipped manually', async () => {
+    vi.useFakeTimers()
+    const onPageTurnNeeded = vi.fn().mockResolvedValue(false)
+    const engine = new PacerEngine({ onPageTurnNeeded })
+    engine.setChunks([chunk(0), chunk(1)])
+    engine.play()
+    engine.nextChunk()
+    engine.nextChunk()
+
+    await vi.runAllTimersAsync()
+
+    expect(onPageTurnNeeded).toHaveBeenCalledWith(false)
+  })
+
+  it('keeps playing when retimed chunk geometry is updated', () => {
     vi.useFakeTimers()
     const engine = new PacerEngine()
     engine.setChunks([chunk(0), chunk(1)])
     engine.play()
 
-    engine.setWpm(420)
-    engine.setChunks([chunk(0), chunk(1), chunk(2)], true)
+    const retimed = [chunk(0), chunk(1), chunk(2)].map((item) => ({ ...item, dwellMs: 140 }))
+    engine.setChunks(retimed, true)
 
     expect(engine.getState()).toBe('playing')
-    expect(engine.getWpm()).toBe(420)
+    expect(engine.getCurrentChunk()?.dwellMs).toBe(140)
     expect(engine.getCurrentIndex()).toBe(0)
   })
 
@@ -55,5 +98,23 @@ describe('PacerEngine', () => {
         { left: 135, top: 12, width: 20, height: 18 },
       ),
     ).toBe(1)
+  })
+
+  it('maps a rebuilt chunk group by DOM text position instead of numeric index', () => {
+    const node = document.createTextNode('one two three four five six')
+    document.body.append(node)
+    const range = (start: number, end: number) => {
+      const value = document.createRange()
+      value.setStart(node, start)
+      value.setEnd(node, end)
+      return value
+    }
+    const rebuilt = [
+      { ...chunk(0), range: range(0, 13) },
+      { ...chunk(1), range: range(14, 27) },
+    ]
+
+    expect(chunkIndexContainingRange(rebuilt, range(8, 13))).toBe(0)
+    expect(chunkIndexContainingRange(rebuilt, range(19, 23))).toBe(1)
   })
 })

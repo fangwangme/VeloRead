@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { getStorage } from '../platform'
-import type { OverallReadingStats } from '../platform/types'
+import type { DailyReadingStats, OverallReadingStats } from '../platform/types'
 import { localDateKey } from './tracking'
 import { checkinState, monthCheckinSummary } from './checkins'
 import {
@@ -12,6 +12,7 @@ import {
   IconLibrary,
   IconStats,
 } from '../ui/icons'
+import { useModalDialog } from '../ui/useModalDialog'
 
 interface StatsModalProps {
   dailyGoalMinutes: number
@@ -22,6 +23,7 @@ export function StatsModal({ dailyGoalMinutes, onClose }: StatsModalProps) {
   const [stats, setStats] = useState<OverallReadingStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'overview' | 'checkin'>('overview')
+  const dialogRef = useModalDialog<HTMLDivElement>(onClose)
 
   useEffect(() => {
     let cancelled = false
@@ -53,14 +55,21 @@ export function StatsModal({ dailyGoalMinutes, onClose }: StatsModalProps) {
       />
 
       {/* Modal Card */}
-      <div className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col rounded-3xl border border-black/[0.08] bg-white/94 p-6 shadow-[0_30px_70px_rgba(0,0,0,0.22),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-3xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/94 dark:text-neutral-100 animate-in fade-in zoom-in-95 duration-200">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="reading-stats-title"
+        tabIndex={-1}
+        className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col rounded-3xl border border-black/[0.08] bg-white/94 p-6 shadow-[0_30px_70px_rgba(0,0,0,0.22),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-3xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/94 dark:text-neutral-100 animate-in fade-in zoom-in-95 duration-200 motion-reduce:animate-none"
+      >
         <div className="flex items-center justify-between pb-4 border-b border-black/[0.06] dark:border-white/[0.06]">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:bg-blue-400/15 dark:text-blue-400">
               <IconStats />
             </div>
             <div>
-              <h2 className="text-base font-semibold tracking-tight">阅读数据与统计</h2>
+              <h2 id="reading-stats-title" className="text-base font-semibold tracking-tight">阅读数据与统计</h2>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
                 记录专注阅读，见证心智成长
               </p>
@@ -69,7 +78,7 @@ export function StatsModal({ dailyGoalMinutes, onClose }: StatsModalProps) {
           <button
             type="button"
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-400 hover:bg-black/5 hover:text-neutral-700 dark:hover:bg-white/10 dark:hover:text-neutral-200 transition"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-white/10 dark:hover:text-neutral-200"
             aria-label="关闭统计"
           >
             ✕
@@ -85,7 +94,7 @@ export function StatsModal({ dailyGoalMinutes, onClose }: StatsModalProps) {
               key={item.id}
               type="button"
               onClick={() => setTab(item.id)}
-              className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[11px] font-medium transition ${
+              className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[11px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
                 tab === item.id
                   ? 'bg-white text-neutral-900 shadow-[0_1px_4px_rgba(0,0,0,0.08)] dark:bg-[#303033] dark:text-white'
                   : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
@@ -98,7 +107,7 @@ export function StatsModal({ dailyGoalMinutes, onClose }: StatsModalProps) {
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto py-5 space-y-6">
+        <div className="flex-1 overflow-y-auto overscroll-contain py-5 space-y-6">
           {loading ? (
             <div className="py-16 text-center text-xs text-neutral-400">正在汇总阅读记录…</div>
           ) : !stats ? (
@@ -117,15 +126,9 @@ export function StatsModal({ dailyGoalMinutes, onClose }: StatsModalProps) {
                   unit={stats.totalDurationMinutes >= 60 ? '小时' : '分钟'}
                   icon={<IconClock />}
                 />
-                <MetricCard
-                  label="累计阅读字数"
-                  value={
-                    stats.totalWordsRead >= 10000
-                      ? `${(stats.totalWordsRead / 10000).toFixed(1)}`
-                      : `${stats.totalWordsRead}`
-                  }
-                  unit={stats.totalWordsRead >= 10000 ? '万字' : '字/词'}
-                  icon={<IconBook />}
+                <ReadingVolumeCard
+                  latinWords={stats.totalLatinWordsRead}
+                  cjkCharacters={stats.totalCjkCharactersRead}
                 />
                 <MetricCard
                   label="连续阅读"
@@ -145,7 +148,7 @@ export function StatsModal({ dailyGoalMinutes, onClose }: StatsModalProps) {
               <div className="rounded-2xl border border-black/[0.06] bg-black/[0.02] p-5 dark:border-white/[0.06] dark:bg-white/[0.03]">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-xs font-semibold tracking-wide text-neutral-700 dark:text-neutral-300">
-                    近半年阅读热力图 (Activity Heatmap)
+                    近半年阅读热力图
                   </h3>
                   <div className="flex items-center gap-1.5 text-[10px] text-neutral-400">
                     <span>少</span>
@@ -189,7 +192,7 @@ function CheckinPage({
   currentStreakDays,
   dailyGoalMinutes,
 }: {
-  dailyStats: Record<string, { durationMinutes: number; wordsRead: number }>
+  dailyStats: Record<string, DailyReadingStats>
   currentStreakDays: number
   dailyGoalMinutes: number
 }) {
@@ -339,14 +342,47 @@ function MetricCard({
   )
 }
 
+function ReadingVolumeCard({
+  latinWords,
+  cjkCharacters,
+}: {
+  latinWords: number
+  cjkCharacters: number
+}) {
+  return (
+    <div className="flex flex-col justify-between rounded-2xl border border-black/[0.06] bg-black/[0.02] p-4 transition hover:bg-black/[0.03] dark:border-white/[0.06] dark:bg-white/[0.03] dark:hover:bg-white/[0.05]">
+      <div className="mb-2 flex items-center justify-between text-xs text-neutral-400">
+        <span className="text-[11px] font-medium">累计阅读量</span>
+        <span className="opacity-70"><IconBook /></span>
+      </div>
+      <div className="space-y-0.5 font-mono text-[11px] font-semibold text-neutral-800 dark:text-neutral-200">
+        <p>{formatReadingCount(latinWords)} <span className="font-sans font-medium text-neutral-400">英文词</span></p>
+        <p>{formatReadingCount(cjkCharacters)} <span className="font-sans font-medium text-neutral-400">中日韩字</span></p>
+      </div>
+    </div>
+  )
+}
+
+function formatReadingCount(value: number): string {
+  if (value >= 10_000) return `${(value / 10_000).toFixed(1)}万`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`
+  return String(value)
+}
+
 function HeatmapGrid({
   dailyStats,
 }: {
-  dailyStats: Record<string, { durationMinutes: number; wordsRead: number }>
+  dailyStats: Record<string, DailyReadingStats>
 }) {
   // Generate past 24 weeks (168 days)
   const WEEKS = 24
-  const days: { dateStr: string; dayOfWeek: number; minutes: number; words: number }[] = []
+  const days: {
+    dateStr: string
+    dayOfWeek: number
+    minutes: number
+    latinWords: number
+    cjkCharacters: number
+  }[] = []
   const today = new Date()
 
   // Calculate start date (Sunday 24 weeks ago)
@@ -363,7 +399,8 @@ function HeatmapGrid({
       dateStr,
       dayOfWeek: d.getDay(),
       minutes: record?.durationMinutes ?? 0,
-      words: record?.wordsRead ?? 0,
+      latinWords: record?.latinWordsRead ?? 0,
+      cjkCharacters: record?.cjkCharactersRead ?? 0,
     })
   }
 
@@ -405,8 +442,8 @@ function HeatmapGrid({
               return (
                 <div
                   key={day.dateStr}
-                  title={`${day.dateStr}: ${day.minutes} 分钟 · ${day.words} 字`}
-                  className={`h-3 w-3 rounded-xs transition-colors hover:ring-2 hover:ring-blue-500 cursor-pointer ${bg}`}
+                  title={`${day.dateStr}: ${day.minutes} 分钟 · ${day.latinWords} 词 · ${day.cjkCharacters} 字`}
+                  className={`h-3 w-3 rounded-xs transition-colors hover:ring-2 hover:ring-blue-500 ${bg}`}
                 />
               )
             })}

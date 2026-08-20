@@ -51,13 +51,13 @@ export function shouldCreditDepartedPage(
   previousCfi: string | null,
   nextCfi: string,
   dwellSeconds: number,
-  pacerPlaying: boolean,
+  pacerConsumedPage: boolean,
   layoutChangeSuppressed: boolean,
 ): boolean {
   return (
     previousCfi !== null &&
     previousCfi !== nextCfi &&
     !layoutChangeSuppressed &&
-    (dwellSeconds >= 3 || pacerPlaying)
+    (dwellSeconds >= 3 || pacerConsumedPage)
   )
 }

@@ -10,7 +10,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   pacerWpm: 250,
   pacerCpm: 300,
   pacerChunkSize: 3,
-  pacerCjkCharCount: 8,
+  pacerCjkCharCount: 4,
   dailyReadingGoalMinutes: 15,
 }
 
@@ -18,16 +18,18 @@ export default function App() {
   const view = useLibrary((s) => s.view)
   const load = useLibrary((s) => s.load)
   const [appSettings, setAppSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS)
+  const [settingsHydrated, setSettingsHydrated] = useState(false)
   const appSettingsRef = useRef(appSettings)
   const appSettingsVersionRef = useRef(0)
 
   useEffect(() => {
+    let cancelled = false
     void load()
     const loadVersion = appSettingsVersionRef.current
     void getStorage()
       .then((storage) => storage.getAppSettings())
       .then((stored) => {
-        if (appSettingsVersionRef.current !== loadVersion) return
+        if (cancelled || appSettingsVersionRef.current !== loadVersion) return
         const normalized = {
           ...DEFAULT_APP_SETTINGS,
           ...stored,
@@ -43,6 +45,12 @@ export default function App() {
         setAppSettings(normalized)
       })
       .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setSettingsHydrated(true)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [load])
 
   useEffect(() => {
@@ -82,13 +90,20 @@ export default function App() {
     }
   }, [])
 
+  if (!settingsHydrated) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-[#FBFBFA] text-xs text-neutral-400 dark:bg-[#121214]">
+        正在载入 VeloRead…
+      </div>
+    )
+  }
+
   if (view.name === 'reader') {
     return (
       <Reader
         key={view.bookId}
         bookId={view.bookId}
         appSettings={appSettings}
-        onAppSettingsChange={updateAppSettings}
       />
     )
   }

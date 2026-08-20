@@ -3,27 +3,25 @@ import type { PacerChunk } from './chunker'
 export type PacerState = 'idle' | 'playing' | 'paused'
 
 export interface PacerEngineOptions {
-  wpm?: number
   onChunkChange?: (index: number, chunk: PacerChunk | null) => void
   onStateChange?: (state: PacerState) => void
-  onPageTurnNeeded?: () => Promise<boolean>
+  onPageTurnNeeded?: (fullyConsumed: boolean) => Promise<boolean>
 }
 
 export class PacerEngine {
   private chunks: PacerChunk[] = []
   private currentIndex: number = 0
   private state: PacerState = 'idle'
-  private wpm: number = 250
   private timer: ReturnType<typeof setTimeout> | null = null
   private isTurningPage = false
+  private traversalStartedAtFirstChunk = false
   private destroyed = false
 
   private onChunkChange?: (index: number, chunk: PacerChunk | null) => void
   private onStateChange?: (state: PacerState) => void
-  private onPageTurnNeeded?: () => Promise<boolean>
+  private onPageTurnNeeded?: (fullyConsumed: boolean) => Promise<boolean>
 
   constructor(options: PacerEngineOptions = {}) {
-    this.wpm = options.wpm ?? 250
     this.onChunkChange = options.onChunkChange
     this.onStateChange = options.onStateChange
     this.onPageTurnNeeded = options.onPageTurnNeeded
@@ -48,18 +46,12 @@ export class PacerEngine {
     return this.state
   }
 
-  public getWpm(): number {
-    return this.wpm
-  }
-
-  public setWpm(wpm: number) {
-    this.wpm = Math.max(50, Math.min(1500, wpm))
-  }
-
   public setChunks(chunks: PacerChunk[], preserveIndex = false) {
     this.chunks = chunks
-    if (!preserveIndex || this.currentIndex >= chunks.length) {
+    const resetIndex = !preserveIndex || this.currentIndex >= chunks.length
+    if (resetIndex) {
       this.currentIndex = 0
+      this.traversalStartedAtFirstChunk = !preserveIndex && this.state === 'playing'
     }
     if (this.chunks.length === 0) {
       this.clearTimer()
@@ -82,6 +74,7 @@ export class PacerEngine {
     if (this.state === 'playing') return
 
     this.state = 'playing'
+    if (this.currentIndex === 0) this.traversalStartedAtFirstChunk = true
     this.onStateChange?.(this.state)
     this.onChunkChange?.(this.currentIndex, this.getCurrentChunk())
     this.scheduleNext()
@@ -104,10 +97,17 @@ export class PacerEngine {
     }
   }
 
+  public invalidatePageConsumption() {
+    this.traversalStartedAtFirstChunk = false
+  }
+
   public seek(index: number) {
     if (this.chunks.length === 0) return
     const target = Math.max(0, Math.min(this.chunks.length - 1, index))
     this.currentIndex = target
+    // Public seeks are user-driven. Returning to the first chunk restarts a
+    // truthful full-page traversal; every other jump invalidates it.
+    this.traversalStartedAtFirstChunk = target === 0
     this.onChunkChange?.(this.currentIndex, this.getCurrentChunk())
     if (this.state === 'playing') {
       this.scheduleNext()
@@ -118,6 +118,7 @@ export class PacerEngine {
     if (this.currentIndex < this.chunks.length - 1) {
       this.seek(this.currentIndex + 1)
     } else if (this.onPageTurnNeeded && !this.isTurningPage) {
+      this.traversalStartedAtFirstChunk = false
       void this.handlePageEnd()
     }
   }
@@ -155,7 +156,9 @@ export class PacerEngine {
 
     try {
       if (this.onPageTurnNeeded) {
-        const hasNextPage = await this.onPageTurnNeeded()
+        const fullyConsumed = this.traversalStartedAtFirstChunk
+        this.traversalStartedAtFirstChunk = false
+        const hasNextPage = await this.onPageTurnNeeded(fullyConsumed)
         if (!hasNextPage && this.state === 'playing') {
           this.pause()
         }

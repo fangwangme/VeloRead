@@ -13,7 +13,7 @@ import { compareBooks } from '../sort'
 import { calculateCurrentStreak } from '../../stats/tracking'
 
 const DB_NAME = 'veloread'
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 const BOOKS = 'books'
 const FILES = 'files'
@@ -44,11 +44,21 @@ function done(tx: IDBTransaction): Promise<void> {
   })
 }
 
-function open(): Promise<IDBDatabase> {
+function open(databaseName: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION)
-    req.onupgradeneeded = () => {
+    const req = indexedDB.open(databaseName, DB_VERSION)
+    req.onupgradeneeded = (event) => {
       const db = req.result
+
+      // This schema has not shipped. Mixed legacy reading counts cannot be
+      // labelled honestly as either words or CJK characters, and the old
+      // per-book settings do not contain the two language profiles. Reset only
+      // those development stores; books, files, covers, and progress survive.
+      if (event.oldVersion > 0 && event.oldVersion < DB_VERSION) {
+        if (db.objectStoreNames.contains(BOOK_SETTINGS)) db.deleteObjectStore(BOOK_SETTINGS)
+        if (db.objectStoreNames.contains(READING_SESSIONS)) db.deleteObjectStore(READING_SESSIONS)
+      }
+
       if (!db.objectStoreNames.contains(BOOKS)) db.createObjectStore(BOOKS, { keyPath: 'id' })
       if (!db.objectStoreNames.contains(FILES)) db.createObjectStore(FILES)
       if (!db.objectStoreNames.contains(COVERS)) db.createObjectStore(COVERS)
@@ -64,6 +74,7 @@ function open(): Promise<IDBDatabase> {
         sessionsStore.createIndex('by_date', 'date', { unique: false })
         sessionsStore.createIndex('by_bookId', 'bookId', { unique: false })
       }
+
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error ?? new Error('Failed to open IndexedDB'))
@@ -73,7 +84,7 @@ function open(): Promise<IDBDatabase> {
 /**
  * Browser implementation of `StoragePort`, backed by IndexedDB.
  */
-export function createWebStorage(): StoragePort {
+export function createWebStorage(databaseName = DB_NAME): StoragePort {
   let db: IDBDatabase | null = null
 
   function handle(): IDBDatabase {
@@ -83,7 +94,7 @@ export function createWebStorage(): StoragePort {
 
   return {
     async init() {
-      if (!db) db = await open()
+      if (!db) db = await open(databaseName)
     },
 
     async listBooks() {
@@ -222,7 +233,8 @@ export function createWebStorage(): StoragePort {
         store.put({
           ...existing,
           durationSeconds: existing.durationSeconds + session.durationSeconds,
-          wordsRead: existing.wordsRead + session.wordsRead,
+          latinWordsRead: (existing.latinWordsRead ?? 0) + session.latinWordsRead,
+          cjkCharactersRead: (existing.cjkCharactersRead ?? 0) + session.cjkCharactersRead,
           updatedAt: session.updatedAt,
         })
       } else {
@@ -236,32 +248,38 @@ export function createWebStorage(): StoragePort {
       const sessions = await request<ReadingSession[]>(tx.objectStore(READING_SESSIONS).getAll())
 
       const dailySeconds: Record<string, number> = {}
-      const dailyWords: Record<string, number> = {}
+      const dailyLatinWords: Record<string, number> = {}
+      const dailyCjkCharacters: Record<string, number> = {}
       let totalDurationSeconds = 0
-      let totalWordsRead = 0
+      let totalLatinWordsRead = 0
+      let totalCjkCharactersRead = 0
       const distinctBooks = new Set<string>()
 
       for (const s of sessions) {
         totalDurationSeconds += s.durationSeconds
-        totalWordsRead += s.wordsRead
+        totalLatinWordsRead += s.latinWordsRead
+        totalCjkCharactersRead += s.cjkCharactersRead
         distinctBooks.add(s.bookId)
 
         dailySeconds[s.date] = (dailySeconds[s.date] ?? 0) + s.durationSeconds
-        dailyWords[s.date] = (dailyWords[s.date] ?? 0) + s.wordsRead
+        dailyLatinWords[s.date] = (dailyLatinWords[s.date] ?? 0) + s.latinWordsRead
+        dailyCjkCharacters[s.date] = (dailyCjkCharacters[s.date] ?? 0) + s.cjkCharactersRead
       }
 
-      const dailyStats: Record<string, { durationMinutes: number; wordsRead: number }> = {}
+      const dailyStats: OverallReadingStats['dailyStats'] = {}
       for (const date of Object.keys(dailySeconds)) {
         const secs = dailySeconds[date]
         dailyStats[date] = {
           durationMinutes: roundedMinutes(secs),
-          wordsRead: dailyWords[date] ?? 0,
+          latinWordsRead: dailyLatinWords[date] ?? 0,
+          cjkCharactersRead: dailyCjkCharacters[date] ?? 0,
         }
       }
 
       return {
         totalDurationMinutes: roundedMinutes(totalDurationSeconds),
-        totalWordsRead,
+        totalLatinWordsRead,
+        totalCjkCharactersRead,
         totalBooksRead: distinctBooks.size,
         currentStreakDays: calculateCurrentStreak(dailyStats),
         dailyStats,

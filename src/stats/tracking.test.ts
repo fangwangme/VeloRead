@@ -23,12 +23,17 @@ describe('reading activity tracking', () => {
     expect(shouldAccumulateReading({ ...active, panelOpen: true })).toBe(false)
   })
 
-  it('credits words only when leaving a distinct, genuinely read page', () => {
+  it('credits units only when leaving a distinct, genuinely read page', () => {
     expect(shouldCreditDepartedPage(null, 'cfi-1', 10, false, false)).toBe(false)
     expect(shouldCreditDepartedPage('cfi-1', 'cfi-1', 10, false, false)).toBe(false)
     expect(shouldCreditDepartedPage('cfi-1', 'cfi-2', 2, false, false)).toBe(false)
     expect(shouldCreditDepartedPage('cfi-1', 'cfi-2', 10, false, true)).toBe(false)
     expect(shouldCreditDepartedPage('cfi-1', 'cfi-2', 3, false, false)).toBe(true)
+    expect(shouldCreditDepartedPage('cfi-1', 'cfi-2', 0, true, false)).toBe(true)
+  })
+
+  it('credits a fully consumed Pacer page but not a partial sub-three-second page', () => {
+    expect(shouldCreditDepartedPage('cfi-1', 'cfi-2', 0, false, false)).toBe(false)
     expect(shouldCreditDepartedPage('cfi-1', 'cfi-2', 0, true, false)).toBe(true)
   })
 

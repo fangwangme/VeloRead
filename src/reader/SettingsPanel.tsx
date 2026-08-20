@@ -149,7 +149,7 @@ export function SettingsPanel({
             <select
               value={currentFont}
               onChange={(e) => onOverridesChange({ ...overrides, fontStack: e.target.value })}
-              className="w-full appearance-none rounded-xl border border-black/[0.08] bg-black/[0.03] px-3.5 py-2 text-xs text-neutral-800 transition focus:border-blue-500 focus:outline-none dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-neutral-200 cursor-pointer pr-8"
+              className="w-full cursor-pointer appearance-none rounded-xl border border-black/[0.08] bg-black/[0.03] px-3.5 py-2 pr-8 text-xs text-neutral-800 transition focus-visible:border-blue-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-neutral-200"
             >
               {FONT_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>

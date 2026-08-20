@@ -73,7 +73,7 @@ PDF 是**独立的一条轨**，功能对等性天然打折。详见 [reading-fo
 | --- | --- |
 | **Locator** | 格式无关的位置标识。EPUB 用 CFI，TXT 用字符偏移，PDF 用页码+偏移。见 [reading-formats](reading-formats.md) |
 | **CFI** | EPUB Canonical Fragment Identifier，EPUB 内部的精确位置锚点 |
-| **注视块（fixation chunk）** | Pacer 一次高亮的词组，默认 3 词，约等于人眼一次注视的跨度 |
+| **注视块（fixation chunk）** | Pacer 一次高亮的阅读单位组；英文默认 3 词，CJK 默认 4 个字素 |
 | **风格（Style）** | 一整套成品排版：配色 + 字体 + 字号 + 行距 + 版心，选中即整组套用 |
 | **版心（measure）** | 正文每行的宽度，以字符数计（目标 45–75） |
 | **摘抄（clipping）** | 与 Kindle `My Clippings.txt` 对齐的一条划线/笔记/书签记录 |

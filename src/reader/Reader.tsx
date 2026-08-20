@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getStorage } from '../platform'
 import type {
   AppSettings,
@@ -18,6 +18,11 @@ import { Toc } from './Toc'
 import { PositionInfo } from './PositionInfo'
 import { Overlay } from './pacer/Overlay'
 import { usePacer } from './pacer/usePacer'
+import {
+  countReadingUnits,
+  type PacerUnitKind,
+  type ReadingUnitCounts,
+} from './pacer/chunker'
 import {
   localDateKey,
   shouldAccumulateReading,
@@ -41,11 +46,9 @@ const MAX_PAGE_DWELL_SECONDS = 300 // Max 5 minutes per page to prevent idle tra
 export function Reader({
   bookId,
   appSettings,
-  onAppSettingsChange,
 }: {
   bookId: string
   appSettings: AppSettings
-  onAppSettingsChange: (changes: Partial<AppSettings>) => Promise<void>
 }) {
   const closeBook = useLibrary((s) => s.closeBook)
   const book = useLibrary((s) => s.books.find((candidate) => candidate.id === bookId))
@@ -54,6 +57,8 @@ export function Reader({
   const containerRef = useRef<HTMLDivElement>(null)
   const handleRef = useRef<ReaderHandle | null>(null)
   const initialAppSettingsRef = useRef(appSettings)
+  const bookSettingsRef = useRef<BookSettings | null>(null)
+  const bookSettingsWriteRef = useRef<Promise<void>>(Promise.resolve())
   const [handle, setHandle] = useState<ReaderHandle | null>(null)
 
   const [ready, setReady] = useState(false)
@@ -80,21 +85,38 @@ export function Reader({
   const [jumpOrigin, setJumpOrigin] = useState<string | null>(null)
 
   // Pacer state
-  const [pacerWpm, setPacerWpm] = useState(250)
-  const [pacerCpm, setPacerCpm] = useState(300)
-  const [pacerChunkSize, setPacerChunkSize] = useState(3)
-  const [pacerCjkChunkSize, setPacerCjkChunkSize] = useState(8)
+  const [pacerWpm, setPacerWpm] = useState(appSettings.pacerWpm ?? 250)
+  const [pacerCpm, setPacerCpm] = useState(appSettings.pacerCpm ?? 300)
+  const [pacerChunkSize, setPacerChunkSize] = useState(appSettings.pacerChunkSize ?? 3)
+  const [pacerCjkChunkSize, setPacerCjkChunkSize] = useState(appSettings.pacerCjkCharCount ?? 4)
+  const [hasPacerOverride, setHasPacerOverride] = useState(false)
   const [showPacerControls, setShowPacerControls] = useState(false)
 
   // Active reading tracking refs
   const pageDwellSecondsRef = useRef(0)
   const sessionBufferSecondsRef = useRef(0)
-  const sessionBufferWordsRef = useRef(0)
-  const currentPageWordsRef = useRef(0)
+  const sessionBufferLatinWordsRef = useRef(0)
+  const sessionBufferCjkCharactersRef = useRef(0)
+  const currentPageCountsRef = useRef<ReadingUnitCounts>({ latinWords: 0, cjkCharacters: 0 })
   const currentPageCfiRef = useRef<string | null>(null)
-  const layoutChangeSuppressedUntilRef = useRef(0)
+  const pagePacerConsumedRef = useRef(false)
+  const layoutChangeSuppressedRef = useRef(false)
+  const layoutSuppressionVersionRef = useRef(0)
+  const layoutSuppressionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const readerTrackableRef = useRef(false)
   const sessionFlushInFlightRef = useRef<Promise<void> | null>(null)
+
+  const suppressLayoutTracking = useCallback(() => {
+    const version = layoutSuppressionVersionRef.current + 1
+    layoutSuppressionVersionRef.current = version
+    layoutChangeSuppressedRef.current = true
+    if (layoutSuppressionTimerRef.current) clearTimeout(layoutSuppressionTimerRef.current)
+    layoutSuppressionTimerRef.current = setTimeout(() => {
+      if (layoutSuppressionVersionRef.current === version) {
+        layoutChangeSuppressedRef.current = false
+      }
+    }, 750)
+  }, [])
 
   // System dark detection
   const [systemDark, setSystemDark] = useState(() =>
@@ -119,21 +141,41 @@ export function Reader({
     return resolveStyle(base, overrides, isEffectiveDark)
   }, [styleId, overrides, isEffectiveDark])
 
-  const pacerUsesCjkUnits =
-    Boolean(resolvedStyle.body.isCjk) || /^(zh|ja|ko)/i.test(bookLanguage ?? '')
-  const pacerSpeed = pacerUsesCjkUnits ? pacerCpm : pacerWpm
-  const activePacerChunkSize = pacerUsesCjkUnits ? pacerCjkChunkSize : pacerChunkSize
-  const pacerUnit = pacerUsesCjkUnits ? '字/分钟' : 'wpm'
+  const defaultPacerUnit: PacerUnitKind = /^(zh|ja|ko)/i.test(bookLanguage ?? '')
+    ? 'cjk'
+    : 'latin'
 
   // Pacer hook
   const pacer = usePacer({
     readerHandle: handle,
     containerRef,
-    wpm: pacerSpeed,
-    chunkSize: pacerChunkSize,
+    latinWpm: pacerWpm,
+    cjkCpm: pacerCpm,
+    latinChunkSize: pacerChunkSize,
     cjkChunkSize: pacerCjkChunkSize,
+    defaultUnit: defaultPacerUnit,
+    onPageConsumed: () => {
+      pagePacerConsumedRef.current = true
+    },
+    canAdvancePage: () =>
+      readerTrackableRef.current &&
+      document.visibilityState === 'visible' &&
+      document.hasFocus() &&
+      !showSettingsRef.current &&
+      !showTocRef.current,
+    canCreditPage: () =>
+      readerTrackableRef.current &&
+      document.visibilityState === 'visible' &&
+      document.hasFocus() &&
+      !showSettingsRef.current &&
+      !showTocRef.current &&
+      !showPacerControlsRef.current,
     accentColor: resolvedStyle.palette.accent,
   })
+  const pacerUsesCjkUnits = pacer.dominantUnit === 'cjk'
+  const pacerSpeed = pacerUsesCjkUnits ? pacerCpm : pacerWpm
+  const activePacerChunkSize = pacerUsesCjkUnits ? pacerCjkChunkSize : pacerChunkSize
+  const pacerUnit = pacerUsesCjkUnits ? '字/分钟' : 'wpm'
 
   const pacerRef = useRef(pacer)
   const showSettingsRef = useRef(showSettings)
@@ -147,6 +189,31 @@ export function Reader({
     showTocRef.current = showToc
     showPacerControlsRef.current = showPacerControls
   })
+
+  const blockingReaderPanelOpen = showSettings || showToc
+  const readerControlsDisabled = !ready || blockingReaderPanelOpen
+  const pageNavigationDisabled = readerControlsDisabled || pacer.isPlaying
+  const pausePacer = pacer.pause
+
+  // Pacer must never keep consuming text behind a panel or while the app is
+  // hidden/unfocused. Resuming remains an explicit user action.
+  useEffect(() => {
+    if (blockingReaderPanelOpen) pausePacer()
+  }, [blockingReaderPanelOpen, pausePacer])
+
+  useEffect(() => {
+    const pauseWhenInactive = () => {
+      if (document.visibilityState === 'hidden' || !document.hasFocus()) {
+        pacerRef.current.pause()
+      }
+    }
+    document.addEventListener('visibilitychange', pauseWhenInactive)
+    window.addEventListener('blur', pauseWhenInactive)
+    return () => {
+      document.removeEventListener('visibilitychange', pauseWhenInactive)
+      window.removeEventListener('blur', pauseWhenInactive)
+    }
+  }, [])
 
   // Dismiss Pacer settings on click outside
   useEffect(() => {
@@ -205,12 +272,18 @@ export function Reader({
   // Flush reading session buffer to storage
   const flushReadingSession = async () => {
     if (sessionFlushInFlightRef.current) {
-      await sessionFlushInFlightRef.current
+      try {
+        await sessionFlushInFlightRef.current
+      } catch {
+        // The failed snapshot stays buffered. Continue below so a concurrent
+        // cleanup flush can retry it together with any newly credited page.
+      }
     }
 
     const duration = sessionBufferSecondsRef.current
-    const words = sessionBufferWordsRef.current
-    if (duration <= 0 && words <= 0) return
+    const latinWords = sessionBufferLatinWordsRef.current
+    const cjkCharacters = sessionBufferCjkCharactersRef.current
+    if (duration <= 0 && latinWords <= 0 && cjkCharacters <= 0) return
 
     const now = new Date()
     const todayStr = localDateKey(now)
@@ -219,21 +292,29 @@ export function Reader({
       bookId,
       date: todayStr,
       durationSeconds: duration,
-      wordsRead: words,
+      latinWordsRead: latinWords,
+      cjkCharactersRead: cjkCharacters,
       updatedAt: now.toISOString(),
     }
 
     const task = (async () => {
       const storage = await getStorage()
       await storage.recordReadingSession(session)
-      // Seconds and words may continue accumulating while storage is writing.
+      // Time and units may continue accumulating while storage is writing.
       // Subtract only the successfully persisted snapshot so those increments
       // remain buffered, and preserve everything when persistence fails.
       sessionBufferSecondsRef.current = Math.max(
         0,
         sessionBufferSecondsRef.current - duration,
       )
-      sessionBufferWordsRef.current = Math.max(0, sessionBufferWordsRef.current - words)
+      sessionBufferLatinWordsRef.current = Math.max(
+        0,
+        sessionBufferLatinWordsRef.current - latinWords,
+      )
+      sessionBufferCjkCharactersRef.current = Math.max(
+        0,
+        sessionBufferCjkCharactersRef.current - cjkCharacters,
+      )
     })()
     sessionFlushInFlightRef.current = task
 
@@ -262,7 +343,7 @@ export function Reader({
           hasError: Boolean(error),
           visibilityState: document.visibilityState,
           windowFocused: document.hasFocus(),
-          panelOpen: showSettings || showToc,
+          panelOpen: showSettings || showToc || showPacerControls,
         })
       ) {
         return
@@ -299,7 +380,7 @@ export function Reader({
       window.removeEventListener('beforeunload', onBeforeUnload)
       void flushReadingSessionRef.current()
     }
-  }, [bookId, error, showSettings, showToc])
+  }, [bookId, error, showSettings, showToc, showPacerControls])
 
   // Main reader lifecycle
   useEffect(() => {
@@ -311,7 +392,8 @@ export function Reader({
 
     readerTrackableRef.current = false
     currentPageCfiRef.current = null
-    currentPageWordsRef.current = 0
+    currentPageCountsRef.current = { latinWords: 0, cjkCharacters: 0 }
+    pagePacerConsumedRef.current = false
     pageDwellSecondsRef.current = 0
 
     async function flush() {
@@ -338,15 +420,28 @@ export function Reader({
     function onKeyDown(event: KeyboardEvent) {
       pingActivity()
 
+      const target = event.target instanceof Element ? event.target : null
+      const isInteractiveTarget = Boolean(
+        target?.closest('input, textarea, select, button, a, [contenteditable="true"]'),
+      )
+      if (isInteractiveTarget && event.key !== 'Escape') return
+
+      const blockingPanelOpen = showSettingsRef.current || showTocRef.current
+
       // Space: toggle Pacer (prevent scroll)
       if (event.code === 'Space' || event.key === ' ') {
         event.preventDefault()
-        pacerRef.current.toggle()
+        if (blockingPanelOpen || !readerTrackableRef.current) {
+          pacerRef.current.pause()
+        } else {
+          pacerRef.current.toggle()
+        }
         return
       }
 
       if (event.key === 'ArrowRight' || event.key === 'PageDown') {
         event.preventDefault()
+        if (blockingPanelOpen) return
         if (pacerRef.current.isPlaying) {
           pacerRef.current.nextChunk()
         } else {
@@ -354,6 +449,7 @@ export function Reader({
         }
       } else if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
         event.preventDefault()
+        if (blockingPanelOpen) return
         if (pacerRef.current.isPlaying) {
           pacerRef.current.prevChunk()
         } else {
@@ -372,11 +468,15 @@ export function Reader({
         }
       } else if (event.key === 't' || event.key === 'T') {
         if (!showSettingsRef.current) {
+          pacerRef.current.pause()
           setShowToc((v) => !v)
+          setShowPacerControls(false)
         }
       } else if (event.key === 'a' || event.key === 'A') {
         if (!showTocRef.current) {
+          pacerRef.current.pause()
           setShowSettings((v) => !v)
+          setShowPacerControls(false)
         }
       }
     }
@@ -404,16 +504,42 @@ export function Reader({
         const initialStyleId: StyleId = (rawStyleId && PRESETS[rawStyleId as StyleId] ? rawStyleId as StyleId : undefined) ?? (isChinese ? 'song' : 'book')
         const initialOverrides: StyleOverride = savedSettings?.overrides ?? {}
         const initialFlow = savedSettings?.flow ?? 'paginated'
+        const initialAppSettings = initialAppSettingsRef.current
+        const initialPacerWpm = savedSettings?.pacerWpm ?? initialAppSettings.pacerWpm ?? 250
+        const initialPacerCpm = savedSettings?.pacerCpm ?? initialAppSettings.pacerCpm ?? 300
+        const initialPacerChunkSize =
+          savedSettings?.pacerChunkSize ?? initialAppSettings.pacerChunkSize ?? 3
+        const initialPacerCjkChunkSize =
+          savedSettings?.pacerCjkCharCount ?? initialAppSettings.pacerCjkCharCount ?? 4
+        const hasSavedPacerOverride = Boolean(
+          savedSettings &&
+          (savedSettings.pacerWpm !== undefined ||
+            savedSettings.pacerCpm !== undefined ||
+            savedSettings.pacerChunkSize !== undefined ||
+            savedSettings.pacerCjkCharCount !== undefined),
+        )
+
+        bookSettingsRef.current = {
+          bookId,
+          styleId: initialStyleId,
+          overrides: initialOverrides,
+          flow: initialFlow,
+          pacerWpm: savedSettings?.pacerWpm,
+          pacerCpm: savedSettings?.pacerCpm,
+          pacerChunkSize: savedSettings?.pacerChunkSize,
+          pacerCjkCharCount: savedSettings?.pacerCjkCharCount,
+          updatedAt: savedSettings?.updatedAt ?? new Date().toISOString(),
+        }
 
         setStyleId(initialStyleId)
         setOverrides(initialOverrides)
         setFlow(initialFlow)
         setBookmarks(savedBookmarks)
-        const initialAppSettings = initialAppSettingsRef.current
-        if (initialAppSettings.pacerWpm) setPacerWpm(initialAppSettings.pacerWpm)
-        if (initialAppSettings.pacerCpm) setPacerCpm(initialAppSettings.pacerCpm)
-        if (initialAppSettings.pacerChunkSize) setPacerChunkSize(initialAppSettings.pacerChunkSize)
-        if (initialAppSettings.pacerCjkCharCount) setPacerCjkChunkSize(initialAppSettings.pacerCjkCharCount)
+        setPacerWpm(initialPacerWpm)
+        setPacerCpm(initialPacerCpm)
+        setPacerChunkSize(initialPacerChunkSize)
+        setPacerCjkChunkSize(initialPacerCjkChunkSize)
+        setHasPacerOverride(hasSavedPacerOverride)
 
         lastKnownPercentage = savedProgress?.percentage ?? null
         setPercentage(lastKnownPercentage)
@@ -433,9 +559,19 @@ export function Reader({
           onKeyDown,
           onClickText({ range }) {
             pingActivity()
+            const panelWasOpen =
+              showPacerControlsRef.current || showSettingsRef.current || showTocRef.current
             setShowPacerControls(false)
             setShowSettings(false)
-            if (range) pacerRef.current.seekToRange(range, true)
+            setShowToc(false)
+            if (range && !panelWasOpen) pacerRef.current.seekToRange(range, true)
+          },
+          onLinkClick() {
+            pingActivity()
+            pacerRef.current.pause()
+            setShowPacerControls(false)
+            setShowSettings(false)
+            setShowToc(false)
           },
           onLocation(loc) {
             if (cancelled) return
@@ -456,27 +592,30 @@ export function Reader({
             const previousCfi = currentPageCfiRef.current
             const locationChanged = previousCfi !== loc.cfi
             if (locationChanged) {
-              const layoutChangeSuppressed = Date.now() < layoutChangeSuppressedUntilRef.current
+              const layoutChangeSuppressed = layoutChangeSuppressedRef.current
               if (
                 shouldCreditDepartedPage(
                   previousCfi,
                   loc.cfi,
                   pageDwellSecondsRef.current,
-                  pacerRef.current.isPlaying,
+                  pagePacerConsumedRef.current,
                   layoutChangeSuppressed,
-                ) && currentPageWordsRef.current > 0
+                )
               ) {
-                sessionBufferWordsRef.current += currentPageWordsRef.current
+                sessionBufferLatinWordsRef.current += currentPageCountsRef.current.latinWords
+                sessionBufferCjkCharactersRef.current +=
+                  currentPageCountsRef.current.cjkCharacters
               }
 
               currentPageCfiRef.current = loc.cfi
+              pagePacerConsumedRef.current = false
               pageDwellSecondsRef.current = 0
             }
 
             // Measure visible words on the newly rendered page
             setTimeout(() => {
               if (reader && locationChanged) {
-                currentPageWordsRef.current = reader.getViewportWords().length
+                currentPageCountsRef.current = countReadingUnits(reader.getViewportWords())
               }
               if (!pacerRef.current.isPlaying) {
                 pacerRef.current.recalculateGeometry(false)
@@ -512,17 +651,17 @@ export function Reader({
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('mousemove', pingActivity)
       if (hideChromeTimerRef.current) clearTimeout(hideChromeTimerRef.current)
+      if (layoutSuppressionTimerRef.current) clearTimeout(layoutSuppressionTimerRef.current)
 
       // Credit the final visible page only when a real page was rendered and
       // the close was not caused by a layout-only relocation.
       if (
         currentPageCfiRef.current &&
-        Date.now() >= layoutChangeSuppressedUntilRef.current &&
-        (pageDwellSecondsRef.current >= 3 || pacerRef.current.isPlaying)
+        !layoutChangeSuppressedRef.current &&
+        (pageDwellSecondsRef.current >= 3 || pagePacerConsumedRef.current)
       ) {
-        if (currentPageWordsRef.current > 0) {
-          sessionBufferWordsRef.current += currentPageWordsRef.current
-        }
+        sessionBufferLatinWordsRef.current += currentPageCountsRef.current.latinWords
+        sessionBufferCjkCharactersRef.current += currentPageCountsRef.current.cjkCharacters
       }
 
       void flushAndRefreshShelf()
@@ -535,38 +674,39 @@ export function Reader({
   // Apply style updates
   useEffect(() => {
     if (handleRef.current && ready) {
-      layoutChangeSuppressedUntilRef.current = Date.now() + 750
+      suppressLayoutTracking()
       handleRef.current.applyStyle(resolvedStyle)
       setTimeout(() => {
         pacerRef.current.recalculateGeometry()
       }, 50)
     }
-  }, [resolvedStyle, ready])
+  }, [resolvedStyle, ready, suppressLayoutTracking])
 
-  // Save book settings changes
-  const saveCurrentSettings = async (
-    newStyleId: StyleId,
-    newOverrides: StyleOverride,
-    newFlow: 'paginated' | 'scrolled-doc',
-  ) => {
-    try {
-      const storage = await getStorage()
-      const bookSettings: BookSettings = {
-        bookId,
-        styleId: newStyleId,
-        overrides: newOverrides,
-        flow: newFlow,
-        updatedAt: new Date().toISOString(),
-      }
-      await storage.saveBookSettings(bookSettings)
-    } catch {
-      // Non-fatal
+  // Serialize full-record book settings writes so rapid controls cannot
+  // overwrite a neighboring key with stale React state.
+  const saveCurrentSettings = (changes: Partial<BookSettings>) => {
+    const current = bookSettingsRef.current
+    if (!current) return
+    const next: BookSettings = {
+      ...current,
+      ...changes,
+      bookId,
+      updatedAt: new Date().toISOString(),
     }
+    bookSettingsRef.current = next
+    const write = bookSettingsWriteRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const storage = await getStorage()
+        await storage.saveBookSettings(next)
+      })
+    bookSettingsWriteRef.current = write
+    void write.catch(() => undefined)
   }
 
   const handleStyleSelect = (id: StyleId) => {
     setStyleId(id)
-    void saveCurrentSettings(id, overrides, flow)
+    saveCurrentSettings({ styleId: id })
   }
 
   const handleOverridesChange = (newOverrides: StyleOverride) => {
@@ -574,24 +714,24 @@ export function Reader({
     const nextSpread = newOverrides.spreadMode ?? 'auto'
     setOverrides(newOverrides)
     if (prevSpread !== nextSpread && handleRef.current) {
-      layoutChangeSuppressedUntilRef.current = Date.now() + 750
+      suppressLayoutTracking()
       void handleRef.current.setSpread(nextSpread).then(() => {
         setTimeout(() => {
           pacerRef.current.recalculateGeometry(false)
         }, 80)
       })
     }
-    void saveCurrentSettings(styleId, newOverrides, flow)
+    saveCurrentSettings({ overrides: newOverrides })
   }
 
   const handleFlowChange = async (newFlow: 'paginated' | 'scrolled-doc') => {
     setFlow(newFlow)
     if (handleRef.current) {
-      layoutChangeSuppressedUntilRef.current = Date.now() + 750
+      suppressLayoutTracking()
       await handleRef.current.setFlow(newFlow)
       pacer.recalculateGeometry()
     }
-    void saveCurrentSettings(styleId, overrides, newFlow)
+    saveCurrentSettings({ flow: newFlow })
   }
 
   const handleNavigate = (target: string) => {
@@ -654,7 +794,7 @@ export function Reader({
         if (width === 0 || height === 0) return
         if (width === applied.width && height === applied.height) return
         applied = { width, height }
-        layoutChangeSuppressedUntilRef.current = Date.now() + 750
+        suppressLayoutTracking()
         handleRef.current?.resize(width, height)
         pacerRef.current.recalculateGeometry()
       }, RESIZE_DEBOUNCE_MS)
@@ -665,27 +805,46 @@ export function Reader({
       clearTimeout(timer)
       observer.disconnect()
     }
-  }, [])
+  }, [suppressLayoutTracking])
 
   const updatePacerSpeed = (value: number) => {
-    const next = Math.max(100, Math.min(1000, value))
+    const maxRate = pacerUsesCjkUnits || activePacerChunkSize > 1 ? 1000 : 600
+    const next = Math.max(100, Math.min(maxRate, value))
     if (pacerUsesCjkUnits) {
       setPacerCpm(next)
-      void onAppSettingsChange({ pacerCpm: next }).catch(() => undefined)
+      saveCurrentSettings({ pacerCpm: next })
     } else {
       setPacerWpm(next)
-      void onAppSettingsChange({ pacerWpm: next }).catch(() => undefined)
+      saveCurrentSettings({ pacerWpm: next })
     }
+    setHasPacerOverride(true)
   }
 
   const updatePacerChunkSize = (value: number) => {
     if (pacerUsesCjkUnits) {
       setPacerCjkChunkSize(value)
-      void onAppSettingsChange({ pacerCjkCharCount: value }).catch(() => undefined)
+      saveCurrentSettings({ pacerCjkCharCount: value })
     } else {
+      const nextWpm = value === 1 && pacerWpm > 600 ? 600 : pacerWpm
       setPacerChunkSize(value)
-      void onAppSettingsChange({ pacerChunkSize: value }).catch(() => undefined)
+      if (nextWpm !== pacerWpm) setPacerWpm(nextWpm)
+      saveCurrentSettings({ pacerWpm: nextWpm, pacerChunkSize: value })
     }
+    setHasPacerOverride(true)
+  }
+
+  const resetPacerToAppDefaults = () => {
+    setPacerWpm(appSettings.pacerWpm ?? 250)
+    setPacerCpm(appSettings.pacerCpm ?? 300)
+    setPacerChunkSize(appSettings.pacerChunkSize ?? 3)
+    setPacerCjkChunkSize(appSettings.pacerCjkCharCount ?? 4)
+    setHasPacerOverride(false)
+    saveCurrentSettings({
+      pacerWpm: undefined,
+      pacerCpm: undefined,
+      pacerChunkSize: undefined,
+      pacerCjkCharCount: undefined,
+    })
   }
 
   const pacerSpeedTiers = pacerUsesCjkUnits
@@ -702,7 +861,8 @@ export function Reader({
         { label: '极速', wpm: 600, sub: '600 wpm' },
       ]
 
-  const pacerChunkOptions = pacerUsesCjkUnits ? [4, 6, 8, 10, 12] : [1, 2, 3, 4, 5]
+  const pacerChunkOptions = pacerUsesCjkUnits ? [2, 4, 6, 8, 10] : [1, 2, 3, 4, 5]
+  const pacerMaxRate = pacerUsesCjkUnits || activePacerChunkSize > 1 ? 1000 : 600
 
   return (
     <div
@@ -715,7 +875,7 @@ export function Reader({
     >
       {/* Top Header Bar with Apple Books floating glass aesthetic & Auto-hide */}
       <header
-        className={`fixed top-0 inset-x-0 z-30 flex items-center justify-between gap-4 px-6 pt-5 pb-3 transition-all duration-300 ${
+        className={`fixed top-0 inset-x-0 z-30 flex items-center justify-between gap-4 px-6 pt-5 pb-3 transition-[opacity,transform] duration-300 motion-reduce:transition-none ${
           chromeVisible
             ? 'opacity-100 translate-y-0 pointer-events-auto'
             : 'opacity-0 -translate-y-4 pointer-events-none'
@@ -741,9 +901,13 @@ export function Reader({
                 : 'border-black/10 bg-white/60 hover:bg-white hover:border-black/20 dark:border-white/10 dark:bg-black/40 dark:hover:bg-black/70'
             }`}
             onClick={() => {
+              pacer.pause()
               setShowToc((v) => !v)
+              setShowSettings(false)
+              setShowPacerControls(false)
               setChromeVisible(true)
             }}
+            disabled={!ready}
             title="目录与书签 (T)"
           >
             <IconToc className="opacity-70" />
@@ -765,8 +929,9 @@ export function Reader({
             <button
               type="button"
               onClick={handleJumpBack}
+              disabled={!ready || pacer.isPlaying}
               className="flex items-center gap-1.5 rounded-full bg-blue-500/15 px-3 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-500/25 transition active:scale-95 shadow-xs backdrop-blur-md"
-              title="返回跳转前的位置"
+              title={pacer.isPlaying ? '请先暂停自动阅读' : '返回跳转前的位置'}
             >
               <IconReturn />
               <span className="hidden sm:inline">返回原位</span>
@@ -782,10 +947,13 @@ export function Reader({
                 : 'border-black/10 bg-white/60 hover:bg-white hover:border-black/20 dark:border-white/10 dark:bg-black/40 dark:hover:bg-black/70'
             }`}
             onClick={() => {
+              pacer.pause()
               setShowSettings((v) => !v)
+              setShowToc(false)
               setShowPacerControls(false)
               setChromeVisible(true)
             }}
+            disabled={!ready}
             title="排版与显示设置 (A)"
           >
             Aa
@@ -797,6 +965,7 @@ export function Reader({
             <button
               type="button"
               onClick={pacer.toggle}
+              disabled={readerControlsDisabled}
               className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition active:scale-95 ${
                 pacer.isPlaying
                   ? 'bg-amber-600 text-white shadow-xs'
@@ -813,10 +982,13 @@ export function Reader({
               type="button"
               data-pacer-toggle="true"
               onClick={() => {
+                if (!showPacerControls) pacer.invalidatePageConsumption()
                 setShowPacerControls((v) => !v)
                 setShowSettings(false)
+                setShowToc(false)
                 setChromeVisible(true)
               }}
+              disabled={!ready}
               className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-mono font-medium transition ${
                 showPacerControls
                   ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/80 dark:text-blue-400 font-semibold'
@@ -838,12 +1010,12 @@ export function Reader({
         {/* Click zones for page turns (Apple Books side tap) */}
         <div
           aria-hidden="true"
-          className="absolute inset-y-0 left-0 w-1/8 z-10 cursor-w-resize"
+          className={`absolute inset-y-0 left-0 w-1/8 z-10 cursor-w-resize ${pageNavigationDisabled ? 'pointer-events-none' : ''}`}
           onClick={() => void handleRef.current?.prev()}
         />
         <div
           aria-hidden="true"
-          className="absolute inset-y-0 right-0 w-1/8 z-10 cursor-e-resize"
+          className={`absolute inset-y-0 right-0 w-1/8 z-10 cursor-e-resize ${pageNavigationDisabled ? 'pointer-events-none' : ''}`}
           onClick={() => void handleRef.current?.next()}
         />
 
@@ -885,7 +1057,7 @@ export function Reader({
 
       {/* Bottom Floating Control & Page Turn Bar (Minimal, Apple Books style) */}
       <footer
-        className={`fixed bottom-6 inset-x-0 z-30 flex items-center justify-between px-8 pointer-events-none transition-all duration-300 ${
+        className={`fixed bottom-6 inset-x-0 z-30 flex items-center justify-between px-8 pointer-events-none transition-[opacity,transform] duration-300 motion-reduce:transition-none ${
           chromeVisible
             ? 'opacity-100 translate-y-0'
             : 'opacity-0 translate-y-3'
@@ -896,7 +1068,9 @@ export function Reader({
             type="button"
             className="flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.08)] backdrop-blur-xl text-neutral-700 hover:bg-white hover:text-neutral-900 dark:border-white/10 dark:bg-black/60 dark:text-neutral-300 dark:hover:bg-black/90 dark:hover:text-white transition active:scale-95"
             onClick={() => void handleRef.current?.prev()}
+            disabled={pageNavigationDisabled}
             title="上一页 (←)"
+            aria-label="上一页"
           >
             <IconChevronLeft />
           </button>
@@ -915,7 +1089,9 @@ export function Reader({
             type="button"
             className="flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.08)] backdrop-blur-xl text-neutral-700 hover:bg-white hover:text-neutral-900 dark:border-white/10 dark:bg-black/60 dark:text-neutral-300 dark:hover:bg-black/90 dark:hover:text-white transition active:scale-95"
             onClick={() => void handleRef.current?.next()}
+            disabled={pageNavigationDisabled}
             title="下一页 (→)"
+            aria-label="下一页"
           >
             <IconChevronRight />
           </button>
@@ -926,21 +1102,39 @@ export function Reader({
       {showPacerControls && (
         <div
           ref={pacerPopoverRef}
-          className="absolute right-6 top-16 z-50 w-88 rounded-3xl border border-black/[0.08] bg-white/95 p-5 shadow-[0_25px_60px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 animate-in fade-in zoom-in-95 duration-150"
+          role="dialog"
+          aria-labelledby="pacer-settings-title"
+          className="absolute right-6 top-16 z-50 w-88 rounded-3xl border border-black/[0.08] bg-white/95 p-5 shadow-[0_25px_60px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 animate-in fade-in zoom-in-95 duration-150 motion-reduce:animate-none"
         >
           {/* Popover Header with Title and Explicit Close Button */}
-          <div className="flex items-center justify-between pb-3.5 border-b border-black/[0.06] dark:border-white/[0.06]">
-            <h3 className="text-[11px] font-semibold tracking-wider text-neutral-500 dark:text-neutral-400 uppercase">
-              自动阅读速度与分块
-            </h3>
-            <button
-              type="button"
-              onClick={() => setShowPacerControls(false)}
-              className="flex h-6 w-6 items-center justify-center rounded-full text-neutral-400 hover:bg-black/5 hover:text-neutral-700 dark:hover:bg-white/10 dark:hover:text-neutral-200 transition"
-              aria-label="关闭设置"
-            >
-              ✕
-            </button>
+          <div className="flex items-start justify-between gap-3 pb-3.5 border-b border-black/[0.06] dark:border-white/[0.06]">
+            <div>
+              <h3 id="pacer-settings-title" className="text-[11px] font-semibold tracking-wider text-neutral-500 dark:text-neutral-400 uppercase">
+                本书自动阅读
+              </h3>
+              <p className="mt-1 text-[10px] text-neutral-400">
+                当前页以{pacerUsesCjkUnits ? '中日韩字符' : '英文词语'}为主 · 混排内容会自动切换计速单位
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {hasPacerOverride && (
+                <button
+                  type="button"
+                  onClick={resetPacerToAppDefaults}
+                  className="rounded-lg px-2 py-1 text-[10px] font-medium text-blue-600 transition hover:bg-blue-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:text-blue-400"
+                >
+                  恢复默认
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowPacerControls(false)}
+                className="flex h-6 w-6 items-center justify-center rounded-full text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-white/10 dark:hover:text-neutral-200"
+                aria-label="关闭设置"
+              >
+                ✕
+              </button>
+            </div>
           </div>
 
           <div className="mt-4 space-y-4 text-xs">
@@ -967,11 +1161,12 @@ export function Reader({
                       onClick={() => {
                         updatePacerSpeed(tier.wpm)
                       }}
-                      className={`flex flex-col items-center justify-center py-2 px-1.5 rounded-2xl border transition ${
+                      className={`flex flex-col items-center justify-center py-2 px-1.5 rounded-2xl border transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
                         isSelected
                           ? 'border-blue-500/80 bg-blue-500/10 text-blue-600 dark:text-blue-400 font-semibold shadow-2xs'
                           : 'border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.03] text-neutral-700 dark:text-neutral-300 hover:bg-black/[0.05] dark:hover:bg-white/[0.06]'
                       }`}
+                      aria-pressed={isSelected}
                     >
                       <span className="text-[11px] font-medium">{tier.label}</span>
                       <span className="text-[9px] opacity-60 font-mono mt-0.5">{tier.sub}</span>
@@ -989,15 +1184,23 @@ export function Reader({
                 </span>
                 <div className="flex items-center gap-1">
                   <input
+                    key={`${pacerUsesCjkUnits ? 'cjk' : 'latin'}-${pacerSpeed}`}
                     type="number"
                     min={100}
-                    max={1000}
+                    max={pacerMaxRate}
                     step={10}
-                    value={pacerSpeed}
-                    onChange={(e) => {
-                      updatePacerSpeed(Number(e.target.value) || 100)
+                    name="book-pacer-speed"
+                    autoComplete="off"
+                    inputMode="numeric"
+                    aria-label={`本书自动阅读速度，单位${pacerUnit}`}
+                    defaultValue={pacerSpeed}
+                    onBlur={(event) => {
+                      updatePacerSpeed(Number(event.currentTarget.value) || 100)
                     }}
-                    className="w-14 rounded-lg border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] px-1.5 py-0.5 text-center font-mono font-bold text-xs text-neutral-900 dark:text-white focus:border-blue-500 focus:outline-none"
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') event.currentTarget.blur()
+                    }}
+                    className="w-14 rounded-lg border border-black/10 bg-black/[0.03] px-1.5 py-0.5 text-center font-mono text-xs font-bold text-neutral-900 focus-visible:border-blue-500 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 dark:border-white/10 dark:bg-white/[0.04] dark:text-white"
                   />
                   <span className="text-[10px] text-neutral-400 font-mono">{pacerUnit}</span>
                 </div>
@@ -1009,29 +1212,32 @@ export function Reader({
                   onClick={() => {
                     updatePacerSpeed(pacerSpeed - 20)
                   }}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 font-bold transition text-xs"
+                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-black/10 text-xs font-bold transition hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-white/10 dark:hover:bg-white/10"
                   title={`减少 20 ${pacerUnit}`}
+                  aria-label={`减少 20 ${pacerUnit}`}
                 >
                   -
                 </button>
                 <input
                   type="range"
                   min={100}
-                  max={1000}
+                  max={pacerMaxRate}
                   step={10}
                   value={pacerSpeed}
                   onChange={(e) => {
                     updatePacerSpeed(Number(e.target.value))
                   }}
-                  className="flex-1 accent-blue-600 cursor-pointer h-1.5 rounded-lg bg-black/10 dark:bg-white/10"
+                  aria-label={`本书自动阅读速度，单位${pacerUnit}`}
+                  className="h-1.5 flex-1 cursor-pointer rounded-lg bg-black/10 accent-blue-600 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-500 dark:bg-white/10"
                 />
                 <button
                   type="button"
                   onClick={() => {
                     updatePacerSpeed(pacerSpeed + 20)
                   }}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 font-bold transition text-xs"
+                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-black/10 text-xs font-bold transition hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-white/10 dark:hover:bg-white/10"
                   title={`增加 20 ${pacerUnit}`}
+                  aria-label={`增加 20 ${pacerUnit}`}
                 >
                   +
                 </button>
@@ -1051,11 +1257,12 @@ export function Reader({
                     onClick={() => {
                       updatePacerChunkSize(size)
                     }}
-                    className={`px-2.5 py-1 rounded-lg transition text-[11px] font-medium ${
+                    className={`px-2.5 py-1 rounded-lg transition text-[11px] font-medium focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 ${
                       activePacerChunkSize === size
                         ? 'bg-white text-neutral-900 shadow-[0_1px_3px_rgba(0,0,0,0.08)] dark:bg-[#2C2C2E] dark:text-white font-semibold'
                         : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
                     }`}
+                    aria-pressed={activePacerChunkSize === size}
                   >
                     {size}{pacerUsesCjkUnits ? '字' : '词'}
                   </button>

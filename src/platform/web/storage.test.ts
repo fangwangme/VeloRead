@@ -24,6 +24,71 @@ async function freshStorage(): Promise<StoragePort> {
   return storage
 }
 
+async function seedDevelopmentV2Database(name: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open(name, 2)
+    request.onupgradeneeded = () => {
+      const db = request.result
+      const books = db.createObjectStore('books', { keyPath: 'id' })
+      const files = db.createObjectStore('files')
+      const covers = db.createObjectStore('covers')
+      const progress = db.createObjectStore('progress', { keyPath: 'bookId' })
+      const settings = db.createObjectStore('book_settings', { keyPath: 'bookId' })
+      const appSettings = db.createObjectStore('app_settings', { keyPath: 'key' })
+      const bookmarks = db.createObjectStore('bookmarks', { keyPath: 'id' })
+      bookmarks.createIndex('by_bookId', 'bookId', { unique: false })
+      const sessions = db.createObjectStore('reading_sessions', { keyPath: 'id' })
+      sessions.createIndex('by_date', 'date', { unique: false })
+      sessions.createIndex('by_bookId', 'bookId', { unique: false })
+      books.add({
+        id: 'development-book',
+        title: 'Development Book',
+        author: null,
+        language: 'en',
+        coverMime: null,
+        fileSize: 10,
+        addedAt: '2026-08-14T09:00:00.000Z',
+        lastReadAt: null,
+      })
+      files.put(new Uint8Array([1, 2, 3]).buffer, 'development-book')
+      covers.put(new Uint8Array([4, 5]).buffer, 'development-book')
+      progress.add({
+        bookId: 'development-book',
+        cfi: 'epubcfi(/6/2!/4/2)',
+        percentage: 0.25,
+        updatedAt: '2026-08-14T09:30:00.000Z',
+      })
+      settings.add({
+        bookId: 'development-book',
+        styleId: 'book',
+        overrides: {},
+        updatedAt: '2026-08-14T09:30:00.000Z',
+      })
+      appSettings.add({ key: 'global', value: { themeMode: 'dark', dailyReadingGoalMinutes: 20 } })
+      bookmarks.add({
+        id: 'development-bookmark',
+        bookId: 'development-book',
+        cfi: 'epubcfi(/6/2!/4/2)',
+        text: 'Keep this bookmark',
+        createdAt: '2026-08-14T09:45:00.000Z',
+      })
+      sessions.add({
+        id: 'development-session',
+        bookId: 'development-book',
+        date: '2026-08-14',
+        durationSeconds: 60,
+        wordsRead: 77,
+        updatedAt: '2026-08-14T10:00:00.000Z',
+      })
+    }
+    request.onsuccess = () => {
+      request.result.close()
+      resolve()
+    }
+    request.onerror = () => reject(request.error)
+  })
+}
+
 describe('web storage port', () => {
   let storage: StoragePort
 
@@ -91,6 +156,10 @@ describe('web storage port', () => {
       styleId: 'sepia' as const,
       overrides: { fontSizeStep: 1, justify: true },
       flow: 'paginated' as const,
+      pacerWpm: 280,
+      pacerCpm: 320,
+      pacerChunkSize: 3,
+      pacerCjkCharCount: 4,
       updatedAt: '2026-08-16T12:00:00.000Z',
     }
     await storage.saveBookSettings(bookSettings)
@@ -99,12 +168,18 @@ describe('web storage port', () => {
     await storage.saveAppSettings({
       defaultStyleId: 'sepia',
       pacerWpm: 300,
+      pacerCpm: 320,
+      pacerChunkSize: 3,
+      pacerCjkCharCount: 4,
       dailyReadingGoalMinutes: 20,
     })
     await storage.saveAppSettings({ themeMode: 'dark' })
     expect(await storage.getAppSettings()).toEqual({
       defaultStyleId: 'sepia',
       pacerWpm: 300,
+      pacerCpm: 320,
+      pacerChunkSize: 3,
+      pacerCjkCharCount: 4,
       dailyReadingGoalMinutes: 20,
       themeMode: 'dark',
     })
@@ -165,7 +240,8 @@ describe('web storage port', () => {
       bookId: book.id,
       date: '2026-08-15',
       durationSeconds: 1,
-      wordsRead: 3,
+      latinWordsRead: 3,
+      cjkCharactersRead: 0,
       updatedAt: '2026-08-15T12:00:01.000Z',
     })
 
@@ -189,7 +265,8 @@ describe('web storage port', () => {
       bookId: book.id,
       date: '2026-08-16',
       durationSeconds: 180,
-      wordsRead: 800,
+      latinWordsRead: 800,
+      cjkCharactersRead: 120,
       updatedAt: '2026-08-16T10:00:00.000Z',
     }
     const s2 = {
@@ -197,7 +274,8 @@ describe('web storage port', () => {
       bookId: book.id,
       date: '2026-08-16',
       durationSeconds: 120,
-      wordsRead: 400,
+      latinWordsRead: 400,
+      cjkCharactersRead: 80,
       updatedAt: '2026-08-16T11:00:00.000Z',
     }
 
@@ -206,10 +284,12 @@ describe('web storage port', () => {
 
     const stats = await storage.getReadingStats()
     expect(stats.totalDurationMinutes).toBe(5)
-    expect(stats.totalWordsRead).toBe(1200)
+    expect(stats.totalLatinWordsRead).toBe(1200)
+    expect(stats.totalCjkCharactersRead).toBe(200)
     expect(stats.totalBooksRead).toBe(1)
     expect(stats.dailyStats['2026-08-16'].durationMinutes).toBe(5)
-    expect(stats.dailyStats['2026-08-16'].wordsRead).toBe(1200)
+    expect(stats.dailyStats['2026-08-16'].latinWordsRead).toBe(1200)
+    expect(stats.dailyStats['2026-08-16'].cjkCharactersRead).toBe(200)
   })
 
   it('reports a non-zero total for a positive sub-minute session', async () => {
@@ -220,12 +300,37 @@ describe('web storage port', () => {
       bookId: book.id,
       date: '2026-08-16',
       durationSeconds: 1,
-      wordsRead: 2,
+      latinWordsRead: 2,
+      cjkCharactersRead: 0,
       updatedAt: '2026-08-16T10:00:00.000Z',
     })
 
     const stats = await storage.getReadingStats()
     expect(stats.totalDurationMinutes).toBe(1)
     expect(stats.dailyStats['2026-08-16'].durationMinutes).toBe(1)
+  })
+
+  it('resets unpublished v2 settings and stats while preserving books and progress', async () => {
+    const databaseName = `veloread-v2-${crypto.randomUUID()}`
+    await seedDevelopmentV2Database(databaseName)
+    const upgraded = createWebStorage(databaseName)
+    await upgraded.init()
+
+    expect((await upgraded.listBooks()).map((book) => book.id)).toEqual(['development-book'])
+    expect(await upgraded.readBookFile('development-book')).toEqual(new Uint8Array([1, 2, 3]))
+    expect(await upgraded.readCover('development-book')).toEqual(new Uint8Array([4, 5]))
+    expect(await upgraded.getProgress('development-book')).toMatchObject({ percentage: 0.25 })
+    expect(await upgraded.getAppSettings()).toEqual({ themeMode: 'dark', dailyReadingGoalMinutes: 20 })
+    expect((await upgraded.listBookmarks('development-book')).map((bookmark) => bookmark.id)).toEqual([
+      'development-bookmark',
+    ])
+    expect(await upgraded.getBookSettings('development-book')).toBeNull()
+    expect(await upgraded.getReadingStats()).toMatchObject({
+      totalDurationMinutes: 0,
+      totalLatinWordsRead: 0,
+      totalCjkCharactersRead: 0,
+      totalBooksRead: 0,
+      dailyStats: {},
+    })
   })
 })

@@ -9,6 +9,14 @@
     text-rendering: optimizeLegibility;
     font-feature-settings: "kern" 1, "liga" 1;
   }
+
+  html {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
 }
 
 /* Custom delicate scrollbars matching macOS */

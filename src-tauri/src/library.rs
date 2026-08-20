@@ -29,7 +29,7 @@ mod store {
     use rusqlite::{params, Connection, OptionalExtension};
     use serde::{Deserialize, Serialize};
 
-    const SCHEMA_VERSION: i32 = 2;
+    const SCHEMA_VERSION: i32 = 3;
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -61,6 +61,14 @@ mod store {
         pub overrides: serde_json::Value,
         #[serde(skip_serializing_if = "Option::is_none")]
         pub flow: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub pacer_wpm: Option<i64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub pacer_cpm: Option<i64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub pacer_chunk_size: Option<i64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub pacer_cjk_char_count: Option<i64>,
         pub updated_at: String,
     }
 
@@ -81,7 +89,8 @@ mod store {
         pub book_id: String,
         pub date: String,
         pub duration_seconds: i64,
-        pub words_read: i64,
+        pub latin_words_read: i64,
+        pub cjk_characters_read: i64,
         pub updated_at: String,
     }
 
@@ -89,14 +98,16 @@ mod store {
     #[serde(rename_all = "camelCase")]
     pub struct DailyStat {
         pub duration_minutes: i64,
-        pub words_read: i64,
+        pub latin_words_read: i64,
+        pub cjk_characters_read: i64,
     }
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct OverallReadingStats {
         pub total_duration_minutes: i64,
-        pub total_words_read: i64,
+        pub total_latin_words_read: i64,
+        pub total_cjk_characters_read: i64,
         pub total_books_read: i64,
         pub current_streak_days: i64,
         pub daily_stats: std::collections::HashMap<String, DailyStat>,
@@ -168,11 +179,15 @@ mod store {
 
             connection.execute_batch(
                 "CREATE TABLE IF NOT EXISTS book_settings (
-                     book_id    TEXT PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
-                     style_id   TEXT NOT NULL,
-                     overrides  TEXT NOT NULL,
-                     flow       TEXT,
-                     updated_at TEXT NOT NULL
+                     book_id              TEXT PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+                     style_id             TEXT NOT NULL,
+                     overrides            TEXT NOT NULL,
+                     flow                 TEXT,
+                     pacer_wpm            INTEGER,
+                     pacer_cpm            INTEGER,
+                     pacer_chunk_size     INTEGER,
+                     pacer_cjk_char_count INTEGER,
+                     updated_at           TEXT NOT NULL
                  );
                  CREATE TABLE IF NOT EXISTS app_settings (
                      key   TEXT PRIMARY KEY,
@@ -186,14 +201,47 @@ mod store {
                      created_at TEXT NOT NULL
                  );
                  CREATE TABLE IF NOT EXISTS reading_sessions (
-                     id               TEXT PRIMARY KEY,
-                     book_id          TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
-                     date             TEXT NOT NULL,
-                     duration_seconds INTEGER NOT NULL,
-                     words_read       INTEGER NOT NULL,
-                     updated_at       TEXT NOT NULL
+                     id                  TEXT PRIMARY KEY,
+                     book_id             TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                     date                TEXT NOT NULL,
+                     duration_seconds    INTEGER NOT NULL,
+                     latin_words_read    INTEGER NOT NULL,
+                     cjk_characters_read INTEGER NOT NULL,
+                     updated_at          TEXT NOT NULL
                  );
                  CREATE INDEX IF NOT EXISTS idx_sessions_date ON reading_sessions(date);",
+            )?;
+        }
+
+        if version > 0 && version < SCHEMA_VERSION {
+            // The application is still in development. The old mixed count
+            // cannot be mapped truthfully to words or CJK characters, so reset
+            // only unpublished per-book settings and reading sessions. Books,
+            // files, and reading progress remain intact.
+            connection.execute_batch(
+                "DROP TABLE IF EXISTS reading_sessions;
+                 DROP TABLE IF EXISTS book_settings;
+                 CREATE TABLE book_settings (
+                     book_id              TEXT PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+                     style_id             TEXT NOT NULL,
+                     overrides            TEXT NOT NULL,
+                     flow                 TEXT,
+                     pacer_wpm            INTEGER,
+                     pacer_cpm            INTEGER,
+                     pacer_chunk_size     INTEGER,
+                     pacer_cjk_char_count INTEGER,
+                     updated_at           TEXT NOT NULL
+                 );
+                 CREATE TABLE reading_sessions (
+                     id                  TEXT PRIMARY KEY,
+                     book_id             TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                     date                TEXT NOT NULL,
+                     duration_seconds    INTEGER NOT NULL,
+                     latin_words_read    INTEGER NOT NULL,
+                     cjk_characters_read INTEGER NOT NULL,
+                     updated_at          TEXT NOT NULL
+                 );
+                 CREATE INDEX idx_sessions_date ON reading_sessions(date);",
             )?;
         }
 
@@ -243,7 +291,10 @@ mod store {
     }
 
     pub fn delete_book(connection: &Connection, id: &str) -> rusqlite::Result<()> {
-        connection.execute("DELETE FROM reading_sessions WHERE book_id = ?1", params![id])?;
+        connection.execute(
+            "DELETE FROM reading_sessions WHERE book_id = ?1",
+            params![id],
+        )?;
         connection.execute("DELETE FROM bookmarks WHERE book_id = ?1", params![id])?;
         connection.execute("DELETE FROM book_settings WHERE book_id = ?1", params![id])?;
         connection.execute(
@@ -307,7 +358,10 @@ mod store {
     ) -> rusqlite::Result<Option<BookSettings>> {
         connection
             .query_row(
-                "SELECT book_id, style_id, overrides, flow, updated_at FROM book_settings WHERE book_id = ?1",
+                "SELECT book_id, style_id, overrides, flow,
+                        pacer_wpm, pacer_cpm, pacer_chunk_size, pacer_cjk_char_count,
+                        updated_at
+                 FROM book_settings WHERE book_id = ?1",
                 params![book_id],
                 |row| {
                     let overrides_str: String = row.get(2)?;
@@ -318,7 +372,11 @@ mod store {
                         style_id: row.get(1)?,
                         overrides: overrides_val,
                         flow: row.get(3)?,
-                        updated_at: row.get(4)?,
+                        pacer_wpm: row.get(4)?,
+                        pacer_cpm: row.get(5)?,
+                        pacer_chunk_size: row.get(6)?,
+                        pacer_cjk_char_count: row.get(7)?,
+                        updated_at: row.get(8)?,
                     })
                 },
             )
@@ -331,18 +389,30 @@ mod store {
     ) -> rusqlite::Result<()> {
         let overrides_str = serde_json::to_string(&settings.overrides).unwrap_or_default();
         connection.execute(
-            "INSERT INTO book_settings (book_id, style_id, overrides, flow, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)
+            "INSERT INTO book_settings (
+                 book_id, style_id, overrides, flow,
+                 pacer_wpm, pacer_cpm, pacer_chunk_size, pacer_cjk_char_count,
+                 updated_at
+             )
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
              ON CONFLICT(book_id) DO UPDATE SET
                  style_id = excluded.style_id,
                  overrides = excluded.overrides,
                  flow = excluded.flow,
+                 pacer_wpm = excluded.pacer_wpm,
+                 pacer_cpm = excluded.pacer_cpm,
+                 pacer_chunk_size = excluded.pacer_chunk_size,
+                 pacer_cjk_char_count = excluded.pacer_cjk_char_count,
                  updated_at = excluded.updated_at",
             params![
                 settings.book_id,
                 settings.style_id,
                 overrides_str,
                 settings.flow,
+                settings.pacer_wpm,
+                settings.pacer_cpm,
+                settings.pacer_chunk_size,
+                settings.pacer_cjk_char_count,
                 settings.updated_at
             ],
         )?;
@@ -427,18 +497,23 @@ mod store {
         session: &ReadingSession,
     ) -> rusqlite::Result<()> {
         connection.execute(
-            "INSERT INTO reading_sessions (id, book_id, date, duration_seconds, words_read, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO reading_sessions (
+                 id, book_id, date, duration_seconds,
+                 latin_words_read, cjk_characters_read, updated_at
+             )
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT(id) DO UPDATE SET
                  duration_seconds = duration_seconds + excluded.duration_seconds,
-                 words_read = words_read + excluded.words_read,
+                 latin_words_read = latin_words_read + excluded.latin_words_read,
+                 cjk_characters_read = cjk_characters_read + excluded.cjk_characters_read,
                  updated_at = excluded.updated_at",
             params![
                 session.id,
                 session.book_id,
                 session.date,
                 session.duration_seconds,
-                session.words_read,
+                session.latin_words_read,
+                session.cjk_characters_read,
                 session.updated_at,
             ],
         )?;
@@ -447,7 +522,8 @@ mod store {
 
     pub fn get_reading_stats(connection: &Connection) -> rusqlite::Result<OverallReadingStats> {
         let mut stmt = connection.prepare(
-            "SELECT date, SUM(duration_seconds), SUM(words_read)
+            "SELECT date, SUM(duration_seconds), SUM(latin_words_read),
+                    SUM(cjk_characters_read)
              FROM reading_sessions
              GROUP BY date
              ORDER BY date ASC",
@@ -455,19 +531,22 @@ mod store {
 
         let mut daily_stats = std::collections::HashMap::new();
         let mut total_duration_seconds: i64 = 0;
-        let mut total_words_read: i64 = 0;
+        let mut total_latin_words_read: i64 = 0;
+        let mut total_cjk_characters_read: i64 = 0;
 
         let rows = stmt.query_map([], |row| {
             let date: String = row.get(0)?;
             let dur: i64 = row.get(1)?;
-            let words: i64 = row.get(2)?;
-            Ok((date, dur, words))
+            let latin_words: i64 = row.get(2)?;
+            let cjk_characters: i64 = row.get(3)?;
+            Ok((date, dur, latin_words, cjk_characters))
         })?;
 
         for row in rows {
-            let (date, dur, words) = row?;
+            let (date, dur, latin_words, cjk_characters) = row?;
             total_duration_seconds += dur;
-            total_words_read += words;
+            total_latin_words_read += latin_words;
+            total_cjk_characters_read += cjk_characters;
             daily_stats.insert(
                 date,
                 DailyStat {
@@ -478,7 +557,8 @@ mod store {
                     } else {
                         0
                     },
-                    words_read: words,
+                    latin_words_read: latin_words,
+                    cjk_characters_read: cjk_characters,
                 },
             );
         }
@@ -499,7 +579,8 @@ mod store {
             } else {
                 0
             },
-            total_words_read,
+            total_latin_words_read,
+            total_cjk_characters_read,
             total_books_read,
             current_streak_days: 0,
             daily_stats,
@@ -794,12 +875,12 @@ mod tests {
         let version: i32 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .expect("read user_version");
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
         assert_eq!(list_books(&connection).unwrap(), vec![]);
     }
 
     #[test]
-    fn migration_v1_to_v2_preserves_old_data_and_enables_new_features() {
+    fn migration_v1_to_current_preserves_old_data_and_enables_new_features() {
         let connection = Connection::open_in_memory().expect("open memory db");
         // Initialize as v1
         connection
@@ -838,13 +919,13 @@ mod tests {
         )
         .unwrap();
 
-        // Run migrate to v2
-        migrate(&connection).expect("migrate from v1 to v2");
+        // Run all migrations to the current schema.
+        migrate(&connection).expect("migrate from v1 to current");
 
         let version: i32 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .expect("read user_version");
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
 
         // Verify old book and progress are still readable
         let books = list_books(&connection).unwrap();
@@ -860,12 +941,16 @@ mod tests {
         assert_eq!(progress.cfi, Some("epubcfi(/6/2!/4/2)".to_string()));
         assert_eq!(progress.percentage, 0.42);
 
-        // Verify new v2 features work on the migrated database
+        // Verify newer features work on the migrated database.
         let settings = BookSettings {
             book_id: "v1_book".to_string(),
             style_id: "sepia".to_string(),
             overrides: serde_json::json!({ "fontSizeStep": 1 }),
             flow: Some("paginated".to_string()),
+            pacer_wpm: Some(280),
+            pacer_cpm: Some(320),
+            pacer_chunk_size: Some(3),
+            pacer_cjk_char_count: Some(4),
             updated_at: "2026-08-16T10:00:00.000Z".to_string(),
         };
         save_book_settings(&connection, &settings).unwrap();
@@ -886,6 +971,84 @@ mod tests {
             list_bookmarks(&connection, "v1_book").unwrap(),
             vec![bookmark]
         );
+    }
+
+    #[test]
+    fn migration_v2_to_v3_resets_unpublished_settings_and_sessions() {
+        let connection = Connection::open_in_memory().expect("open memory db");
+        connection
+            .execute_batch(
+                "PRAGMA foreign_keys = ON;
+                 CREATE TABLE books (
+                     id TEXT PRIMARY KEY,
+                     title TEXT NOT NULL,
+                     author TEXT,
+                     language TEXT,
+                     cover_mime TEXT,
+                     file_size INTEGER NOT NULL,
+                     added_at TEXT NOT NULL,
+                     last_read_at TEXT,
+                     format TEXT NOT NULL DEFAULT 'epub'
+                 );
+                 CREATE TABLE book_settings (
+                     book_id TEXT PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+                     style_id TEXT NOT NULL,
+                     overrides TEXT NOT NULL,
+                     flow TEXT,
+                     updated_at TEXT NOT NULL
+                 );
+                 CREATE TABLE reading_progress (
+                     book_id TEXT PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+                     cfi TEXT,
+                     percentage REAL NOT NULL DEFAULT 0,
+                     updated_at TEXT NOT NULL,
+                     locator TEXT
+                 );
+                 CREATE TABLE reading_sessions (
+                     id TEXT PRIMARY KEY,
+                     book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                     date TEXT NOT NULL,
+                     duration_seconds INTEGER NOT NULL,
+                     words_read INTEGER NOT NULL,
+                     updated_at TEXT NOT NULL
+                 );
+                 INSERT INTO books (id, title, file_size, added_at)
+                 VALUES ('legacy-book', 'Legacy', 1, '2026-08-15T00:00:00Z');
+                 INSERT INTO reading_progress (book_id, cfi, percentage, updated_at, locator)
+                 VALUES (
+                     'legacy-book', 'epubcfi(/6/2!/4/2)', 0.25,
+                     '2026-08-15T00:00:30Z',
+                     '{\"format\":\"epub\",\"cfi\":\"epubcfi(/6/2!/4/2)\"}'
+                 );
+                 INSERT INTO book_settings (book_id, style_id, overrides, flow, updated_at)
+                 VALUES ('legacy-book', 'book', '{}', 'paginated', '2026-08-15T00:00:00Z');
+                 INSERT INTO reading_sessions (
+                     id, book_id, date, duration_seconds, words_read, updated_at
+                 ) VALUES (
+                     'legacy-session', 'legacy-book', '2026-08-15', 60, 77,
+                     '2026-08-15T00:01:00Z'
+                 );
+                 PRAGMA user_version = 2;",
+            )
+            .expect("create v2 db");
+
+        migrate(&connection).expect("migrate from v2 to v3");
+
+        assert_eq!(get_book_settings(&connection, "legacy-book").unwrap(), None);
+        assert_eq!(list_books(&connection).unwrap().len(), 1);
+        assert_eq!(
+            get_progress(&connection, "legacy-book")
+                .unwrap()
+                .expect("progress survives")
+                .percentage,
+            0.25
+        );
+
+        let stats = get_reading_stats(&connection).unwrap();
+        assert_eq!(stats.total_duration_minutes, 0);
+        assert_eq!(stats.total_latin_words_read, 0);
+        assert_eq!(stats.total_cjk_characters_read, 0);
+        assert_eq!(stats.total_books_read, 0);
     }
 
     #[test]
@@ -1026,6 +1189,10 @@ mod tests {
                 style_id: "night".to_string(),
                 overrides: serde_json::json!({}),
                 flow: None,
+                pacer_wpm: None,
+                pacer_cpm: None,
+                pacer_chunk_size: None,
+                pacer_cjk_char_count: None,
                 updated_at: "2026-08-15T20:00:00.000Z".to_string(),
             },
         )
@@ -1048,7 +1215,8 @@ mod tests {
                 book_id: "a1".to_string(),
                 date: "2026-08-15".to_string(),
                 duration_seconds: 60,
-                words_read: 200,
+                latin_words_read: 200,
+                cjk_characters_read: 0,
                 updated_at: "2026-08-15T20:00:00.000Z".to_string(),
             },
         )
@@ -1119,7 +1287,8 @@ mod tests {
             book_id: "a1".into(),
             date: "2026-08-16".into(),
             duration_seconds: 120,
-            words_read: 500,
+            latin_words_read: 500,
+            cjk_characters_read: 120,
             updated_at: "2026-08-16T12:00:00Z".into(),
         };
         record_reading_session(&connection, &s1).unwrap();
@@ -1129,14 +1298,16 @@ mod tests {
             book_id: "a1".into(),
             date: "2026-08-16".into(),
             duration_seconds: 60,
-            words_read: 250,
+            latin_words_read: 250,
+            cjk_characters_read: 80,
             updated_at: "2026-08-16T12:05:00Z".into(),
         };
         record_reading_session(&connection, &s2).unwrap();
 
         let stats = get_reading_stats(&connection).unwrap();
         assert_eq!(stats.total_duration_minutes, 3);
-        assert_eq!(stats.total_words_read, 750);
+        assert_eq!(stats.total_latin_words_read, 750);
+        assert_eq!(stats.total_cjk_characters_read, 200);
         assert_eq!(stats.total_books_read, 1);
         assert_eq!(
             stats
@@ -1146,6 +1317,8 @@ mod tests {
                 .duration_minutes,
             3
         );
-        assert_eq!(stats.daily_stats.get("2026-08-16").unwrap().words_read, 750);
+        let daily = stats.daily_stats.get("2026-08-16").unwrap();
+        assert_eq!(daily.latin_words_read, 750);
+        assert_eq!(daily.cjk_characters_read, 200);
     }
 }

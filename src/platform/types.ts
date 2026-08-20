@@ -48,6 +48,11 @@ export interface BookSettings {
   styleId: StyleId
   overrides: StyleOverride
   flow?: 'paginated' | 'scrolled-doc'
+  /** Per-book Pacer overrides. Undefined means follow the application default. */
+  pacerWpm?: number
+  pacerCpm?: number
+  pacerChunkSize?: number
+  pacerCjkCharCount?: number
   updatedAt: string
 }
 
@@ -87,17 +92,25 @@ export interface ReadingSession {
   bookId: string
   date: string // YYYY-MM-DD
   durationSeconds: number // active seconds (max 300s / 5 min per page)
-  wordsRead: number
+  latinWordsRead: number
+  cjkCharactersRead: number
   updatedAt: string
+}
+
+export interface DailyReadingStats {
+  durationMinutes: number
+  latinWordsRead: number
+  cjkCharactersRead: number
 }
 
 /** Aggregated reading activity stats for heatmap and dashboard. */
 export interface OverallReadingStats {
   totalDurationMinutes: number
-  totalWordsRead: number
+  totalLatinWordsRead: number
+  totalCjkCharactersRead: number
   totalBooksRead: number
   currentStreakDays: number
-  dailyStats: Record<string, { durationMinutes: number; wordsRead: number }>
+  dailyStats: Record<string, DailyReadingStats>
 }
 
 /**

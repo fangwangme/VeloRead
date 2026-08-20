@@ -12,7 +12,7 @@ export function BookCover({ book }: { book: BookRecord }) {
   return (
     <div className="relative h-full w-full overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800">
       {url ? (
-        <img src={url} alt="" className="h-full w-full object-cover" />
+        <img src={url} alt="" width="304" height="456" className="h-full w-full object-cover" />
       ) : (
         <div className="flex h-full w-full flex-col justify-end p-3.5 bg-gradient-to-br from-neutral-100 to-neutral-200 dark:from-neutral-800 dark:to-neutral-900">
           <span className="line-clamp-4 text-xs font-semibold leading-snug text-neutral-800 dark:text-neutral-100 font-serif">

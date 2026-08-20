@@ -7,7 +7,7 @@ import { AppSettingsModal } from '../settings/AppSettingsModal'
 import { IconImport, IconSettings, IconStats } from '../ui/icons'
 
 const TOOLBAR_BUTTON_CLASS =
-  'flex items-center gap-1.5 rounded-full border border-black/[0.08] bg-white/80 px-3.5 py-1.5 text-xs font-medium text-neutral-800 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-md transition hover:border-black/20 hover:bg-white active:scale-95 disabled:pointer-events-none disabled:opacity-50 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-neutral-200 dark:hover:bg-white/[0.1]'
+  'flex items-center gap-1.5 rounded-full border border-black/[0.08] bg-white/80 px-3.5 py-1.5 text-xs font-medium text-neutral-800 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-md transition hover:border-black/20 hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 active:scale-95 disabled:pointer-events-none disabled:opacity-50 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-neutral-200 dark:hover:bg-white/[0.1]'
 
 export function Library({
   appSettings,
@@ -100,7 +100,7 @@ export function Library({
       </header>
 
       {error && (
-        <div className="mx-8 mt-4 flex items-start justify-between gap-4 rounded-2xl border border-red-200 bg-red-50/80 px-4 py-3 text-xs text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
+        <div aria-live="polite" className="mx-8 mt-4 flex items-start justify-between gap-4 rounded-2xl border border-red-200 bg-red-50/80 px-4 py-3 text-xs text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
           <span>{error}</span>
           <button type="button" className="shrink-0 underline font-medium" onClick={dismissError}>
             忽略
@@ -158,10 +158,10 @@ function BookTile({ book }: { book: BookRecord }) {
     <li className="group relative">
       <button
         type="button"
-        className="block w-full cursor-pointer text-left focus:outline-none"
+        className="block w-full cursor-pointer rounded-lg text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-500"
         onClick={() => openBook(book.id)}
       >
-        <div className="aspect-2/3 w-full rounded-lg shadow-[0_6px_18px_rgba(0,0,0,0.12),0_1px_3px_rgba(0,0,0,0.06)] transition-all duration-200 group-hover:-translate-y-1.5 group-hover:shadow-[0_16px_32px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.08)]">
+        <div className="aspect-2/3 w-full rounded-lg shadow-[0_6px_18px_rgba(0,0,0,0.12),0_1px_3px_rgba(0,0,0,0.06)] transition-[transform,box-shadow] duration-200 group-hover:-translate-y-1.5 group-hover:shadow-[0_16px_32px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.08)] motion-reduce:transition-none">
           <BookCover book={book} />
         </div>
         <p className="mt-2.5 line-clamp-2 text-xs font-semibold leading-snug tracking-tight text-neutral-800 dark:text-neutral-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition">
@@ -178,7 +178,7 @@ function BookTile({ book }: { book: BookRecord }) {
       <button
         type="button"
         aria-label={`删除 ${book.title}`}
-        className="absolute top-2 right-2 hidden size-6 rounded-full bg-black/60 text-xs text-white backdrop-blur-md group-hover:flex items-center justify-center hover:bg-red-600 transition shadow-sm"
+        className="absolute top-2 right-2 hidden size-6 items-center justify-center rounded-full bg-black/60 text-xs text-white shadow-sm backdrop-blur-md transition hover:bg-red-600 focus-visible:flex focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 group-hover:flex group-focus-within:flex"
         onClick={(e) => {
           e.stopPropagation()
           if (confirm(`确定从书库移除《${book.title}》吗？`)) void removeBook(book.id)
