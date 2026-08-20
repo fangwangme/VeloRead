@@ -7,6 +7,7 @@
  */
 
 import type { StyleId, StyleOverride } from '../reader/styles/types'
+import type { PacerHighlightShape } from '../reader/pacer/overlayStyle'
 
 /** A book in the library, without its bytes. */
 export interface BookRecord {
@@ -67,6 +68,10 @@ export interface AppSettings {
   pacerCjkCharCount?: number
   dailyReadingGoalMinutes?: number
   flow?: 'paginated' | 'scrolled-doc'
+  /** Pacer highlight appearance. A hex colour, or `auto` to follow the reading style accent. */
+  pacerHighlightColor?: string
+  pacerHighlightOpacity?: number
+  pacerHighlightShape?: PacerHighlightShape
 }
 
 /** User bookmark in a book. */

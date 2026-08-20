@@ -22,6 +22,7 @@ import { SearchPanel } from './SearchPanel'
 import { PositionInfo } from './PositionInfo'
 import { Overlay } from './pacer/Overlay'
 import { usePacer } from './pacer/usePacer'
+import { readHighlightStyle } from './pacer/overlayStyle'
 import {
   countReadingUnits,
   type PacerUnitKind,
@@ -194,6 +195,20 @@ export function Reader({
   const isEffectiveDark =
     appSettings.themeMode === 'dark' ||
     ((appSettings.themeMode ?? 'auto') === 'auto' && systemDark)
+
+  const pacerHighlightStyle = useMemo(
+    () =>
+      readHighlightStyle({
+        pacerHighlightColor: appSettings.pacerHighlightColor,
+        pacerHighlightOpacity: appSettings.pacerHighlightOpacity,
+        pacerHighlightShape: appSettings.pacerHighlightShape,
+      }),
+    [
+      appSettings.pacerHighlightColor,
+      appSettings.pacerHighlightOpacity,
+      appSettings.pacerHighlightShape,
+    ],
+  )
 
   // Compute resolved style
   const resolvedStyle = useMemo(() => {
@@ -1259,6 +1274,7 @@ export function Reader({
               animMs={pacer.currentChunk?.animMs}
               accentColor={resolvedStyle.palette.accent}
               isDark={isEffectiveDark}
+              style={pacerHighlightStyle}
             />
 
             {highlightDraft && (

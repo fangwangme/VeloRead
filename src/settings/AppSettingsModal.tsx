@@ -1,7 +1,18 @@
 import { useState, type ReactNode } from 'react'
 import type { AppSettings } from '../platform/types'
 import {
+  AUTO_HIGHLIGHT_COLOR,
+  MAX_HIGHLIGHT_OPACITY,
+  MIN_HIGHLIGHT_OPACITY,
+  PACER_HIGHLIGHT_SWATCHES,
+  readHighlightStyle,
+  resolveOverlayStyle,
+  type PacerHighlightShape,
+  type PacerHighlightStyle,
+} from '../reader/pacer/overlayStyle'
+import {
   IconClock,
+  IconHighlight,
   IconMonitor,
   IconMoon,
   IconPlay,
@@ -18,6 +29,9 @@ interface AppSettingsModalProps {
 
 const GOAL_OPTIONS = [10, 15, 20, 30, 45, 60]
 /** Ten hours. Past this it is a typo, not a daily reading goal. */
+/** Stands in for the reading style's accent while previewing. */
+const PREVIEW_ACCENT = '#D97706'
+
 const GOAL_MIN = 1
 const GOAL_MAX = 600
 
@@ -30,6 +44,14 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
   const pacerCpm = settings.pacerCpm ?? 300
   const pacerChunkSize = settings.pacerChunkSize ?? 3
   const pacerCjkCharCount = settings.pacerCjkCharCount ?? 4
+  const highlight = readHighlightStyle(settings)
+  // The preview should look like the page it describes, so it follows the
+  // appearance the app is actually showing rather than the OS.
+  const previewDark =
+    themeMode === 'dark' ||
+    (themeMode === 'auto' &&
+      typeof window !== 'undefined' &&
+      Boolean(window.matchMedia?.('(prefers-color-scheme: dark)')?.matches))
 
   const save = async (changes: Partial<AppSettings>) => {
     setError(null)
@@ -157,6 +179,18 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
                 恢复推荐值
               </button>
             </div>
+          </SettingSection>
+
+          <SettingSection
+            icon={<IconHighlight />}
+            title="自动阅读高亮"
+            description="自动阅读时跟随视线移动的那条高亮的颜色、浓度与形态"
+          >
+            <HighlightStyleEditor
+              style={highlight}
+              isDark={previewDark}
+              onChange={(changes) => void save(changes)}
+            />
           </SettingSection>
 
           <SettingSection
@@ -344,6 +378,152 @@ function PacerProfileEditor({
             </button>
           ))}
         </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The highlight is the one piece of chrome that sits on top of the words for
+ * minutes at a time, so it gets a live sample rather than three abstract
+ * controls: what "22%" means depends entirely on the colour next to it.
+ */
+function HighlightStyleEditor({
+  style,
+  isDark,
+  onChange,
+}: {
+  style: PacerHighlightStyle
+  isDark: boolean
+  onChange: (changes: Partial<AppSettings>) => void
+}) {
+  const resolved = resolveOverlayStyle(style, PREVIEW_ACCENT, isDark)
+  const customHex = style.color === AUTO_HIGHLIGHT_COLOR ? PREVIEW_ACCENT : style.color
+  const isCustom =
+    style.color !== AUTO_HIGHLIGHT_COLOR &&
+    !PACER_HIGHLIGHT_SWATCHES.some((swatch) => swatch.hex === style.color)
+
+  const shapes: { id: PacerHighlightShape; label: string }[] = [
+    { id: 'block', label: '色块' },
+    { id: 'block-underline', label: '色块+下划线' },
+    { id: 'underline', label: '下划线' },
+  ]
+
+  return (
+    <div className="mt-4 space-y-3.5">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+          颜色
+        </span>
+        <div className="flex items-center gap-1.5">
+          {PACER_HIGHLIGHT_SWATCHES.map((swatch) => {
+            const selected = style.color === (swatch.hex ?? AUTO_HIGHLIGHT_COLOR)
+            const auto = swatch.hex === null
+            return (
+              <button
+                key={swatch.id}
+                type="button"
+                onClick={() => onChange({ pacerHighlightColor: swatch.hex ?? AUTO_HIGHLIGHT_COLOR })}
+                aria-pressed={selected}
+                aria-label={auto ? '跟随阅读风格的强调色' : `高亮色 ${swatch.hex}`}
+                title={auto ? '跟随阅读风格' : swatch.hex ?? ''}
+                style={auto ? undefined : { backgroundColor: swatch.hex ?? undefined }}
+                className={`size-5 rounded-full border transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
+                  auto
+                    ? 'border-dashed border-black/30 bg-gradient-to-br from-amber-400 via-sky-400 to-violet-500 dark:border-white/30'
+                    : 'border-black/10 dark:border-white/15'
+                } ${selected ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-white dark:ring-offset-[#1C1C1E]' : 'hover:scale-110'}`}
+              />
+            )
+          })}
+          <label
+            title="自定义颜色"
+            className={`flex size-5 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-black/10 dark:border-white/15 ${
+              isCustom ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-white dark:ring-offset-[#1C1C1E]' : ''
+            }`}
+            style={{ backgroundColor: customHex }}
+          >
+            <span className="sr-only">自定义高亮颜色</span>
+            <input
+              type="color"
+              value={customHex}
+              onChange={(event) => onChange({ pacerHighlightColor: event.target.value })}
+              className="size-8 cursor-pointer opacity-0"
+            />
+          </label>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+          浓度
+        </span>
+        <div className="flex flex-1 items-center gap-2.5">
+          <input
+            type="range"
+            min={MIN_HIGHLIGHT_OPACITY * 100}
+            max={MAX_HIGHLIGHT_OPACITY * 100}
+            step={1}
+            value={Math.round(style.opacity * 100)}
+            disabled={style.shape === 'underline'}
+            onChange={(event) =>
+              onChange({ pacerHighlightOpacity: Number(event.target.value) / 100 })
+            }
+            aria-label="高亮浓度"
+            className="h-1.5 flex-1 cursor-pointer rounded-lg bg-black/10 accent-blue-600 disabled:opacity-40 dark:bg-white/10"
+          />
+          <span className="w-8 text-right font-mono text-[10px] text-neutral-400">
+            {Math.round(style.opacity * 100)}%
+          </span>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+          形态
+        </span>
+        <div className="flex rounded-xl bg-black/[0.04] p-1 dark:bg-white/[0.06]">
+          {shapes.map((shape) => (
+            <button
+              key={shape.id}
+              type="button"
+              onClick={() => onChange({ pacerHighlightShape: shape.id })}
+              aria-pressed={style.shape === shape.id}
+              className={`rounded-lg px-2.5 py-1 text-[10px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 ${
+                style.shape === shape.id
+                  ? 'bg-white text-neutral-900 shadow-2xs dark:bg-[#303033] dark:text-white'
+                  : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
+              }`}
+            >
+              {shape.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div
+        className="rounded-2xl border border-black/[0.06] px-4 py-3.5 dark:border-white/[0.07]"
+        style={{ backgroundColor: isDark ? '#16161A' : '#FBF8F1' }}
+      >
+        <p
+          className="font-serif text-[13px] leading-loose"
+          style={{ color: isDark ? '#D8D4CC' : '#2B2622' }}
+        >
+          <span>他抬起头，</span>
+          <span
+            className="rounded-xs px-0.5"
+            style={{
+              backgroundColor: resolved.backgroundColor,
+              borderBottom: resolved.underlineColor
+                ? `2.5px solid ${resolved.underlineColor}`
+                : undefined,
+              mixBlendMode: resolved.mixBlendMode,
+            }}
+          >
+            看见远处的灯塔
+          </span>
+          <span>还亮着。</span>
+        </p>
       </div>
     </div>
   )
