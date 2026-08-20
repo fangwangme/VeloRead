@@ -18,8 +18,8 @@ use rusqlite::Connection;
 use tauri::{ipc::Response, AppHandle, Manager, State};
 
 use store::{
-    book_file, Annotation, BookRecord, BookSettings, Bookmark, Collection,
-    OverallReadingStats, ReadingProgress, ReadingSession,
+    book_file, Annotation, BookRecord, BookSettings, Bookmark, Collection, OverallReadingStats,
+    ReadingProgress, ReadingSession,
 };
 
 /// Storage primitives, free of any Tauri types.
@@ -366,10 +366,7 @@ mod store {
             "DELETE FROM collection_books WHERE book_id = ?1",
             params![id],
         )?;
-        connection.execute(
-            "DELETE FROM annotations WHERE book_id = ?1",
-            params![id],
-        )?;
+        connection.execute("DELETE FROM annotations WHERE book_id = ?1", params![id])?;
         connection.execute(
             "DELETE FROM reading_sessions WHERE book_id = ?1",
             params![id],
@@ -587,7 +584,10 @@ mod store {
     }
 
     /// Upsert, so renaming a collection reuses this path.
-    pub fn save_collection(connection: &Connection, collection: &Collection) -> rusqlite::Result<()> {
+    pub fn save_collection(
+        connection: &Connection,
+        collection: &Collection,
+    ) -> rusqlite::Result<()> {
         connection.execute(
             "INSERT INTO collections (id, name, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4)
@@ -641,9 +641,8 @@ mod store {
     pub fn list_collection_membership(
         connection: &Connection,
     ) -> rusqlite::Result<std::collections::HashMap<String, Vec<String>>> {
-        let mut statement = connection.prepare(
-            "SELECT book_id, collection_id FROM collection_books ORDER BY book_id ASC",
-        )?;
+        let mut statement = connection
+            .prepare("SELECT book_id, collection_id FROM collection_books ORDER BY book_id ASC")?;
         let rows = statement.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
@@ -657,7 +656,10 @@ mod store {
         Ok(membership)
     }
 
-    pub fn list_annotations(connection: &Connection, book_id: &str) -> rusqlite::Result<Vec<Annotation>> {
+    pub fn list_annotations(
+        connection: &Connection,
+        book_id: &str,
+    ) -> rusqlite::Result<Vec<Annotation>> {
         let mut statement = connection.prepare(
             "SELECT id, book_id, cfi_range, text, note, color, chapter_title,
                     source, created_at, updated_at
@@ -682,7 +684,10 @@ mod store {
     }
 
     /// Upsert, so editing a note or recoloring a highlight reuses this path.
-    pub fn save_annotation(connection: &Connection, annotation: &Annotation) -> rusqlite::Result<()> {
+    pub fn save_annotation(
+        connection: &Connection,
+        annotation: &Annotation,
+    ) -> rusqlite::Result<()> {
         connection.execute(
             "INSERT INTO annotations (
                  id, book_id, cfi_range, text, note, color, chapter_title,
@@ -1062,7 +1067,9 @@ pub fn library_save_collection(
     state: State<'_, LibraryState>,
     collection: Collection,
 ) -> Result<(), String> {
-    state.with_db(&app, |connection| store::save_collection(connection, &collection))
+    state.with_db(&app, |connection| {
+        store::save_collection(connection, &collection)
+    })
 }
 
 #[tauri::command]
@@ -1100,7 +1107,9 @@ pub fn library_list_annotations(
     state: State<'_, LibraryState>,
     book_id: String,
 ) -> Result<Vec<Annotation>, String> {
-    state.with_db(&app, |connection| store::list_annotations(connection, &book_id))
+    state.with_db(&app, |connection| {
+        store::list_annotations(connection, &book_id)
+    })
 }
 
 #[tauri::command]
@@ -1109,7 +1118,9 @@ pub fn library_save_annotation(
     state: State<'_, LibraryState>,
     annotation: Annotation,
 ) -> Result<(), String> {
-    state.with_db(&app, |connection| store::save_annotation(connection, &annotation))
+    state.with_db(&app, |connection| {
+        store::save_annotation(connection, &annotation)
+    })
 }
 
 #[tauri::command]
@@ -1506,7 +1517,11 @@ mod tests {
             },
         )
         .unwrap();
-        save_annotation(&connection, &annotation("h1", "a1", "2026-08-15T20:00:00.000Z")).unwrap();
+        save_annotation(
+            &connection,
+            &annotation("h1", "a1", "2026-08-15T20:00:00.000Z"),
+        )
+        .unwrap();
         record_reading_session(
             &connection,
             &ReadingSession {
@@ -1556,12 +1571,23 @@ mod tests {
         .unwrap();
 
         // Written newest-first on purpose: the list must follow reading order.
-        save_annotation(&connection, &annotation("h2", "a1", "2026-08-16T09:00:00.000Z")).unwrap();
-        save_annotation(&connection, &annotation("h1", "a1", "2026-08-15T09:00:00.000Z")).unwrap();
+        save_annotation(
+            &connection,
+            &annotation("h2", "a1", "2026-08-16T09:00:00.000Z"),
+        )
+        .unwrap();
+        save_annotation(
+            &connection,
+            &annotation("h1", "a1", "2026-08-15T09:00:00.000Z"),
+        )
+        .unwrap();
 
         let listed = list_annotations(&connection, "a1").unwrap();
         assert_eq!(
-            listed.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(),
+            listed
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
             vec!["h1", "h2"]
         );
 
@@ -1646,7 +1672,11 @@ mod tests {
 
         assert_eq!(list_collections(&connection).unwrap(), vec![]);
         assert!(list_collection_membership(&connection).unwrap().is_empty());
-        assert_eq!(list_books(&connection).unwrap().len(), 1, "the book survives");
+        assert_eq!(
+            list_books(&connection).unwrap().len(),
+            1,
+            "the book survives"
+        );
     }
 
     #[test]
@@ -1659,7 +1689,11 @@ mod tests {
         delete_book(&connection, "a1").expect("delete");
 
         assert!(list_collection_membership(&connection).unwrap().is_empty());
-        assert_eq!(list_collections(&connection).unwrap().len(), 1, "the shelf survives");
+        assert_eq!(
+            list_collections(&connection).unwrap().len(),
+            1,
+            "the shelf survives"
+        );
     }
 
     #[test]
@@ -1667,8 +1701,16 @@ mod tests {
         let connection = db();
         insert_book(&connection, &book("a1", "One", "2026-08-15T10:00:00.000Z")).unwrap();
         insert_book(&connection, &book("a2", "Two", "2026-08-15T11:00:00.000Z")).unwrap();
-        save_annotation(&connection, &annotation("h1", "a1", "2026-08-15T09:00:00.000Z")).unwrap();
-        save_annotation(&connection, &annotation("h2", "a2", "2026-08-15T09:00:00.000Z")).unwrap();
+        save_annotation(
+            &connection,
+            &annotation("h1", "a1", "2026-08-15T09:00:00.000Z"),
+        )
+        .unwrap();
+        save_annotation(
+            &connection,
+            &annotation("h2", "a2", "2026-08-15T09:00:00.000Z"),
+        )
+        .unwrap();
 
         assert_eq!(list_annotations(&connection, "a1").unwrap().len(), 1);
         assert_eq!(list_annotations(&connection, "a2").unwrap()[0].id, "h2");
