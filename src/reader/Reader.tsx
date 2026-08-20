@@ -564,7 +564,7 @@ export function Reader({
             setShowPacerControls(false)
             setShowSettings(false)
             setShowToc(false)
-            if (range && !panelWasOpen) pacerRef.current.seekToRange(range, true)
+            if (range && !panelWasOpen) pacerRef.current.seekToRange(range)
           },
           onLinkClick() {
             pingActivity()

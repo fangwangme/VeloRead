@@ -100,6 +100,41 @@ describe('PacerEngine', () => {
     ).toBe(1)
   })
 
+  it('keeps the engine paused when a click seeks the cursor to another chunk', () => {
+    const onStateChange = vi.fn()
+    const engine = new PacerEngine({ onStateChange })
+    engine.setChunks([chunk(0), chunk(1), chunk(2)])
+
+    // A click while idle repositions the cursor. It must never start playback:
+    // starting is an explicit user action (play button or Space).
+    engine.seek(2)
+
+    expect(engine.getCurrentIndex()).toBe(2)
+    expect(engine.getState()).toBe('idle')
+    expect(onStateChange).not.toHaveBeenCalledWith('playing')
+
+    engine.pause()
+    engine.seek(1)
+    expect(engine.getCurrentIndex()).toBe(1)
+    expect(engine.getState()).toBe('paused')
+  })
+
+  it('keeps running from the new position when a click seeks while playing', async () => {
+    vi.useFakeTimers()
+    const engine = new PacerEngine({})
+    engine.setChunks([chunk(0), chunk(1), chunk(2), chunk(3)])
+    engine.play()
+    expect(engine.getState()).toBe('playing')
+
+    engine.seek(2)
+    expect(engine.getState()).toBe('playing')
+    expect(engine.getCurrentIndex()).toBe(2)
+
+    await vi.advanceTimersByTimeAsync(100)
+    expect(engine.getCurrentIndex()).toBe(3)
+    expect(engine.getState()).toBe('playing')
+  })
+
   it('maps a rebuilt chunk group by DOM text position instead of numeric index', () => {
     const node = document.createTextNode('one two three four five six')
     document.body.append(node)

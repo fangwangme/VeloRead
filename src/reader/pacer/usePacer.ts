@@ -259,7 +259,14 @@ export function usePacer({
     engineRef.current?.prevChunk()
   }, [])
 
-  const seekToRange = useCallback((range: Range, startPlaying = true) => {
+  /**
+   * Move the reading cursor to the clicked text without changing whether the
+   * Pacer is running. Seeking and playing are separate decisions: a click while
+   * paused repositions the highlight and stays paused, a click while playing
+   * keeps playing from the new position. Starting playback remains an explicit
+   * user action (the play button or Space).
+   */
+  const seekToRange = useCallback((range: Range) => {
     const target = range.getClientRects()[0] ?? range.getBoundingClientRect()
     if (!target || (target.width === 0 && target.height === 0)) return false
 
@@ -271,7 +278,6 @@ export function usePacer({
     if (bestIndex === null) return false
 
     engine.seek(bestIndex)
-    if (startPlaying) engine.play()
     return true
   }, [])
 
