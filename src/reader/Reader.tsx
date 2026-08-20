@@ -43,6 +43,22 @@ import {
   IconToc,
 } from '../ui/icons'
 
+/**
+ * One pill system for every header control.
+ *
+ * The right-hand cluster used to mix three treatments — a borderless tinted
+ * button, a narrow serif nub, and a nested capsule with two type sizes inside
+ * it — so the six controls read as different sizes even where their boxes
+ * happened to match. An explicit height is what actually keeps them aligned:
+ * padding alone drifts as soon as one control has a border and another does not.
+ */
+const HEADER_CONTROL =
+  'flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-xs font-medium shadow-xs backdrop-blur-md transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:pointer-events-none disabled:opacity-40'
+const HEADER_CONTROL_IDLE =
+  'border-black/10 bg-white/60 hover:border-black/20 hover:bg-white dark:border-white/10 dark:bg-black/40 dark:hover:bg-black/70'
+const HEADER_CONTROL_ACTIVE =
+  'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/80 dark:text-blue-400'
+
 const SAVE_DEBOUNCE_MS = 400
 const RESIZE_DEBOUNCE_MS = 150
 const AUTO_HIDE_CHROME_MS = 3200
@@ -246,6 +262,13 @@ export function Reader({
 
   const blockingReaderPanelOpen =
     showSettings || showToc || showSearch || highlightDraft !== null
+
+  /**
+   * The margin taps stay live while the highlight popover is open, because a
+   * click on the blank margin is how you dismiss it. Every other panel, and the
+   * Pacer running, still disables them.
+   */
+  const marginTapDisabled = !ready || showSettings || showToc || showSearch
   const readerControlsDisabled = !ready || blockingReaderPanelOpen
   const pageNavigationDisabled = readerControlsDisabled || pacer.isPlaying
   const pausePacer = pacer.pause
@@ -580,7 +603,7 @@ export function Reader({
           spreadMode: initialOverrides.spreadMode ?? 'auto',
           style: initialResolved,
           onKeyDown,
-          onClickText({ range }) {
+          onClickText({ range, blankSide }) {
             pingActivity()
             const panelWasOpen =
               showPacerControlsRef.current ||
@@ -591,7 +614,17 @@ export function Reader({
             setShowPacerControls(false)
             setShowSettings(false)
             setShowToc(false)
-            if (range && !panelWasOpen) pacerRef.current.seekToRange(range)
+            // The first click after a panel was open only dismisses it.
+            if (panelWasOpen) return
+            if (range) {
+              pacerRef.current.seekToRange(range)
+              return
+            }
+            // Blank space inside the page turns it, same as the margin beside
+            // it, so the whole non-text area behaves as one target.
+            if (blankSide && !pacerRef.current.isPlaying) {
+              void handleRef.current?.[blankSide]()
+            }
           },
           onLinkClick() {
             pingActivity()
@@ -792,6 +825,23 @@ export function Reader({
       pacer.recalculateGeometry()
     }
     saveCurrentSettings({ flow: newFlow })
+  }
+
+  const turnPage = (direction: 'prev' | 'next') => {
+    // Dismiss first: clicking the margin to get rid of the highlight popover
+    // must not also jump the page out from under the passage being annotated.
+    if (highlightDraft) {
+      closeHighlightDraft()
+      return
+    }
+    // A selection that never produced a popover would otherwise be thrown away
+    // by a page turn the user did not intend.
+    if (handleRef.current?.hasTextSelection()) {
+      handleRef.current.clearSelection()
+      return
+    }
+    if (pacerRef.current.isPlaying) return
+    void handleRef.current?.[direction]()
   }
 
   const handleNavigate = (target: string) => {
@@ -1036,7 +1086,7 @@ export function Reader({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="flex items-center gap-1.5 rounded-full border border-black/10 bg-white/60 px-3.5 py-1.5 text-xs font-medium backdrop-blur-md shadow-xs transition hover:bg-white hover:border-black/20 dark:border-white/10 dark:bg-black/40 dark:hover:bg-black/70"
+            className={`${HEADER_CONTROL} ${HEADER_CONTROL_IDLE}`}
             onClick={closeBook}
           >
             <IconArrowLeft className="opacity-70" />
@@ -1044,11 +1094,7 @@ export function Reader({
           </button>
           <button
             type="button"
-            className={`flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium backdrop-blur-md shadow-xs transition ${
-              showToc
-                ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/80 dark:text-blue-400'
-                : 'border-black/10 bg-white/60 hover:bg-white hover:border-black/20 dark:border-white/10 dark:bg-black/40 dark:hover:bg-black/70'
-            }`}
+            className={`${HEADER_CONTROL} ${showToc ? HEADER_CONTROL_ACTIVE : HEADER_CONTROL_IDLE}`}
             onClick={() => {
               pacer.pause()
               setShowToc((v) => !v)
@@ -1065,11 +1111,7 @@ export function Reader({
           </button>
           <button
             type="button"
-            className={`flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium backdrop-blur-md shadow-xs transition ${
-              showSearch
-                ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/80 dark:text-blue-400'
-                : 'border-black/10 bg-white/60 hover:bg-white hover:border-black/20 dark:border-white/10 dark:bg-black/40 dark:hover:bg-black/70'
-            }`}
+            className={`${HEADER_CONTROL} ${showSearch ? HEADER_CONTROL_ACTIVE : HEADER_CONTROL_IDLE}`}
             onClick={() => {
               pacer.pause()
               setShowSearch((v) => !v)
@@ -1082,7 +1124,7 @@ export function Reader({
             title="书内搜索 (/)"
           >
             <IconSearch className="opacity-70" />
-            <span className="hidden sm:inline">搜索</span>
+            <span>搜索</span>
           </button>
         </div>
 
@@ -1101,21 +1143,22 @@ export function Reader({
               type="button"
               onClick={handleJumpBack}
               disabled={!ready || pacer.isPlaying}
-              className="flex items-center gap-1.5 rounded-full bg-blue-500/15 px-3 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-500/25 transition active:scale-95 shadow-xs backdrop-blur-md"
+              className={`${HEADER_CONTROL} border-blue-500/35 bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 active:scale-95 dark:border-blue-400/35 dark:bg-blue-400/10 dark:text-blue-400`}
               title={pacer.isPlaying ? '请先暂停自动阅读' : '返回跳转前的位置'}
             >
               <IconReturn />
-              <span className="hidden sm:inline">返回原位</span>
+              <span>返回原位</span>
             </button>
           )}
 
           {/* Aa Typography & Theme Settings Button */}
           <button
             type="button"
-            className={`flex items-center justify-center rounded-full border px-3.5 py-1.5 text-xs font-serif font-bold backdrop-blur-md shadow-xs transition ${
-              showSettings
-                ? 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/80 dark:text-blue-400 font-bold shadow-xs'
-                : 'border-black/10 bg-white/60 hover:bg-white hover:border-black/20 dark:border-white/10 dark:bg-black/40 dark:hover:bg-black/70'
+            // Serif "Aa" is the Apple Books convention worth keeping, but with
+            // only two glyphs it needs a width of its own or it reads as a
+            // squeezed version of its neighbours rather than a peer.
+            className={`${HEADER_CONTROL} w-11 justify-center px-0 font-serif text-sm font-bold ${
+              showSettings ? HEADER_CONTROL_ACTIVE : HEADER_CONTROL_IDLE
             }`}
             onClick={() => {
               pacer.pause()
@@ -1132,16 +1175,16 @@ export function Reader({
           </button>
 
           {/* Pacer Auto-Reading Segmented Capsule in Top-Right Toolbar */}
-          <div className="flex items-center rounded-full border border-black/10 bg-white/60 dark:border-white/10 dark:bg-black/40 backdrop-blur-md p-0.5 shadow-xs">
+          <div className="flex h-8 shrink-0 items-center rounded-full border border-black/10 bg-white/60 p-0.5 shadow-xs backdrop-blur-md dark:border-white/10 dark:bg-black/40">
             {/* Play/Pause Button */}
             <button
               type="button"
               onClick={pacer.toggle}
               disabled={readerControlsDisabled}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition active:scale-95 ${
+              className={`flex h-7 items-center gap-1.5 rounded-full px-3 text-xs font-medium shadow-xs transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 active:scale-95 disabled:pointer-events-none disabled:opacity-40 ${
                 pacer.isPlaying
-                  ? 'bg-amber-600 text-white shadow-xs'
-                  : 'bg-blue-600 text-white hover:bg-blue-700 shadow-xs'
+                  ? 'bg-amber-600 text-white'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
               }`}
               title={pacer.isPlaying ? '暂停自动阅读 (Space)' : '开启自动阅读 (Space)'}
             >
@@ -1161,14 +1204,17 @@ export function Reader({
                 setChromeVisible(true)
               }}
               disabled={!ready}
-              className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-mono font-medium transition ${
+              className={`flex h-7 items-center gap-1 rounded-full px-2.5 text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:pointer-events-none disabled:opacity-40 ${
                 showPacerControls
-                  ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/80 dark:text-blue-400 font-semibold'
-                  : 'text-neutral-700 dark:text-neutral-300 hover:bg-black/5 dark:hover:bg-white/10'
+                  ? 'bg-blue-50 font-semibold text-blue-600 dark:bg-blue-950/80 dark:text-blue-400'
+                  : 'text-neutral-700 hover:bg-black/5 dark:text-neutral-300 dark:hover:bg-white/10'
               }`}
               title="设置自动阅读速度与分块"
             >
-              <span>{pacerSpeed} {pacerUsesCjkUnits ? '字/分' : 'wpm'}</span>
+              <span>
+                <span className="font-mono">{pacerSpeed}</span>{' '}
+                {pacerUsesCjkUnits ? '字/分' : 'wpm'}
+              </span>
               {pacer.speedWarning && (
                 <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" title="极速模式" />
               )}
@@ -1177,18 +1223,14 @@ export function Reader({
         </div>
       </header>
 
-      {/* Main Reader Surface with generous reading margins */}
-      <div className="relative min-h-0 flex-1 flex justify-center items-center overflow-hidden">
-        {/* Click zones for page turns (Apple Books side tap) */}
-        <div
-          aria-hidden="true"
-          className={`absolute inset-y-0 left-0 w-1/8 z-10 cursor-w-resize ${pageNavigationDisabled ? 'pointer-events-none' : ''}`}
-          onClick={() => void handleRef.current?.prev()}
-        />
-        <div
-          aria-hidden="true"
-          className={`absolute inset-y-0 right-0 w-1/8 z-10 cursor-e-resize ${pageNavigationDisabled ? 'pointer-events-none' : ''}`}
-          onClick={() => void handleRef.current?.next()}
+      {/* Main Reader Surface with generous reading margins.
+          Three columns rather than overlays: the tap zones are siblings of the
+          book, so they can never sit on top of the text. */}
+      <div className="relative flex min-h-0 flex-1 items-stretch overflow-hidden">
+        <PageTurnZone
+          side="prev"
+          disabled={marginTapDisabled}
+          onActivate={() => turnPage('prev')}
         />
 
         {/* Book Container with measure constraint and generous breathing margins */}
@@ -1196,9 +1238,8 @@ export function Reader({
           style={{
             maxWidth: `${measureMaxWidthPx}px`,
             width: '100%',
-            height: '100%',
           }}
-          className="relative mx-auto h-full w-full px-8 py-8 md:px-12 md:py-10"
+          className="relative h-full min-w-0 py-8 md:py-10"
         >
           <div ref={containerRef} className="relative h-full w-full">
             {/* Pacer Highlight Overlay */}
@@ -1220,6 +1261,12 @@ export function Reader({
             )}
           </div>
         </div>
+
+        <PageTurnZone
+          side="next"
+          disabled={marginTapDisabled}
+          onActivate={() => turnPage('next')}
+        />
 
         {!ready && !error && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-xs opacity-50">
@@ -1506,5 +1553,40 @@ export function Reader({
         />
       )}
     </div>
+  )
+}
+
+/**
+ * The blank gutter beside the book, used as a page-turn target.
+ *
+ * A flex sibling rather than an overlay: the previous version was a 12.5%-wide
+ * absolutely positioned strip on top of the reading surface, so on a wide window
+ * it covered the outer edge of the text column. Pointer events never reached the
+ * iframe there, which meant a selection could not even be started in that band.
+ *
+ * Not focusable, and hidden from assistive tech: the footer already exposes real
+ * previous/next buttons, and duplicating them here would only add tab stops.
+ */
+function PageTurnZone({
+  side,
+  disabled,
+  onActivate,
+}: {
+  side: 'prev' | 'next'
+  disabled: boolean
+  onActivate: () => void
+}) {
+  return (
+    <div
+      aria-hidden="true"
+      onClick={onActivate}
+      className={`flex-1 basis-0 self-stretch transition-colors duration-200 motion-reduce:transition-none ${
+        side === 'prev' ? 'min-w-12 cursor-w-resize' : 'min-w-12 cursor-e-resize'
+      } ${
+        disabled
+          ? 'pointer-events-none'
+          : 'hover:bg-black/[0.025] dark:hover:bg-white/[0.03]'
+      }`}
+    />
   )
 }

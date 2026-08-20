@@ -49,7 +49,16 @@ export interface SelectionInfo {
 export interface ReaderOptions {
   onLocation?: (location: ReaderLocation) => void
   onKeyDown?: (event: KeyboardEvent) => void
-  onClickText?: (target: { text: string; range?: Range }) => void
+  onClickText?: (target: {
+    text: string
+    range?: Range
+    /**
+     * Set when the click landed on blank space inside the page rather than on a
+     * word — epub.js's own column gutters, the area below the last line. Which
+     * half of the visible page it fell in, so the caller can turn the page.
+     */
+    blankSide?: 'prev' | 'next' | null
+  }) => void
   onLinkClick?: () => void
   onSelection?: (selection: SelectionInfo) => void
   onHighlightClick?: (annotationId: string) => void
@@ -77,6 +86,8 @@ export interface ReaderHandle {
   removeHighlight(cfiRange: string): void
   /** Where a stored highlight sits right now, in container coordinates. */
   rectForCfiRange(cfiRange: string): SelectionInfo['rect'] | null
+  /** True while text inside the book is selected, so a margin tap can defer. */
+  hasTextSelection(): boolean
   clearSelection(): void
   /**
    * Full-text search across the whole book.
@@ -203,11 +214,37 @@ export async function createReader(
         // Preserve ordinary text selection for the future annotation feature.
         if (selection && !selection.isCollapsed) return
         const range = wordRangeAtPoint(doc, event.clientX, event.clientY)
-        const text = range?.toString() || (target as HTMLElement | null)?.innerText || ''
-        onClickText({ text, range: range ?? undefined })
+        // `caretRangeFromPoint` snaps to the nearest text position however far
+        // away it is, so a click in the page margin still resolves to a word.
+        // Only the geometry can tell a real word hit from a snapped one.
+        const onWord = range ? pointHitsRange(range, event.clientX, event.clientY) : false
+        onClickText({
+          text: onWord ? (range as Range).toString() : '',
+          range: onWord ? (range as Range) : undefined,
+          blankSide: onWord ? null : blankSideOfPage(event.clientX),
+        })
       })
     }
   })
+
+  /**
+   * Which half of the visible page a click inside the book fell in.
+   *
+   * Paginated epub.js makes the iframe as wide as the whole section and slides
+   * it behind a clipping container, so `event.clientX` is a section coordinate,
+   * not a screen one. Adding the iframe's own offset — which carries that slide
+   * — turns it back into a screen position that can be compared with the
+   * container. Scrolled flow has no page to turn, so it opts out.
+   */
+  function blankSideOfPage(clientX: number): 'prev' | 'next' | null {
+    if (currentFlow === 'scrolled-doc') return null
+    const iframe = getIframe()
+    if (!iframe) return null
+    const containerRect = container.getBoundingClientRect()
+    if (containerRect.width === 0) return null
+    const screenX = iframe.getBoundingClientRect().left + clientX
+    return screenX < containerRect.left + containerRect.width / 2 ? 'prev' : 'next'
+  }
 
   let locationsReady = false
   let tocItems: TocItem[] = []
@@ -521,6 +558,10 @@ export async function createReader(
         return null
       }
     },
+    hasTextSelection: () => {
+      const selection = getIframe()?.contentWindow?.getSelection()
+      return Boolean(selection && !selection.isCollapsed && selection.toString().trim().length > 0)
+    },
     clearSelection: () => {
       getIframe()?.contentWindow?.getSelection()?.removeAllRanges()
     },
@@ -666,6 +707,27 @@ function wordRangeAtPoint(doc: Document, x: number, y: number): Range | null {
   word.setStart(node, token.start)
   word.setEnd(node, token.end)
   return word
+}
+
+/**
+ * Did the click actually land on this word, or did the caret snap to it from
+ * somewhere blank?
+ *
+ * Horizontal slack is small — the page margins are what we are trying to
+ * detect. Vertical slack is a whole line box, so the leading between two lines
+ * of the same paragraph still counts as landing on the text.
+ */
+function pointHitsRange(range: Range, x: number, y: number): boolean {
+  const rect = range.getClientRects()[0] ?? range.getBoundingClientRect()
+  if (!rect || (rect.width === 0 && rect.height === 0)) return false
+  const slackX = 4
+  const slackY = rect.height
+  return (
+    x >= rect.left - slackX &&
+    x <= rect.right + slackX &&
+    y >= rect.top - slackY &&
+    y <= rect.bottom + slackY
+  )
 }
 
 function percentageOf(book: Book, cfi: string): number | null {
