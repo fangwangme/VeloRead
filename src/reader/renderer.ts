@@ -23,6 +23,22 @@ export interface ReaderLocation {
   atEnd: boolean
 }
 
+/** One match from an in-book search. */
+export interface SearchHit {
+  cfi: string
+  excerpt: string
+  sectionIndex: number
+  chapterTitle: string | null
+}
+
+export interface SearchOptions {
+  /** Reports spine progress so a long search can show where it is. */
+  onProgress?: (searchedSections: number, totalSections: number) => void
+  signal?: AbortSignal
+  /** Stop early once this many hits are collected. */
+  limit?: number
+}
+
 /** A live text selection, already translated into parent-container coordinates. */
 export interface SelectionInfo {
   cfiRange: string
@@ -62,6 +78,14 @@ export interface ReaderHandle {
   /** Where a stored highlight sits right now, in container coordinates. */
   rectForCfiRange(cfiRange: string): SelectionInfo['rect'] | null
   clearSelection(): void
+  /**
+   * Full-text search across the whole book.
+   *
+   * epub.js has no index, so this loads each spine section on demand, searches
+   * it, and unloads it again. That keeps memory flat on large books at the cost
+   * of a visible pass — hence the progress callback and the abort signal.
+   */
+  searchBook(query: string, options?: SearchOptions): Promise<SearchHit[]>
   advancePacerPage(): Promise<boolean>
   ensurePacerRectVisible(rect: Pick<WordItem['rect'], 'top' | 'height'>): void
   fontsReady(): Promise<void>
@@ -230,6 +254,15 @@ export async function createReader(
       if (position <= threshold) active = item
     }
     return active
+  }
+
+  function tocLabelForHref(href?: string): string | null {
+    if (!href) return null
+    const target = normalizeDocumentHref(href)
+    const match = flattenToc(tocItems).find(
+      (item) => normalizeDocumentHref(item.href) === target,
+    )
+    return match?.label.trim() || null
   }
 
   function makeLocationPayload(location: RelocatedEvent): ReaderLocation {
@@ -491,6 +524,57 @@ export async function createReader(
     clearSelection: () => {
       getIframe()?.contentWindow?.getSelection()?.removeAllRanges()
     },
+    searchBook: async (query, searchOptions = {}) => {
+      const trimmed = query.trim()
+      if (trimmed.length === 0) return []
+
+      const { onProgress, signal, limit = 300 } = searchOptions
+      const sections: SpineSection[] = []
+      book.spine.each((section: SpineSection) => {
+        sections.push(section)
+      })
+
+      const hits: SearchHit[] = []
+      const seen = new Set<string>()
+
+      for (let index = 0; index < sections.length; index++) {
+        if (signal?.aborted || hits.length >= limit) break
+        const section = sections[index]
+        try {
+          await section.load(book.load.bind(book))
+          // `search` stitches sequential text nodes, so a phrase split across
+          // <em> or a line break still matches; `find` is the IE-era fallback.
+          const found =
+            typeof section.search === 'function' ? section.search(trimmed) : section.find(trimmed)
+          const chapterTitle = tocLabelForHref(section.href)
+          for (const match of found ?? []) {
+            if (!match?.cfi || seen.has(match.cfi)) continue
+            seen.add(match.cfi)
+            hits.push({
+              cfi: match.cfi,
+              excerpt: match.excerpt?.replace(/\s+/gu, ' ').trim() ?? '',
+              sectionIndex: index,
+              chapterTitle,
+            })
+            if (hits.length >= limit) break
+          }
+        } catch {
+          // A section that will not load is skipped; the rest still searches.
+        } finally {
+          try {
+            section.unload()
+          } catch {
+            // Already unloaded.
+          }
+        }
+
+        onProgress?.(index + 1, sections.length)
+        // Yield between sections so typing and cancelling stay responsive.
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      }
+
+      return hits
+    },
     advancePacerPage: async () => {
       if (lastLocation?.atEnd) return false
       const before = lastLocation?.cfi ?? null
@@ -592,6 +676,18 @@ function percentageOf(book: Book, cfi: string): number | null {
 
 function detach(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+}
+
+/**
+ * The epub.js typings declare `Section.find` as returning elements, and omit
+ * `search` entirely; both actually answer with `{cfi, excerpt}`.
+ */
+interface SpineSection {
+  href?: string
+  load(request: unknown): Promise<Document>
+  unload(): void
+  find(query: string): { cfi: string; excerpt: string }[]
+  search?: (query: string, maxSeqEle?: number) => { cfi: string; excerpt: string }[]
 }
 
 interface RelocatedEvent {

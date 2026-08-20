@@ -1408,6 +1408,11 @@ export function Reader({
           overrides={overrides}
           flow={flow}
           isDark={isEffectiveDark}
+          resolved={{
+            fontSizePx: resolvedStyle.body.fontSizePx,
+            lineHeight: resolvedStyle.body.lineHeight,
+            measureCh: resolvedStyle.body.measureCh,
+          }}
           onStyleSelect={handleStyleSelect}
           onOverridesChange={handleOverridesChange}
           onFlowChange={handleFlowChange}

@@ -11,6 +11,12 @@ interface SettingsPanelProps {
   overrides: StyleOverride
   flow: 'paginated' | 'scrolled-doc'
   isDark: boolean
+  /**
+   * The values actually in effect after the preset and the overrides are
+   * resolved. The controls are relative steps, so without these the panel can
+   * only report "+1", which says nothing about what the page will look like.
+   */
+  resolved: { fontSizePx: number; lineHeight: number; measureCh: number }
   onStyleSelect: (id: StyleId) => void
   onOverridesChange: (overrides: StyleOverride) => void
   onFlowChange: (flow: 'paginated' | 'scrolled-doc') => void
@@ -39,6 +45,7 @@ export function SettingsPanel({
   overrides,
   flow,
   isDark,
+  resolved,
   onStyleSelect,
   onOverridesChange,
   onFlowChange,
@@ -167,8 +174,13 @@ export function SettingsPanel({
         <div>
           <div className="mb-1.5 flex justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
             <span>字号大小</span>
-            <span className="text-neutral-700 dark:text-neutral-300 font-mono lowercase font-normal">
-              {fontSizeStep > 0 ? `+${fontSizeStep}` : fontSizeStep === 0 ? '标准' : fontSizeStep}
+            <span className="flex items-baseline gap-1.5 font-normal">
+              <span className="font-mono text-xs font-semibold text-neutral-800 dark:text-neutral-200">
+                {resolved.fontSizePx}px
+              </span>
+              <span className="font-mono text-[10px] lowercase text-neutral-400">
+                {fontSizeStep > 0 ? `+${fontSizeStep}` : fontSizeStep === 0 ? '标准' : fontSizeStep}
+              </span>
             </span>
           </div>
           <div className="flex items-center rounded-xl bg-black/[0.04] p-1 dark:bg-white/[0.06]">
@@ -195,8 +207,11 @@ export function SettingsPanel({
         {/* Line Height & Margin Segmented Controls */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-              行距
+            <label className="mb-1.5 flex items-baseline justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+              <span>行距</span>
+              <span className="font-mono text-neutral-600 normal-case dark:text-neutral-300">
+                {resolved.lineHeight.toFixed(2)}
+              </span>
             </label>
             <div className="flex rounded-xl bg-black/[0.04] p-1 dark:bg-white/[0.06]">
               {[
@@ -221,8 +236,11 @@ export function SettingsPanel({
           </div>
 
           <div>
-            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-              页边距
+            <label className="mb-1.5 flex items-baseline justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+              <span>页边距</span>
+              <span className="font-mono text-neutral-600 normal-case dark:text-neutral-300">
+                {resolved.measureCh} 字符
+              </span>
             </label>
             <div className="flex rounded-xl bg-black/[0.04] p-1 dark:bg-white/[0.06]">
               {[
