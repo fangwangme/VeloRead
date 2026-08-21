@@ -6,6 +6,8 @@ import type { HighlightColor, TocItem } from '../platform/types'
 import { highlightPalette } from './annotations/colors'
 import type { WordItem } from './pacer/chunker'
 import { tokenizeText } from './pacer/tokenizer'
+import { columnPitchFromLayout } from './pacer/geometry'
+import { createSwipeTracker, isHorizontalWheel } from './swipe'
 
 export interface ReaderLocation {
   /** CFI of the first visible position on the current page. */
@@ -67,6 +69,12 @@ export interface ReaderOptions {
     blankSide?: 'prev' | 'next' | null
   }) => void
   onLinkClick?: () => void
+  /**
+   * A sideways swipe on a trackpad or Magic Mouse asked for a page turn. The
+   * gating (a panel is open, the Pacer is running) belongs to the caller, which
+   * already owns exactly that decision for the arrow keys.
+   */
+  onHorizontalSwipe?: (direction: 'prev' | 'next') => void
   onSelection?: (selection: SelectionInfo) => void
   onHighlightClick?: (annotationId: string) => void
   flow?: 'paginated' | 'scrolled-doc'
@@ -94,6 +102,29 @@ export interface ReaderHandle {
   getToc(): Promise<TocItem[]>
   getVisibleWords(): WordItem[]
   getViewportWords(): WordItem[]
+  /**
+   * Distance between two adjacent columns of the paginated page, or null in
+   * scrolled flow and whenever the layout cannot be read. The Pacer needs it to
+   * tell "end of the left column" from "start of the right one" — those two
+   * lines share a `top`.
+   */
+  getColumnPitch(): number | null
+  /**
+   * A CFI for one position in the book, collapsed to the start of `range`.
+   *
+   * Collapsed on purpose: a point CFI is what `ReadingProgress.cfi` has always
+   * held, so `display()` and the location index keep behaving exactly as before
+   * while the position gains word-level precision.
+   */
+  cfiFromRange(range: Range): string | null
+  /** The live range a stored CFI points at, if its page is currently rendered. */
+  rangeFromCfi(cfi: string): Range | null
+  /**
+   * Feed the parent document's wheel events in. `wheel` does not cross the
+   * iframe boundary, so the book page registers its own listener inside; both
+   * share one gesture accumulator, or half a flick each turns two pages.
+   */
+  handleWheel(event: WheelEvent): void
   getIframeElement(): HTMLIFrameElement | null
   getScrollElement(): HTMLElement | null
   getCurrentLocation(): ReaderLocation | null
@@ -233,6 +264,11 @@ export async function createReader(
     if (onKeyDown) {
       doc.addEventListener('keydown', onKeyDown as EventListener)
     }
+    if (options.onHorizontalSwipe) {
+      // Not passive: a horizontal wheel over the page has to be swallowed, or
+      // WKWebView reads it as the "go back" swipe.
+      doc.addEventListener('wheel', handleWheel as EventListener, { passive: false })
+    }
     if (onClickText) {
       doc.addEventListener('click', (event: MouseEvent) => {
         const target = event.target as Element | null
@@ -276,6 +312,61 @@ export async function createReader(
     if (containerRect.width === 0) return null
     const screenX = iframe.getBoundingClientRect().left + clientX
     return screenX < containerRect.left + containerRect.width / 2 ? 'prev' : 'next'
+  }
+
+  /**
+   * One accumulator for both listeners, and one clock for both documents: the
+   * book iframe has its own time origin, so `event.timeStamp` from inside it
+   * cannot be compared with one from the parent.
+   */
+  const swipe = createSwipeTracker()
+
+  function handleWheel(event: WheelEvent) {
+    // Scrolled flow has no page to turn, the same trade-off `blankSideOfPage`
+    // already makes; the wheel there belongs to the scroller.
+    if (currentFlow === 'scrolled-doc') return
+    if (!isHorizontalWheel(event)) return
+    event.preventDefault()
+    const direction = swipe.feed(event, performance.now())
+    if (direction) options.onHorizontalSwipe?.(direction)
+  }
+
+  /**
+   * How far apart the columns of the current page are.
+   *
+   * epub.js paginates by setting `column-width` and `column-gap` on the book's
+   * body (see `epubjs/lib/contents.js`), so the layout has to be read back from
+   * the page rather than recomputed here. CSS decides the real column count from
+   * the space available, which is not always the count epub.js asked for — a
+   * single-column page still carries a `column-width` as wide as the whole body.
+   */
+  function getColumnPitch(): number | null {
+    if (currentFlow === 'scrolled-doc') return null
+    const doc = getIframe()?.contentDocument
+    const body = doc?.body
+    const view = doc?.defaultView
+    if (!body || !view) return null
+
+    try {
+      const style = view.getComputedStyle(body)
+      // Vertical writing modes paginate along the other axis; a horizontal pitch
+      // would be worse than none.
+      if (!style.writingMode.startsWith('horizontal')) return null
+
+      // `clientWidth` less its padding rather than the computed `width`: epub.js
+      // sets `box-sizing: border-box` on the body, so the computed width is the
+      // border box and the columns are laid out inside the content box.
+      const paddingLeft = Number.parseFloat(style.paddingLeft) || 0
+      const paddingRight = Number.parseFloat(style.paddingRight) || 0
+      return columnPitchFromLayout({
+        available: body.clientWidth - paddingLeft - paddingRight,
+        columnWidth: Number.parseFloat(style.columnWidth),
+        columnGap: Number.parseFloat(style.columnGap),
+      })
+    } catch {
+      // A page that will not report its layout falls back to no column awareness.
+      return null
+    }
   }
 
   let locationsReady = false
@@ -530,6 +621,20 @@ export async function createReader(
               r.height > 0 &&
               (includeWholeScrolledSection && currentFlow === 'scrolled-doc' || intersectsPage)
             ) {
+              // Justified English is hyphenated, so a word the renderer broke
+              // across a line comes back as two boxes. Both are the word.
+              const fragments =
+                rects.length > 1
+                  ? Array.from(rects, (piece) => ({
+                      left: piece.left,
+                      top: piece.top,
+                      width: piece.width,
+                      height: piece.height,
+                      bottom: piece.bottom,
+                      right: piece.right,
+                    })).filter((piece) => piece.width > 0 && piece.height > 0)
+                  : undefined
+
               words.push({
                 text: token.text,
                 rect: {
@@ -540,6 +645,7 @@ export async function createReader(
                   bottom: r.bottom,
                   right: r.right,
                 },
+                ...(fragments && fragments.length > 1 ? { fragments } : {}),
                 kind: token.kind,
                 wordBoundaryAfter: token.wordBoundaryAfter,
                 range,
@@ -628,6 +734,30 @@ export async function createReader(
     },
     getVisibleWords,
     getViewportWords,
+    getColumnPitch,
+    cfiFromRange: (range: Range) => {
+      try {
+        const doc = range.startContainer.ownerDocument
+        const contents = rendition.getContents() as unknown as Contents[]
+        const list = Array.isArray(contents) ? contents : [contents]
+        const owner = list.find((candidate) => candidate?.document === doc)
+        if (!owner) return null
+        const point = range.cloneRange()
+        point.collapse(true)
+        return owner.cfiFromRange(point)
+      } catch {
+        // A range whose document has gone has no position worth recording.
+        return null
+      }
+    },
+    rangeFromCfi: (cfi: string) => {
+      try {
+        return rendition.getRange(cfi) ?? null
+      } catch {
+        return null
+      }
+    },
+    handleWheel,
     getIframeElement: getIframe,
     getScrollElement,
     getCurrentLocation: () => lastLocation,

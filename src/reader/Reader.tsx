@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { getStorage } from '../platform'
+import { getLifecycle, getStorage } from '../platform'
 import type {
   Annotation,
   AppSettings,
@@ -15,6 +15,7 @@ import { useLibrary } from '../library/store'
 import { newId } from '../platform/ids'
 import { createReader, type ReaderHandle, type ReaderLocation } from './renderer'
 import { HighlightPopover, type HighlightDraft } from './annotations/HighlightPopover'
+import { AnnotationCard } from './annotations/AnnotationCard'
 import { PRESETS } from './styles/presets'
 import type { StyleId, StyleOverride } from './styles/types'
 import { resolveStyle } from './styles/resolve'
@@ -28,6 +29,11 @@ import { readHighlightStyle } from './pacer/overlayStyle'
 import {
   countCharacters,
   countReadingUnits,
+  isWholeLineChunkSize,
+  normaliseChunkSize,
+  CJK_CHUNK_SIZES,
+  LATIN_CHUNK_SIZES,
+  type PacerChunk,
   type PacerUnitKind,
   type ReadingUnitCounts,
 } from './pacer/chunker'
@@ -67,7 +73,30 @@ const HEADER_CONTROL_IDLE =
 const HEADER_CONTROL_ACTIVE =
   'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/80 dark:text-blue-400'
 
+/**
+ * Ceiling for the pacing rate.
+ *
+ * A single flat number now that one and two unit chunks are gone: the 600 cap
+ * existed so a one-word chunk still cleared the 100 ms dwell floor.
+ */
+const PACER_MAX_RATE = 1000
+
 const SAVE_DEBOUNCE_MS = 400
+/**
+ * How often auto-reading may write its within-page position.
+ *
+ * The cursor moves two or three times a second, which is far more often than
+ * this is worth writing. Two seconds is the compromise: a handful of writes a
+ * minute, and at most a line and a half of reading to lose.
+ *
+ * It has to be a small number rather than a lazy one because the exit hook
+ * cannot be relied on to catch the tail — macOS Cmd+Q gives no deferrable
+ * notice at all (see `src-tauri/src/lifecycle.rs`), so what is not written is
+ * what is lost.
+ */
+const CURSOR_SAVE_INTERVAL_MS = 2_000
+/** Retries for putting the cursor back after reopening a book. */
+const CURSOR_RESTORE_DELAYS_MS = [250, 700, 1500]
 const RESIZE_DEBOUNCE_MS = 150
 const AUTO_HIDE_CHROME_MS = 3200
 /** How long a jumped-to highlight stays emphasised. */
@@ -96,6 +125,8 @@ export function Reader({
   const bookLanguage = book?.language
 
   const containerRef = useRef<HTMLDivElement>(null)
+  /** The book plus the page-turn margins either side of it. */
+  const readerSurfaceRef = useRef<HTMLDivElement>(null)
   const handleRef = useRef<ReaderHandle | null>(null)
   const initialAppSettingsRef = useRef(appSettings)
   const bookSettingsRef = useRef<BookSettings | null>(null)
@@ -137,6 +168,13 @@ export function Reader({
 
   // Jump History (1-level)
   const [jumpOrigin, setJumpOrigin] = useState<string | null>(null)
+  /**
+   * Read by the auto-hide scheduler, which must not take the way back with it.
+   * The chrome hides itself after a few still seconds; a reader who has just
+   * jumped to a highlight and is reading it is exactly that still, and the only
+   * route back was going with it.
+   */
+  const jumpOriginRef = useRef<string | null>(null)
   const highlightFlashRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /**
    * Which drawer tab was last open. Held here rather than in the drawer so it
@@ -147,6 +185,12 @@ export function Reader({
 
   // Highlights & notes
   const [annotations, setAnnotations] = useState<Annotation[]>([])
+  /**
+   * The highlight being read from the drawer. Reading one is not going to it:
+   * the card shows the passage and the note where you are, and the jump is a
+   * button inside it.
+   */
+  const [openedAnnotation, setOpenedAnnotation] = useState<Annotation | null>(null)
   const [highlightDraft, setHighlightDraft] = useState<
     (HighlightDraft & { bounds: { width: number; height: number } }) | null
   >(null)
@@ -154,8 +198,12 @@ export function Reader({
   // Pacer state
   const [pacerWpm, setPacerWpm] = useState(appSettings.pacerWpm ?? 250)
   const [pacerCpm, setPacerCpm] = useState(appSettings.pacerCpm ?? 300)
-  const [pacerChunkSize, setPacerChunkSize] = useState(appSettings.pacerChunkSize ?? 3)
-  const [pacerCjkChunkSize, setPacerCjkChunkSize] = useState(appSettings.pacerCjkCharCount ?? 4)
+  const [pacerChunkSize, setPacerChunkSize] = useState(() =>
+    normaliseChunkSize(appSettings.pacerChunkSize, 'latin'),
+  )
+  const [pacerCjkChunkSize, setPacerCjkChunkSize] = useState(() =>
+    normaliseChunkSize(appSettings.pacerCjkCharCount, 'cjk'),
+  )
   const [hasPacerOverride, setHasPacerOverride] = useState(false)
   const [showPacerControls, setShowPacerControls] = useState(false)
 
@@ -263,11 +311,13 @@ export function Reader({
         pacerHighlightColor: appSettings.pacerHighlightColor,
         pacerHighlightOpacity: appSettings.pacerHighlightOpacity,
         pacerHighlightShape: appSettings.pacerHighlightShape,
+        pacerCursorMode: appSettings.pacerCursorMode,
       }),
     [
       appSettings.pacerHighlightColor,
       appSettings.pacerHighlightOpacity,
       appSettings.pacerHighlightShape,
+      appSettings.pacerCursorMode,
     ],
   )
 
@@ -281,6 +331,64 @@ export function Reader({
     ? 'cjk'
     : 'latin'
 
+  /**
+   * Record where auto-reading has got to inside the page.
+   *
+   * The lifecycle effect below owns the write queue, so it hands the recorder
+   * over through this ref. Only real cursor moves arrive here — `usePacer` does
+   * not report a cursor that was merely re-attached after a reflow, because a
+   * paused reader's stored position must not be overwritten.
+   */
+  const recordCursorPositionRef = useRef<((cfi: string) => void) | null>(null)
+
+  /**
+   * Keep the reading cursor on its word across a re-layout.
+   *
+   * Changing the font size does not only reflow: it moves the threshold at which
+   * the page splits into two columns, and epub.js answers that with a fresh
+   * `display()`. The chunk ranges the Pacer was holding belong to the document
+   * that just went away, so the cursor has to be anchored to something that
+   * survives — the same CFI the reading position is stored as.
+   */
+  const layoutRestoreTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
+
+  const captureCursorAnchor = useCallback((): string | null => {
+    const range = pacerRef.current.currentChunk?.range
+    if (!range) return null
+    return handleRef.current?.cfiFromRange(range) ?? null
+  }, [])
+
+  const restoreCursorAnchor = useCallback((cfi: string | null) => {
+    if (!cfi) return
+    let restored = false
+    // The page needs a moment to render and be chunked again, and how long
+    // depends on the book. Failing every attempt leaves the cursor at the top of
+    // the page, which is where it used to land every time.
+    for (const delay of CURSOR_RESTORE_DELAYS_MS) {
+      layoutRestoreTimersRef.current.push(
+        setTimeout(() => {
+          if (restored) return
+          const range = handleRef.current?.rangeFromCfi(cfi)
+          if (range && pacerRef.current.seekToChunkRange(range)) restored = true
+        }, delay),
+      )
+    }
+  }, [])
+
+  useEffect(
+    () => () => {
+      for (const timer of layoutRestoreTimersRef.current) clearTimeout(timer)
+    },
+    [],
+  )
+
+  const handleCursorMove = useCallback((chunk: PacerChunk) => {
+    const range = chunk.range
+    if (!range) return
+    const cfi = handleRef.current?.cfiFromRange(range)
+    if (cfi) recordCursorPositionRef.current?.(cfi)
+  }, [])
+
   // Pacer hook
   const pacer = usePacer({
     readerHandle: handle,
@@ -290,6 +398,7 @@ export function Reader({
     latinChunkSize: pacerChunkSize,
     cjkChunkSize: pacerCjkChunkSize,
     defaultUnit: defaultPacerUnit,
+    onCursorMove: handleCursorMove,
     onPageConsumed: () => {
       pagePacerConsumedRef.current = true
     },
@@ -357,11 +466,12 @@ export function Reader({
     showSearchRef.current = showSearch
     showPacerControlsRef.current = showPacerControls
     clickToPositionRef.current = appSettings.clickToPositionPacer ?? true
+    jumpOriginRef.current = jumpOrigin
     errorRef.current = error
   })
 
   const blockingReaderPanelOpen =
-    showSettings || showToc || showSearch || highlightDraft !== null
+    showSettings || showToc || showSearch || highlightDraft !== null || openedAnnotation !== null
 
   /**
    * The margin taps stay live while the highlight popover is open, because a
@@ -474,7 +584,8 @@ export function Reader({
       showSettingsRef.current ||
       showTocRef.current ||
       showSearchRef.current ||
-      showPacerControlsRef.current
+      showPacerControlsRef.current ||
+      jumpOriginRef.current
     ) {
       return
     }
@@ -483,7 +594,8 @@ export function Reader({
         !showSettingsRef.current &&
         !showTocRef.current &&
         !showSearchRef.current &&
-        !showPacerControlsRef.current
+        !showPacerControlsRef.current &&
+        !jumpOriginRef.current
       ) {
         setChromeVisible(false)
       }
@@ -570,8 +682,11 @@ export function Reader({
     let cancelled = false
     let reader: ReaderHandle | null = null
     let saveTimer: ReturnType<typeof setTimeout> | undefined
+    let cursorTimer: ReturnType<typeof setTimeout> | undefined
     let unsaved: ReadingProgress | null = null
     let lastKnownPercentage: number | null = 0
+    let cursorRestored = false
+    const restoreTimers: ReturnType<typeof setTimeout>[] = []
 
     readerTrackableRef.current = false
     currentPageCfiRef.current = null
@@ -581,6 +696,8 @@ export function Reader({
 
     async function flush() {
       clearTimeout(saveTimer)
+      clearTimeout(cursorTimer)
+      cursorTimer = undefined
       const progress = unsaved
       if (!progress) return
       try {
@@ -598,6 +715,47 @@ export function Reader({
       await flush()
       await flushReadingSession()
       await useLibrary.getState().load()
+    }
+
+    function snapshotProgress(cfi: string): ReadingProgress {
+      return {
+        bookId,
+        cfi,
+        percentage: lastKnownPercentage ?? 0,
+        updatedAt: new Date().toISOString(),
+      }
+    }
+
+    /**
+     * Where auto-reading has reached inside the page.
+     *
+     * Kept up to date in memory on every cursor move, but written on a slow
+     * throttle rather than the page debounce: the cursor moves several times a
+     * second and the position is not worth that many writes. Whatever is queued
+     * when the book closes or the app quits is flushed then.
+     */
+    recordCursorPositionRef.current = (cfi: string) => {
+      unsaved = snapshotProgress(cfi)
+      if (cursorTimer !== undefined) return
+      cursorTimer = setTimeout(() => {
+        cursorTimer = undefined
+        void flush()
+      }, CURSOR_SAVE_INTERVAL_MS)
+    }
+
+    /**
+     * Arrow keys and sideways swipes are the same decision: a page while the
+     * Pacer is idle, a chunk while it is running. One function so the two input
+     * paths cannot drift apart.
+     */
+    function moveReadingPosition(direction: 'prev' | 'next') {
+      if (showSettingsRef.current || showTocRef.current || showSearchRef.current) return
+      if (pacerRef.current.isPlaying) {
+        if (direction === 'next') pacerRef.current.nextChunk()
+        else pacerRef.current.prevChunk()
+        return
+      }
+      void handleRef.current?.[direction]()
     }
 
     function onKeyDown(event: KeyboardEvent) {
@@ -633,19 +791,11 @@ export function Reader({
       if (event.key === 'ArrowRight' || event.key === 'PageDown') {
         event.preventDefault()
         if (blockingPanelOpen) return
-        if (pacerRef.current.isPlaying) {
-          pacerRef.current.nextChunk()
-        } else {
-          void handleRef.current?.next()
-        }
+        moveReadingPosition('next')
       } else if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
         event.preventDefault()
         if (blockingPanelOpen) return
-        if (pacerRef.current.isPlaying) {
-          pacerRef.current.prevChunk()
-        } else {
-          void handleRef.current?.prev()
-        }
+        moveReadingPosition('prev')
       } else if (event.key === 'Escape') {
         event.preventDefault()
         if (showPacerControlsRef.current) {
@@ -686,6 +836,28 @@ export function Reader({
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('mousemove', pingActivity)
 
+    // Quitting the app is not leaving the reader: nothing unmounts, so the
+    // debounced position and the buffered reading time need their own last call.
+    async function flushEverything() {
+      await flush()
+      await flushReadingSession()
+    }
+
+    let releaseExitHook: (() => void) | null = null
+    void getLifecycle()
+      .then((lifecycle) => {
+        if (cancelled) return
+        releaseExitHook = lifecycle.onBeforeExit(flushEverything)
+      })
+      .catch(() => undefined)
+
+    // Stepping away from the window is the last moment anyone can count on: a
+    // quit from another app, or from the Dock, arrives with no warning the page
+    // can act on. Both are cheap — a flush with nothing queued does nothing.
+    const flushOnLeaving = () => void flushEverything()
+    window.addEventListener('blur', flushOnLeaving)
+    document.addEventListener('visibilitychange', flushOnLeaving)
+
     void (async () => {
       try {
         const storage = await getStorage()
@@ -713,10 +885,14 @@ export function Reader({
         const initialFlow = initialAppSettings.flow ?? 'paginated'
         const initialPacerWpm = savedSettings?.pacerWpm ?? initialAppSettings.pacerWpm ?? 250
         const initialPacerCpm = savedSettings?.pacerCpm ?? initialAppSettings.pacerCpm ?? 300
-        const initialPacerChunkSize =
-          savedSettings?.pacerChunkSize ?? initialAppSettings.pacerChunkSize ?? 3
-        const initialPacerCjkChunkSize =
-          savedSettings?.pacerCjkCharCount ?? initialAppSettings.pacerCjkCharCount ?? 4
+        const initialPacerChunkSize = normaliseChunkSize(
+          savedSettings?.pacerChunkSize ?? initialAppSettings.pacerChunkSize,
+          'latin',
+        )
+        const initialPacerCjkChunkSize = normaliseChunkSize(
+          savedSettings?.pacerCjkCharCount ?? initialAppSettings.pacerCjkCharCount,
+          'cjk',
+        )
         const hasSavedPacerOverride = Boolean(
           savedSettings &&
           (savedSettings.pacerWpm !== undefined ||
@@ -785,6 +961,11 @@ export function Reader({
               void handleRef.current?.[blankSide]()
             }
           },
+          onHorizontalSwipe(direction) {
+            pingActivity()
+            if (!readerTrackableRef.current) return
+            moveReadingPosition(direction)
+          },
           onLinkClick() {
             pingActivity()
             pacerRef.current.pause()
@@ -835,19 +1016,18 @@ export function Reader({
               lastKnownPercentage = loc.percentage
               setPercentage(loc.percentage)
             }
-            unsaved = {
-              bookId,
-              cfi: loc.cfi,
-              percentage: lastKnownPercentage ?? 0,
-              updatedAt: new Date().toISOString(),
-            }
+            unsaved = snapshotProgress(loc.cfi)
             clearTimeout(saveTimer)
             saveTimer = setTimeout(() => void flush(), SAVE_DEBOUNCE_MS)
 
+            // Reflowing the page relocates it too — changing the font size lands
+            // here with a new CFI for the same words. That is not a page turn,
+            // and the flag the reading statistics already use to tell them apart
+            // is the same one the cursor needs.
+            const layoutChangeSuppressed = layoutChangeSuppressedRef.current
             const previousCfi = currentPageCfiRef.current
             const locationChanged = previousCfi !== loc.cfi
             if (locationChanged) {
-              const layoutChangeSuppressed = layoutChangeSuppressedRef.current
               if (
                 shouldCreditDepartedPage(
                   previousCfi,
@@ -874,7 +1054,9 @@ export function Reader({
                 setPageUnits(countReadingUnits(words))
               }
               if (!pacerRef.current.isPlaying) {
-                pacerRef.current.recalculateGeometry(false)
+                // Keep the cursor on its word through a reflow; a real page turn
+                // has no word to keep, so it starts at the top of the new page.
+                pacerRef.current.recalculateGeometry(layoutChangeSuppressed)
               }
             }, 60)
           },
@@ -902,6 +1084,23 @@ export function Reader({
 
         setReady(true)
         pingActivity()
+
+        // The stored position is now the word auto-reading was on, not just the
+        // page, so put the cursor back on it. The page has to have settled and
+        // been chunked first, hence the retries; failing all of them simply
+        // leaves the cursor at the top of the restored page, as before.
+        const savedCfi = savedProgress?.cfi
+        if (savedCfi) {
+          for (const delay of CURSOR_RESTORE_DELAYS_MS) {
+            restoreTimers.push(
+              setTimeout(() => {
+                if (cancelled || cursorRestored) return
+                const range = handleRef.current?.rangeFromCfi(savedCfi)
+                if (range && pacerRef.current.seekToChunkRange(range)) cursorRestored = true
+              }, delay),
+            )
+          }
+        }
       } catch (cause) {
         if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause))
       }
@@ -912,6 +1111,11 @@ export function Reader({
       readerTrackableRef.current = false
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('mousemove', pingActivity)
+      releaseExitHook?.()
+      window.removeEventListener('blur', flushOnLeaving)
+      document.removeEventListener('visibilitychange', flushOnLeaving)
+      recordCursorPositionRef.current = null
+      for (const timer of restoreTimers) clearTimeout(timer)
       if (hideChromeTimerRef.current) clearTimeout(hideChromeTimerRef.current)
       if (layoutSuppressionTimerRef.current) clearTimeout(layoutSuppressionTimerRef.current)
       if (highlightFlashRef.current) clearTimeout(highlightFlashRef.current)
@@ -933,13 +1137,34 @@ export function Reader({
     }
   }, [bookId, bookLanguage, closeBook, creditReadingUnits, flushReadingSession, measureContainerBounds])
 
+  /**
+   * Sideways swipes that did not land on the book page itself.
+   *
+   * `wheel` does not cross the iframe boundary, so the book page has its own
+   * listener and both feed the one accumulator inside the renderer. This one is
+   * on the whole reading surface rather than the book container, because the
+   * page-turn margins beside the book are a large part of where a swipe lands —
+   * they are already the click target for turning the page.
+   */
+  useEffect(() => {
+    const surface = readerSurfaceRef.current
+    if (!surface) return
+    const onWheel = (event: WheelEvent) => handleRef.current?.handleWheel(event)
+    surface.addEventListener('wheel', onWheel, { passive: false })
+    return () => surface.removeEventListener('wheel', onWheel)
+  }, [])
+
   useEffect(() => {
     if (!handleRef.current || !ready) return
     suppressLayoutTracking()
+    const anchor = captureCursorAnchor()
     void handleRef.current.setFlow(flow).then(() => {
-      setTimeout(() => pacerRef.current.recalculateGeometry(false), 80)
+      setTimeout(() => {
+        pacerRef.current.recalculateGeometry(false)
+        restoreCursorAnchor(anchor)
+      }, 80)
     })
-  }, [flow, ready, suppressLayoutTracking])
+  }, [captureCursorAnchor, flow, ready, restoreCursorAnchor, suppressLayoutTracking])
 
   /**
    * Push the column decision to epub.js.
@@ -953,23 +1178,38 @@ export function Reader({
   useEffect(() => {
     if (!handleRef.current || !ready) return
     suppressLayoutTracking()
+    const anchor = captureCursorAnchor()
     void handleRef.current
       .setSpread(overrides.spreadMode ?? 'auto', minSpreadWidthPx)
       .then(() => {
-        setTimeout(() => pacerRef.current.recalculateGeometry(false), 80)
+        setTimeout(() => {
+          pacerRef.current.recalculateGeometry(false)
+          restoreCursorAnchor(anchor)
+        }, 80)
       })
-  }, [minSpreadWidthPx, overrides.spreadMode, ready, suppressLayoutTracking])
+  }, [
+    captureCursorAnchor,
+    minSpreadWidthPx,
+    overrides.spreadMode,
+    ready,
+    restoreCursorAnchor,
+    suppressLayoutTracking,
+  ])
 
   // Apply style updates
   useEffect(() => {
     if (handleRef.current && ready) {
       suppressLayoutTracking()
+      const anchor = captureCursorAnchor()
       handleRef.current.applyStyle(resolvedStyle)
       setTimeout(() => {
+        // Reflowing keeps the document, so the cursor's own range is enough;
+        // the anchor is there for the changes that also re-display the page.
         pacerRef.current.recalculateGeometry()
+        restoreCursorAnchor(anchor)
       }, 50)
     }
-  }, [resolvedStyle, ready, suppressLayoutTracking])
+  }, [captureCursorAnchor, resolvedStyle, ready, restoreCursorAnchor, suppressLayoutTracking])
 
   // Serialize full-record book settings writes so rapid controls cannot
   // overwrite a neighboring key with stale React state.
@@ -1112,6 +1352,7 @@ export function Reader({
   const handleDeleteAnnotationById = async (id: string) => {
     const annotation = annotations.find((item) => item.id === id)
     if (!annotation) return
+    setOpenedAnnotation((current) => (current?.id === id ? null : current))
     handleRef.current?.removeHighlight(annotation.cfiRange)
     setAnnotations((previous) => previous.filter((item) => item.id !== id))
     try {
@@ -1122,6 +1363,7 @@ export function Reader({
   }
 
   const handleNavigateToAnnotation = (annotation: Annotation) => {
+    setOpenedAnnotation(null)
     // Jumping to a highlight records where you came from, exactly as jumping
     // from the contents or a bookmark does. Without it there was no way back —
     // the one place in the drawer you cannot return from was the one you are
@@ -1216,8 +1458,7 @@ export function Reader({
   }, [suppressLayoutTracking])
 
   const updatePacerSpeed = (value: number) => {
-    const maxRate = pacerUsesCjkUnits || activePacerChunkSize > 1 ? 1000 : 600
-    const next = Math.max(100, Math.min(maxRate, value))
+    const next = Math.max(100, Math.min(PACER_MAX_RATE, value))
     if (pacerUsesCjkUnits) {
       setPacerCpm(next)
       saveCurrentSettings({ pacerCpm: next })
@@ -1233,10 +1474,8 @@ export function Reader({
       setPacerCjkChunkSize(value)
       saveCurrentSettings({ pacerCjkCharCount: value })
     } else {
-      const nextWpm = value === 1 && pacerWpm > 600 ? 600 : pacerWpm
       setPacerChunkSize(value)
-      if (nextWpm !== pacerWpm) setPacerWpm(nextWpm)
-      saveCurrentSettings({ pacerWpm: nextWpm, pacerChunkSize: value })
+      saveCurrentSettings({ pacerChunkSize: value })
     }
     setHasPacerOverride(true)
   }
@@ -1244,8 +1483,8 @@ export function Reader({
   const resetPacerToAppDefaults = () => {
     setPacerWpm(appSettings.pacerWpm ?? 250)
     setPacerCpm(appSettings.pacerCpm ?? 300)
-    setPacerChunkSize(appSettings.pacerChunkSize ?? 3)
-    setPacerCjkChunkSize(appSettings.pacerCjkCharCount ?? 4)
+    setPacerChunkSize(normaliseChunkSize(appSettings.pacerChunkSize, 'latin'))
+    setPacerCjkChunkSize(normaliseChunkSize(appSettings.pacerCjkCharCount, 'cjk'))
     setHasPacerOverride(false)
     saveCurrentSettings({
       pacerWpm: undefined,
@@ -1275,8 +1514,8 @@ export function Reader({
     sub: t(pacerUsesCjkUnits ? 'pacer.tierSubCjk' : 'pacer.tierSubLatin', { n: wpm }),
   }))
 
-  const pacerChunkOptions = pacerUsesCjkUnits ? [2, 4, 6, 8, 10] : [1, 2, 3, 4, 5]
-  const pacerMaxRate = pacerUsesCjkUnits || activePacerChunkSize > 1 ? 1000 : 600
+  const pacerChunkOptions = pacerUsesCjkUnits ? CJK_CHUNK_SIZES : LATIN_CHUNK_SIZES
+  const pacerMaxRate = PACER_MAX_RATE
 
   return (
     <div
@@ -1447,7 +1686,10 @@ export function Reader({
       {/* Main Reader Surface with generous reading margins.
           Three columns rather than overlays: the tap zones are siblings of the
           book, so they can never sit on top of the text. */}
-      <div className="relative flex min-h-0 flex-1 items-stretch overflow-hidden">
+      <div
+        ref={readerSurfaceRef}
+        className="relative flex min-h-0 flex-1 items-stretch overflow-hidden"
+      >
         <PageTurnZone
           side="prev"
           disabled={marginTapDisabled}
@@ -1465,7 +1707,8 @@ export function Reader({
           <div ref={containerRef} className="relative h-full w-full">
             {/* Pacer Highlight Overlay */}
             <Overlay
-              rect={pacer.overlayRect}
+              rects={pacer.overlayRects}
+              lineRect={pacer.overlayLineRect}
               animMs={pacer.currentChunk?.animMs}
               accentColor={resolvedStyle.palette.accent}
               isDark={isEffectiveDark}
@@ -1565,7 +1808,7 @@ export function Reader({
           ref={pacerPopoverRef}
           role="dialog"
           aria-labelledby="pacer-settings-title"
-          className="absolute right-6 top-16 z-50 w-[26rem] rounded-3xl border border-black/[0.12] bg-white/[0.97] p-5 shadow-[0_25px_60px_rgba(0,0,0,0.26),0_2px_10px_rgba(0,0,0,0.10)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 vr-animate-pop"
+          className="absolute right-6 top-16 z-50 w-[30rem] rounded-3xl border border-black/[0.12] bg-white/[0.97] p-5 shadow-[0_25px_60px_rgba(0,0,0,0.26),0_2px_10px_rgba(0,0,0,0.10)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 vr-animate-pop"
         >
           {/* Popover Header with Title and Explicit Close Button */}
           <div className="flex items-start justify-between gap-3 pb-3.5 border-b border-black/[0.10] dark:border-white/[0.06]">
@@ -1705,7 +1948,8 @@ export function Reader({
               </div>
             </div>
 
-            {/* Chunk Size Selector */}
+            {/* How much the cursor covers, in one control: a few words, or the
+                whole line. */}
             <div className="pt-3 border-t border-black/[0.10] dark:border-white/[0.06] flex items-center justify-between">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
                 {t(pacerUsesCjkUnits ? 'pacer.chunkCjk' : 'pacer.chunkLatin')}
@@ -1718,16 +1962,18 @@ export function Reader({
                     onClick={() => {
                       updatePacerChunkSize(size)
                     }}
-                    className={`px-2.5 py-1 rounded-lg transition text-[11px] font-medium focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 ${
+                    className={`px-2.5 py-1.5 rounded-lg transition text-[11px] font-medium focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 ${
                       activePacerChunkSize === size
                         ? 'bg-blue-500/12 text-blue-700 ring-1 ring-inset ring-blue-500/35 dark:bg-[#2C2C2E] dark:text-white dark:ring-0 font-semibold'
                         : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
                     }`}
                     aria-pressed={activePacerChunkSize === size}
                   >
-                    {t(pacerUsesCjkUnits ? 'pacer.chunkUnitCjk' : 'pacer.chunkUnitLatin', {
-                      n: size,
-                    })}
+                    {isWholeLineChunkSize(size)
+                      ? t('pacer.chunkLine')
+                      : t(pacerUsesCjkUnits ? 'pacer.chunkUnitCjk' : 'pacer.chunkUnitLatin', {
+                          n: size,
+                        })}
                   </button>
                 ))}
               </div>
@@ -1784,9 +2030,19 @@ export function Reader({
           onNavigate={handleNavigate}
           onAddBookmark={handleAddBookmark}
           onDeleteBookmark={handleDeleteBookmark}
-          onNavigateToAnnotation={handleNavigateToAnnotation}
+          onOpenAnnotation={setOpenedAnnotation}
           onDeleteAnnotation={handleDeleteAnnotationById}
           onClose={() => setShowToc(false)}
+        />
+      )}
+
+      {openedAnnotation && (
+        <AnnotationCard
+          annotation={openedAnnotation}
+          canJump={openedAnnotation.source === 'local'}
+          onJump={() => handleNavigateToAnnotation(openedAnnotation)}
+          onDelete={() => void handleDeleteAnnotationById(openedAnnotation.id)}
+          onClose={() => setOpenedAnnotation(null)}
         />
       )}
     </div>

@@ -30,18 +30,25 @@ describe('resolveStyle', () => {
     const style = PRESETS.book
     const baseLineHeight = PRESETS.book.body.lineHeight
     const resolved = resolveStyle(style, {
-      fontSizeStep: 2, // 19 + 4 = 23
+      fontSizeStep: 2, // one pixel per step: 19 + 2 = 21
       lineHeightStep: 1, // base + 0.15
       marginStep: 1, // 66 - 8 = 58
       bold: true,
       justify: false,
     })
 
-    expect(resolved.body.fontSizePx).toBe(23)
+    expect(resolved.body.fontSizePx).toBe(21)
     expect(resolved.body.lineHeight).toBe(Number((baseLineHeight + 0.15).toFixed(2)))
     expect(resolved.body.measureCh).toBe(58)
     expect(resolved.body.fontWeight).toBe(700)
     expect(resolved.body.align).toBe('start')
+  })
+
+  it('holds the font size inside what the page can render', () => {
+    // The stepper offers a wider range than any preset needs, so the clamp is
+    // what actually stops it — at both ends.
+    expect(resolveStyle(PRESETS.book, { fontSizeStep: -40 }).body.fontSizePx).toBe(12)
+    expect(resolveStyle(PRESETS.book, { fontSizeStep: 40 }).body.fontSizePx).toBe(36)
   })
 
   it('handles "original" fontStack without overriding font-family', () => {

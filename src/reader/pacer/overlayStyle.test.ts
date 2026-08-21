@@ -51,10 +51,52 @@ describe('resolveOverlayStyle', () => {
   })
 })
 
+describe('cursor mode', () => {
+  it('draws no line band unless the cursor asks for one', () => {
+    const resolved = resolveOverlayStyle(
+      { ...DEFAULT_PACER_HIGHLIGHT, cursorMode: 'chunk' },
+      '#D97706',
+      false,
+    )
+    expect(resolved.lineBackgroundColor).toBeNull()
+  })
+
+  it('draws the band fainter than the cursor over it', () => {
+    const resolved = resolveOverlayStyle(
+      { ...DEFAULT_PACER_HIGHLIGHT, cursorMode: 'chunk-in-line' },
+      '#D97706',
+      false,
+    )
+    expect(resolved.lineBackgroundColor).toBe('rgba(217, 119, 6, 0.081)')
+    expect(resolved.backgroundColor).toBe('rgba(217, 119, 6, 0.18)')
+  })
+
+  it('gives the band a fill even when the cursor is a rule only', () => {
+    const resolved = resolveOverlayStyle(
+      { ...DEFAULT_PACER_HIGHLIGHT, cursorMode: 'chunk-in-line', shape: 'underline' },
+      '#D97706',
+      false,
+    )
+    expect(resolved.backgroundColor).toBe('transparent')
+    expect(resolved.lineBackgroundColor).not.toBeNull()
+  })
+
+  it('reads a size setting that landed in the cursor field as no band', () => {
+    // `line` was a cursor mode before whole-line became a chunk size.
+    const legacy = { pacerCursorMode: 'line' } as unknown as { pacerCursorMode: undefined }
+    expect(readHighlightStyle(legacy).cursorMode).toBe('chunk')
+  })
+})
+
 describe('readHighlightStyle', () => {
   it('fills in every default from empty settings', () => {
     expect(readHighlightStyle({})).toEqual(DEFAULT_PACER_HIGHLIGHT)
     expect(readHighlightStyle({}).color).toBe(AUTO_HIGHLIGHT_COLOR)
+  })
+
+  it('keeps the plain cursor as the default', () => {
+    expect(readHighlightStyle({}).cursorMode).toBe('chunk')
+    expect(readHighlightStyle({ pacerCursorMode: 'chunk-in-line' }).cursorMode).toBe('chunk-in-line')
   })
 
   it('clamps a stored opacity that is out of range', () => {

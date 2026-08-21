@@ -54,6 +54,15 @@ const FONT_OPTIONS: { labelKey: MessageKey; value: string }[] = [
   },
 ]
 
+/**
+ * How far the size may be nudged either way, in pixels.
+ *
+ * Wide enough to reach the renderer's own 12–36px bounds from any preset, so the
+ * control stops because the page stops, not because the stepper ran out.
+ */
+const FONT_SIZE_STEP_MIN = -8
+const FONT_SIZE_STEP_MAX = 18
+
 export function SettingsPanel({
   currentStyleId,
   overrides,
@@ -77,7 +86,7 @@ export function SettingsPanel({
 
   return (
     <div
-      className="absolute right-6 top-16 z-50 w-[26rem] rounded-3xl border border-black/[0.12] bg-white/[0.97] p-5 shadow-[0_25px_60px_rgba(0,0,0,0.26),0_2px_10px_rgba(0,0,0,0.10)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 vr-animate-pop"
+      className="absolute right-6 top-16 z-50 w-[30rem] rounded-3xl border border-black/[0.12] bg-white/[0.97] p-5 shadow-[0_25px_60px_rgba(0,0,0,0.26),0_2px_10px_rgba(0,0,0,0.10)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 vr-animate-pop"
     >
       {/* Header */}
       <div className="flex items-center justify-between pb-3.5 border-b border-black/[0.10] dark:border-white/[0.06]">
@@ -190,34 +199,46 @@ export function SettingsPanel({
         <div>
           <div className="mb-1.5 flex justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
             <span>{t('typography.fontSize')}</span>
-            <span className="flex items-baseline gap-1.5 font-normal">
-              <span className="font-mono text-xs font-semibold normal-case text-neutral-800 dark:text-neutral-200">
-                {resolved.fontSizePx}px
-              </span>
-              <span className="font-mono text-[10px] normal-case text-neutral-500 dark:text-neutral-400">
-                {fontSizeStep > 0
-                  ? `+${fontSizeStep}`
-                  : fontSizeStep === 0
-                    ? t('typography.fontSizeStandard')
-                    : fontSizeStep}
-              </span>
+            <span className="font-mono text-[10px] font-normal normal-case text-neutral-500 dark:text-neutral-400">
+              {fontSizeStep > 0
+                ? `+${fontSizeStep}`
+                : fontSizeStep === 0
+                  ? t('typography.fontSizeStandard')
+                  : fontSizeStep}
             </span>
           </div>
+          {/* One step is one pixel, and the range reaches both ends of what the
+              renderer allows (12–36px). Two-pixel steps over nine positions made
+              the one setting people fiddle with jump under their hand. */}
           <div className="flex items-center rounded-xl bg-black/[0.06] p-1 dark:bg-white/[0.06]">
             <button
               type="button"
-              disabled={fontSizeStep <= -3}
-              onClick={() => onOverridesChange({ ...overrides, fontSizeStep: Math.max(-3, fontSizeStep - 1) })}
-              className="flex-1 rounded-lg py-1.5 text-xs font-semibold text-neutral-700 dark:text-neutral-300 transition hover:bg-white dark:hover:bg-[#2C2C2E] disabled:opacity-30 active:scale-95"
+              disabled={fontSizeStep <= FONT_SIZE_STEP_MIN}
+              onClick={() =>
+                onOverridesChange({
+                  ...overrides,
+                  fontSizeStep: Math.max(FONT_SIZE_STEP_MIN, fontSizeStep - 1),
+                })
+              }
+              aria-label={t('typography.fontSizeSmaller')}
+              className="flex-1 rounded-lg py-1.5 text-xs font-semibold text-neutral-700 transition hover:bg-white active:scale-95 disabled:opacity-30 dark:text-neutral-300 dark:hover:bg-[#2C2C2E]"
             >
               A -
             </button>
-            <div className="h-4 w-px bg-black/[0.10] dark:bg-white/[0.08]" />
+            <span className="w-16 shrink-0 text-center font-mono text-xs font-semibold text-neutral-800 dark:text-neutral-200">
+              {resolved.fontSizePx}px
+            </span>
             <button
               type="button"
-              disabled={fontSizeStep >= 5}
-              onClick={() => onOverridesChange({ ...overrides, fontSizeStep: Math.min(5, fontSizeStep + 1) })}
-              className="flex-1 rounded-lg py-1.5 text-sm font-semibold text-neutral-700 dark:text-neutral-300 transition hover:bg-white dark:hover:bg-[#2C2C2E] disabled:opacity-30 active:scale-95"
+              disabled={fontSizeStep >= FONT_SIZE_STEP_MAX}
+              onClick={() =>
+                onOverridesChange({
+                  ...overrides,
+                  fontSizeStep: Math.min(FONT_SIZE_STEP_MAX, fontSizeStep + 1),
+                })
+              }
+              aria-label={t('typography.fontSizeLarger')}
+              className="flex-1 rounded-lg py-1.5 text-sm font-semibold text-neutral-700 transition hover:bg-white active:scale-95 disabled:opacity-30 dark:text-neutral-300 dark:hover:bg-[#2C2C2E]"
             >
               A +
             </button>

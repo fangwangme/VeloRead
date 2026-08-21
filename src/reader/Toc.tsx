@@ -23,7 +23,8 @@ interface TocProps {
   onNavigate: (hrefOrCfi: string) => void
   onAddBookmark: () => void
   onDeleteBookmark: (id: string) => void
-  onNavigateToAnnotation: (annotation: Annotation) => void
+  /** Opens the highlight for reading. Jumping to it is a choice made there. */
+  onOpenAnnotation: (annotation: Annotation) => void
   onDeleteAnnotation: (id: string) => void
   onClose: () => void
 }
@@ -40,7 +41,7 @@ export function Toc({
   onNavigate,
   onAddBookmark,
   onDeleteBookmark,
-  onNavigateToAnnotation,
+  onOpenAnnotation,
   onDeleteAnnotation,
   onClose,
 }: TocProps) {
@@ -216,9 +217,10 @@ export function Toc({
                   return (
                     <ListCard
                       key={annotation.id}
-                      // Imported rows have no reliable anchor, so they are not
-                      // given a jump affordance that would do nothing.
-                      onOpen={imported ? undefined : () => onNavigateToAnnotation(annotation)}
+                      // Every row opens, imported ones included: reading the
+                      // passage and its note never needed an anchor. Only the
+                      // jump inside the card does, and it is hidden there.
+                      onOpen={() => onOpenAnnotation(annotation)}
                       onDelete={() => void confirmDeleteAnnotation(annotation)}
                       deleteLabel={t('toc.deleteAnnotationLabel', {
                         text: annotation.text.slice(0, 20),

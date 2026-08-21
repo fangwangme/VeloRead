@@ -2,9 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   dominantPacerUnit,
   groupWordsIntoChunks,
+  isWholeLineChunkSize,
+  DEFAULT_CJK_CHUNK_SIZE,
+  DEFAULT_LATIN_CHUNK_SIZE,
   type ChunkerOptions,
   type PacerChunk,
   type PacerUnitKind,
+  type WordItem,
 } from './chunker'
 import { chunkToOverlayRect, type Rect } from './geometry'
 import { PacerEngine, type PacerState } from './engine'
@@ -15,12 +19,21 @@ interface UsePacerOptions {
   containerRef: React.RefObject<HTMLDivElement | null>
   latinWpm: number
   cjkCpm: number
+  /** Words per chunk, or `PACER_CHUNK_SIZE_LINE` for one chunk per line. */
   latinChunkSize?: number
+  /** Graphemes per chunk, or `PACER_CHUNK_SIZE_LINE`. */
   cjkChunkSize?: number
   defaultUnit?: PacerUnitKind
   onPageConsumed?: () => void
   canAdvancePage?: () => boolean
   canCreditPage?: () => boolean
+  /**
+   * The reading cursor moved because the reader moved it — playback advanced, or
+   * they seeked. Not called when the cursor is only re-attached to the same
+   * words after a reflow or a page turn, so a paused reader's stored position is
+   * never overwritten (docs/specs/pacer.md §8).
+   */
+  onCursorMove?: (chunk: PacerChunk) => void
 }
 
 export function usePacer({
@@ -28,50 +41,89 @@ export function usePacer({
   containerRef,
   latinWpm,
   cjkCpm,
-  latinChunkSize = 3,
-  cjkChunkSize = 4,
+  latinChunkSize = DEFAULT_LATIN_CHUNK_SIZE,
+  cjkChunkSize = DEFAULT_CJK_CHUNK_SIZE,
   defaultUnit = 'latin',
   onPageConsumed,
   canAdvancePage,
   canCreditPage,
+  onCursorMove,
 }: UsePacerOptions) {
   const [pacerState, setPacerState] = useState<PacerState>('idle')
   const [currentChunk, setCurrentChunk] = useState<PacerChunk | null>(null)
-  const [overlayRect, setOverlayRect] = useState<Rect | null>(null)
+  /**
+   * One box per line the current chunk touches — two when its last word was
+   * hyphenated across the line break, one otherwise.
+   */
+  const [overlayRects, setOverlayRects] = useState<Rect[]>([])
+  const [overlayLineRect, setOverlayLineRect] = useState<Rect | null>(null)
   const [totalChunks, setTotalChunks] = useState(0)
   const [chunkIndex, setChunkIndex] = useState(0)
   const [dominantUnit, setDominantUnit] = useState<PacerUnitKind>(defaultUnit)
 
   const engineRef = useRef<PacerEngine | null>(null)
-  const configRef = useRef<ChunkerOptions>({
-    latinWpm,
-    cjkCpm,
-    latinChunkSize,
-    cjkChunkSize,
-  })
+  const configRef = useRef<ChunkerOptions>({ latinWpm, cjkCpm, latinChunkSize, cjkChunkSize })
   const defaultUnitRef = useRef(defaultUnit)
   const onPageConsumedRef = useRef(onPageConsumed)
   const canAdvancePageRef = useRef(canAdvancePage)
   const canCreditPageRef = useRef(canCreditPage)
+  const onCursorMoveRef = useRef(onCursorMove)
 
   useEffect(() => {
     defaultUnitRef.current = defaultUnit
     onPageConsumedRef.current = onPageConsumed
     canAdvancePageRef.current = canAdvancePage
     canCreditPageRef.current = canCreditPage
-  }, [defaultUnit, onPageConsumed, canAdvancePage, canCreditPage])
+    onCursorMoveRef.current = onCursorMove
+  }, [defaultUnit, onPageConsumed, canAdvancePage, canCreditPage, onCursorMove])
+
+  /**
+   * The chunker's settings for the words actually on this page.
+   *
+   * Two things are decided here rather than stored. The column pitch, because it
+   * changes with the font size, the window width and the spread — all of which
+   * already call `recalculateGeometry`. And whether a chunk is a whole line,
+   * because that is one of the sizes and the size that applies is the one for
+   * the script this page is mostly written in — the same profile the controls
+   * are showing.
+   */
+  const chunkerConfig = useCallback(
+    (words: WordItem[]): ChunkerOptions => {
+      const config = configRef.current
+      const unit = dominantPacerUnit(words, defaultUnitRef.current)
+      const size = unit === 'cjk' ? config.cjkChunkSize : config.latinChunkSize
+      return {
+        ...config,
+        // A size of "whole line" for the other script must not reach the chunker
+        // as a limit of zero, which would put every word in a chunk of its own.
+        latinChunkSize: isWholeLineChunkSize(config.latinChunkSize ?? 0)
+          ? DEFAULT_LATIN_CHUNK_SIZE
+          : config.latinChunkSize,
+        cjkChunkSize: isWholeLineChunkSize(config.cjkChunkSize ?? 0)
+          ? DEFAULT_CJK_CHUNK_SIZE
+          : config.cjkChunkSize,
+        wholeLine: isWholeLineChunkSize(size ?? 0),
+        columnPitch: readerHandle?.getColumnPitch() ?? null,
+      }
+    },
+    [readerHandle],
+  )
 
   const updateOverlay = useCallback(
     (chunk: PacerChunk | null, ensureVisible = true) => {
+      const clear = () => {
+        setOverlayRects([])
+        setOverlayLineRect(null)
+      }
       if (!chunk || !containerRef.current || !readerHandle) {
-        setOverlayRect(null)
+        clear()
         return
       }
 
       const iframe = readerHandle.getIframeElement()
       const container = containerRef.current
       if (!iframe) {
-        setOverlayRect(null)
+        clear()
         return
       }
 
@@ -79,14 +131,16 @@ export function usePacer({
 
       const iframeRect = iframe.getBoundingClientRect()
       const containerRect = container.getBoundingClientRect()
-
-      const rect = chunkToOverlayRect(chunk.rect, {
+      const metrics = {
         iframeRect,
         containerRect,
         scrollLeft: container.scrollLeft,
         scrollTop: container.scrollTop,
-      })
-      setOverlayRect(rect)
+      }
+
+      const boxes = chunk.lineBoxes.length > 0 ? chunk.lineBoxes : [chunk.rect]
+      setOverlayRects(boxes.map((box) => chunkToOverlayRect(box, metrics)))
+      setOverlayLineRect(chunkToOverlayRect(chunk.lineRect, metrics))
     },
     [containerRef, readerHandle],
   )
@@ -95,8 +149,7 @@ export function usePacer({
     (preserveIndex = true) => {
       if (!readerHandle) return
       const words = readerHandle.getVisibleWords()
-      const config = configRef.current
-      const chunks = groupWordsIntoChunks(words, config)
+      const chunks = groupWordsIntoChunks(words, chunkerConfig(words))
       setDominantUnit(dominantPacerUnit(words, defaultUnitRef.current))
       setTotalChunks(chunks.length)
 
@@ -108,7 +161,9 @@ export function usePacer({
             nearestChunkIndex(chunks, previous.rect)
           : null
         engine.setChunks(chunks, false)
-        if (mappedIndex !== null) engine.seek(mappedIndex)
+        // Re-attaching the cursor to the words it was already on is not the
+        // reader moving, so it must not rewrite the stored position.
+        if (mappedIndex !== null) engine.seek(mappedIndex, 'set')
         if (canCreditPageRef.current && !canCreditPageRef.current()) {
           engine.invalidatePageConsumption()
         }
@@ -117,7 +172,7 @@ export function usePacer({
         updateOverlay(current)
       }
     },
-    [readerHandle, updateOverlay],
+    [chunkerConfig, readerHandle, updateOverlay],
   )
 
   // Initialize engine
@@ -127,13 +182,17 @@ export function usePacer({
       if (cancelled) return
       setPacerState('idle')
       setCurrentChunk(null)
-      setOverlayRect(null)
+      setOverlayRects([])
+      setOverlayLineRect(null)
     })
     const engine = new PacerEngine({
-      onChunkChange(index, chunk) {
+      onChunkChange(index, chunk, cause) {
         setChunkIndex(index)
         setCurrentChunk(chunk)
         updateOverlay(chunk)
+        if (chunk && (cause === 'advance' || cause === 'seek')) {
+          onCursorMoveRef.current?.(chunk)
+        }
       },
       onStateChange(state) {
         setPacerState(state)
@@ -166,8 +225,7 @@ export function usePacer({
             words = readerHandle.getVisibleWords()
           }
 
-          const config = configRef.current
-          const chunks = groupWordsIntoChunks(words, config)
+          const chunks = groupWordsIntoChunks(words, chunkerConfig(words))
           setDominantUnit(dominantPacerUnit(words, defaultUnitRef.current))
           setTotalChunks(chunks.length)
           if (chunks.length > 0) {
@@ -191,7 +249,7 @@ export function usePacer({
       engine.destroy()
       engineRef.current = null
     }
-  }, [readerHandle, updateOverlay])
+  }, [chunkerConfig, readerHandle, updateOverlay])
 
   // Recalculate when either language profile changes.
   useEffect(() => {
@@ -250,6 +308,21 @@ export function usePacer({
     engineRef.current?.seek(index)
   }, [])
 
+  /**
+   * Put the cursor back on a word identified by a live range, e.g. the position
+   * a previous session ended on. Returns false when that word is not among the
+   * chunks currently paced, so the caller can retry once the page has settled.
+   */
+  const seekToChunkRange = useCallback((range: Range) => {
+    const engine = engineRef.current
+    const chunks = engine?.getChunks() ?? []
+    if (!engine || chunks.length === 0) return false
+    const index = chunkIndexContainingRange(chunks, range)
+    if (index === null) return false
+    engine.seek(index, 'set')
+    return true
+  }, [])
+
   const nextChunk = useCallback(() => {
     engineRef.current?.nextChunk()
   }, [])
@@ -266,12 +339,20 @@ export function usePacer({
    * user action (the play button or Space).
    */
   const seekToRange = useCallback((range: Range) => {
-    const target = range.getClientRects()[0] ?? range.getBoundingClientRect()
-    if (!target || (target.width === 0 && target.height === 0)) return false
-
     const engine = engineRef.current
     const chunks = engine?.getChunks() ?? []
     if (!engine || chunks.length === 0) return false
+
+    // The chunk that literally contains the clicked word first; geometry is the
+    // fallback for a click that landed between two of them.
+    const contained = chunkIndexContainingRange(chunks, range)
+    if (contained !== null) {
+      engine.seek(contained)
+      return true
+    }
+
+    const target = range.getClientRects()[0] ?? range.getBoundingClientRect()
+    if (!target || (target.width === 0 && target.height === 0)) return false
 
     const bestIndex = nearestChunkIndex(chunks, target)
     if (bestIndex === null) return false
@@ -287,7 +368,8 @@ export function usePacer({
     chunkIndex,
     totalChunks,
     dominantUnit,
-    overlayRect,
+    overlayRects,
+    overlayLineRect,
     speedWarning: (dominantUnit === 'cjk' ? cjkCpm : latinWpm) > 500,
     play,
     pause,
@@ -297,6 +379,7 @@ export function usePacer({
     nextChunk,
     prevChunk,
     seekToRange,
+    seekToChunkRange,
     recalculateGeometry,
   }
 }

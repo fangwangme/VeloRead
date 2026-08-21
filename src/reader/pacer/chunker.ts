@@ -7,16 +7,32 @@ import {
 
 export type PacerUnitKind = 'latin' | 'cjk'
 
+interface MeasuredRect {
+  left: number
+  top: number
+  width: number
+  height: number
+  bottom: number
+  right: number
+}
+
 export interface WordItem {
   text: string
-  rect: {
-    left: number
-    top: number
-    width: number
-    height: number
-    bottom: number
-    right: number
-  }
+  /**
+   * Where the word starts. For a word the renderer had to break across two
+   * lines, this is the first piece — the one that decides which line and column
+   * the word belongs to, and therefore where it is read.
+   */
+  rect: MeasuredRect
+  /**
+   * Every piece the word was printed as, when there is more than one.
+   *
+   * Justified English is hyphenated, so "con-" can sit at the end of one line
+   * and "tinued" at the start of the next. It is still one word and it is read
+   * in one go, so the cursor has to cover both — leaving the second piece
+   * unlit made the first line of every hyphenated pair look skipped.
+   */
+  fragments?: MeasuredRect[]
   kind: TextTokenKind
   wordBoundaryAfter?: boolean
   range?: Range
@@ -27,24 +43,40 @@ export interface ReadingUnitCounts {
   cjkCharacters: number
 }
 
+interface ChunkRect {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
 export interface PacerChunk {
   id: number
   text: string
-  /** Number of words or grapheme characters that drive this chunk's dwell. */
-  wordCount: number
-  unitKind: PacerUnitKind
-  rect: {
-    left: number
-    top: number
-    width: number
-    height: number
-  }
-  rects: {
-    left: number
-    top: number
-    width: number
-    height: number
-  }[]
+  /**
+   * Reading units in this chunk, counted per script.
+   *
+   * Two counters rather than one count plus a kind: a whole-line cursor lands on
+   * mixed Chinese/English lines routinely, and those two halves have to be timed
+   * by their own rates.
+   */
+  units: ReadingUnitCounts
+  /** Union of everything in the chunk. Used for locating, not for drawing. */
+  rect: ChunkRect
+  /**
+   * What to draw: one box per line the chunk touches.
+   *
+   * Almost always one. A chunk whose last word was hyphenated across a line
+   * break gets a second, small box at the start of the next line.
+   */
+  lineBoxes: ChunkRect[]
+  /**
+   * The whole line this chunk sits on, within its own column.
+   *
+   * Carried on every chunk because the `chunk-in-line` cursor draws it, and the
+   * chunker is the one place that already knows where the lines are.
+   */
+  lineRect: ChunkRect
   dwellMs: number
   animMs: number
   range?: Range
@@ -55,6 +87,56 @@ export interface ChunkerOptions {
   cjkCpm: number
   latinChunkSize?: number // default 3 words
   cjkChunkSize?: number // default 4 grapheme characters
+  /**
+   * Distance between the left edges of two adjacent columns, in book-page
+   * coordinates. Paginated epub.js is a CSS multi-column layout, so the Nth line
+   * of the left column and the Nth line of the right one share a `top`: without
+   * this, one chunk can span both and the highlight stretches across the page.
+   *
+   * Omitted (scrolled flow, or the metrics could not be read) means fall back to
+   * comparing `top` alone. Losing column awareness must never mean losing chunks.
+   */
+  columnPitch?: number | null
+  /**
+   * Whole-line cursor: one line is one chunk. Line and column awareness still
+   * apply; only the within-line splitting is switched off.
+   */
+  wholeLine?: boolean
+}
+
+/**
+ * "A whole line" as a chunk size.
+ *
+ * How much the cursor covers is one decision, so it is one control: three, four
+ * or five words — or the line. Zero is the sentinel because the size is stored
+ * in an INTEGER column, and because no other count could ever mean it.
+ */
+export const PACER_CHUNK_SIZE_LINE = 0
+
+export function isWholeLineChunkSize(size: number): boolean {
+  return size === PACER_CHUNK_SIZE_LINE
+}
+
+/**
+ * The sizes offered, per script.
+ *
+ * One and two words are gone: a fixation covers two to three words, so pacing
+ * one at a time is a word-by-word crawl that had to cap the speed at 600 wpm to
+ * stay above the 100 ms floor. Anything stored below the smallest offer is read
+ * as the smallest offer rather than kept alive invisibly.
+ */
+export const LATIN_CHUNK_SIZES = [3, 4, 5, PACER_CHUNK_SIZE_LINE]
+export const CJK_CHUNK_SIZES = [4, 6, 8, 10, PACER_CHUNK_SIZE_LINE]
+
+export const DEFAULT_LATIN_CHUNK_SIZE = 3
+export const DEFAULT_CJK_CHUNK_SIZE = 4
+
+/** Read a stored size into one the reader still offers. */
+export function normaliseChunkSize(size: number | undefined, kind: PacerUnitKind): number {
+  const fallback = kind === 'cjk' ? DEFAULT_CJK_CHUNK_SIZE : DEFAULT_LATIN_CHUNK_SIZE
+  if (size === undefined || !Number.isFinite(size)) return fallback
+  if (isWholeLineChunkSize(size)) return PACER_CHUNK_SIZE_LINE
+  return Math.max(fallback, Math.round(size))
 }
 
 /** Kept as a compatibility name for existing callers and tests. */
@@ -93,9 +175,61 @@ export function dominantPacerUnit(
 }
 
 /**
+ * Which column of the page a measured word sits in.
+ *
+ * The midpoint rather than the left edge, so a word that starts a hair before a
+ * column boundary is still attributed to the column it is actually printed in.
+ * Without a pitch every word is in column 0, which is exactly the old behaviour.
+ */
+export function columnIndexOf(rect: { left: number; width: number }, columnPitch?: number | null): number {
+  if (!columnPitch || !Number.isFinite(columnPitch) || columnPitch <= 0) return 0
+  return Math.floor((rect.left + rect.width / 2) / columnPitch)
+}
+
+/**
+ * Split measured tokens into the lines they are printed on.
+ *
+ * A line is "same `top`, same column". Comparing `top` alone is what let a chunk
+ * run from the end of a left-column line into the start of the right-column line
+ * beside it, because in a two-column spread those two lines have the same `top`.
+ */
+export function splitWordsIntoLines(
+  words: WordItem[],
+  columnPitch?: number | null,
+): WordItem[][] {
+  const lines: WordItem[][] = []
+  let current: WordItem[] = []
+  let anchorTop: number | null = null
+  let anchorColumn = 0
+
+  for (const item of words) {
+    const column = columnIndexOf(item.rect, columnPitch)
+    const sameLine =
+      anchorTop === null ||
+      (column === anchorColumn &&
+        Math.abs(item.rect.top - anchorTop) <= Math.max(8, item.rect.height * 0.5))
+
+    if (!sameLine) {
+      lines.push(current)
+      current = []
+      anchorTop = null
+    }
+
+    if (current.length === 0) {
+      anchorTop = item.rect.top
+      anchorColumn = column
+    }
+    current.push(item)
+  }
+
+  if (current.length > 0) lines.push(current)
+  return lines
+}
+
+/**
  * Group measured tokens into line-aware fixation chunks without changing the
- * book DOM. Latin and CJK chunks share geometry/state machinery but use their
- * own rate and chunk-size profile.
+ * book DOM. Latin and CJK reading units share geometry/state machinery but are
+ * timed by their own rate, so a mixed chunk is timed by both.
  */
 export function groupWordsIntoChunks(words: WordItem[], options: ChunkerOptions): PacerChunk[] {
   if (words.length === 0) return []
@@ -105,130 +239,221 @@ export function groupWordsIntoChunks(words: WordItem[], options: ChunkerOptions)
     cjkCpm,
     latinChunkSize = 3,
     cjkChunkSize = 4,
+    columnPitch,
+    wholeLine = false,
   } = options
   const safeLatinWpm = clampRate(latinWpm)
   const safeCjkCpm = clampRate(cjkCpm)
 
   const chunks: PacerChunk[] = []
-  let currentGroup: WordItem[] = []
-  let currentKind: PacerUnitKind | null = null
-  let currentLineTop: number | null = null
-  let currentUnitCount = 0
+
+  for (const line of splitWordsIntoLines(words, columnPitch)) {
+    const lineRect = unionRect(line)
+    const groups = wholeLine
+      ? [line]
+      : splitLineIntoGroups(line, { latinChunkSize, cjkChunkSize })
+
+    for (const group of groups) {
+      const chunk = makeChunk(group, {
+        id: chunks.length,
+        lineRect,
+        latinWpm: safeLatinWpm,
+        cjkCpm: safeCjkCpm,
+        columnPitch,
+      })
+      if (chunk) chunks.push(chunk)
+    }
+  }
+
+  return chunks
+}
+
+/**
+ * Cut one line into fixation-sized groups.
+ *
+ * Three reasons to break: the chunk is full, a strong punctuation mark ended a
+ * sentence, or the script changed — a chunk-sized cursor reads better one script
+ * at a time. Punctuation is carried with the words around it and never counts.
+ */
+function splitLineIntoGroups(
+  line: WordItem[],
+  limits: { latinChunkSize: number; cjkChunkSize: number },
+): WordItem[][] {
+  const groups: WordItem[][] = []
+  let group: WordItem[] = []
+  let kind: PacerUnitKind | null = null
+  let counted = 0
   let canBreakAfter = false
   let breakBeforeNextUnit = false
   let pendingPunctuation: WordItem[] = []
 
-  function flushGroup() {
-    if (currentGroup.length === 0 || !currentKind || currentUnitCount === 0) {
-      currentGroup = []
-      currentKind = null
-      currentLineTop = null
-      currentUnitCount = 0
-      canBreakAfter = false
-      breakBeforeNextUnit = false
-      return
-    }
-
-    let left = Infinity
-    let top = Infinity
-    let right = -Infinity
-    let bottom = -Infinity
-
-    const rects = currentGroup.map((word) => {
-      left = Math.min(left, word.rect.left)
-      top = Math.min(top, word.rect.top)
-      right = Math.max(right, word.rect.right)
-      bottom = Math.max(bottom, word.rect.bottom)
-      return {
-        left: word.rect.left,
-        top: word.rect.top,
-        width: word.rect.width,
-        height: word.rect.height,
-      }
-    })
-
-    const rate = currentKind === 'cjk' ? safeCjkCpm : safeLatinWpm
-    const pause = currentGroup.reduce(
-      (total, word) => total + (word.kind === 'punctuation' ? punctuationPauseMs(word.text) : 0),
-      0,
-    )
-    const rawDwell = (currentUnitCount / rate) * 60_000 + pause
-    const dwellMs = Math.max(100, Math.round(rawDwell))
-    const animMs = Math.min(Math.round(dwellMs * 0.5), 180)
-
-    chunks.push({
-      id: chunks.length,
-      text: joinChunkText(currentGroup),
-      wordCount: currentUnitCount,
-      unitKind: currentKind,
-      rect: {
-        left,
-        top,
-        width: Math.max(0, right - left),
-        height: Math.max(0, bottom - top),
-      },
-      rects,
-      dwellMs,
-      animMs,
-      range: spanLexicalRanges(currentGroup),
-    })
-
-    currentGroup = []
-    currentKind = null
-    currentLineTop = null
-    currentUnitCount = 0
+  const flush = () => {
+    if (group.length > 0 && counted > 0) groups.push(group)
+    group = []
+    kind = null
+    counted = 0
     canBreakAfter = false
     breakBeforeNextUnit = false
   }
 
-  for (const item of words) {
-    const groupAnchor = currentGroup[0] ?? pendingPunctuation[0]
-    const anchorTop = currentLineTop ?? groupAnchor?.rect.top ?? null
-    const isNewLine =
-      anchorTop !== null &&
-      Math.abs(item.rect.top - anchorTop) > Math.max(8, item.rect.height * 0.5)
-
-    if (isNewLine) {
-      flushGroup()
-      pendingPunctuation = []
-    }
-
+  for (const item of line) {
     if (item.kind === 'punctuation') {
-      if (currentGroup.length === 0) {
+      if (group.length === 0) {
         pendingPunctuation.push(item)
       } else {
-        currentGroup.push(item)
+        group.push(item)
         if (isStrongPunctuation(item.text)) breakBeforeNextUnit = true
       }
       continue
     }
 
     const itemKind: PacerUnitKind = item.kind
-    const limit = itemKind === 'cjk' ? cjkChunkSize : latinChunkSize
+    const limit = itemKind === 'cjk' ? limits.cjkChunkSize : limits.latinChunkSize
+    // CJK may overrun the target slightly rather than split a segmented word.
     const hardLimit = itemKind === 'cjk' ? limit + 2 : limit
 
-    if (breakBeforeNextUnit) flushGroup()
-    if (currentKind && currentKind !== itemKind) flushGroup()
-    if (currentUnitCount >= limit && (canBreakAfter || currentUnitCount >= hardLimit)) flushGroup()
+    if (breakBeforeNextUnit) flush()
+    if (kind && kind !== itemKind) flush()
+    if (counted >= limit && (canBreakAfter || counted >= hardLimit)) flush()
 
-    if (currentGroup.length === 0) {
-      currentGroup.push(...pendingPunctuation)
+    if (group.length === 0) {
+      group.push(...pendingPunctuation)
       pendingPunctuation = []
-      currentKind = itemKind
-      currentLineTop = item.rect.top
+      kind = itemKind
     }
 
-    currentGroup.push(item)
-    currentUnitCount += 1
+    group.push(item)
+    counted += 1
     canBreakAfter = item.wordBoundaryAfter ?? true
   }
 
-  flushGroup()
-  return chunks
+  flush()
+  return groups
+}
+
+/**
+ * Turn one group of measured tokens into a chunk, or null when it holds nothing
+ * that counts as reading (punctuation alone).
+ */
+function makeChunk(
+  group: WordItem[],
+  context: {
+    id: number
+    lineRect: ChunkRect
+    latinWpm: number
+    cjkCpm: number
+    columnPitch?: number | null
+  },
+): PacerChunk | null {
+  const units = countReadingUnits(group)
+  if (group.length === 0 || units.latinWords + units.cjkCharacters === 0) return null
+
+  const pieces = group.flatMap((word) => word.fragments ?? [word.rect])
+
+  let left = Infinity
+  let top = Infinity
+  let right = -Infinity
+  let bottom = -Infinity
+  for (const piece of pieces) {
+    left = Math.min(left, piece.left)
+    top = Math.min(top, piece.top)
+    right = Math.max(right, piece.right)
+    bottom = Math.max(bottom, piece.bottom)
+  }
+
+  const lineBoxes = groupIntoLineBoxes(pieces, context.columnPitch)
+
+  const pause = group.reduce(
+    (total, word) => total + (word.kind === 'punctuation' ? punctuationPauseMs(word.text) : 0),
+    0,
+  )
+  const rawDwell =
+    (units.latinWords / context.latinWpm) * 60_000 +
+    (units.cjkCharacters / context.cjkCpm) * 60_000 +
+    pause
+  const dwellMs = Math.max(100, Math.round(rawDwell))
+
+  return {
+    id: context.id,
+    text: joinChunkText(group),
+    units,
+    rect: {
+      left,
+      top,
+      width: Math.max(0, right - left),
+      height: Math.max(0, bottom - top),
+    },
+    lineBoxes,
+    lineRect: context.lineRect,
+    dwellMs,
+    // The animation must never outlast the dwell it is moving within.
+    animMs: Math.min(Math.round(dwellMs * 0.5), 180),
+    range: spanLexicalRanges(group),
+  }
 }
 
 function clampRate(rate: number): number {
   return Math.max(50, Math.min(1500, rate))
+}
+
+/**
+ * Collapse measured pieces into one box per line they sit on.
+ *
+ * A single union would stretch from the end of one line to the middle of the
+ * next as soon as one word was hyphenated across the break — a box over two
+ * lines of text rather than over the words.
+ */
+function groupIntoLineBoxes(pieces: MeasuredRect[], columnPitch?: number | null): ChunkRect[] {
+  const boxes: ChunkRect[] = []
+  const anchors: { top: number; column: number }[] = []
+
+  for (const piece of pieces) {
+    if (piece.width <= 0 && piece.height <= 0) continue
+    const column = columnIndexOf(piece, columnPitch)
+    const index = anchors.findIndex(
+      (anchor) =>
+        anchor.column === column &&
+        Math.abs(piece.top - anchor.top) <= Math.max(8, piece.height * 0.5),
+    )
+
+    if (index === -1) {
+      anchors.push({ top: piece.top, column })
+      boxes.push({
+        left: piece.left,
+        top: piece.top,
+        width: Math.max(0, piece.right - piece.left),
+        height: Math.max(0, piece.bottom - piece.top),
+      })
+      continue
+    }
+
+    const box = boxes[index]
+    const right = Math.max(box.left + box.width, piece.right)
+    const bottom = Math.max(box.top + box.height, piece.bottom)
+    box.left = Math.min(box.left, piece.left)
+    box.top = Math.min(box.top, piece.top)
+    box.width = Math.max(0, right - box.left)
+    box.height = Math.max(0, bottom - box.top)
+  }
+
+  return boxes
+}
+
+function unionRect(words: WordItem[]): ChunkRect {
+  let left = Infinity
+  let top = Infinity
+  let right = -Infinity
+  let bottom = -Infinity
+  for (const word of words) {
+    // The line is the line these words start on; a hyphenated tail belongs to
+    // the next one and must not stretch this band down into it.
+    left = Math.min(left, word.rect.left)
+    top = Math.min(top, word.rect.top)
+    right = Math.max(right, word.rect.right)
+    bottom = Math.max(bottom, word.rect.bottom)
+  }
+  if (!Number.isFinite(left)) return { left: 0, top: 0, width: 0, height: 0 }
+  return { left, top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) }
 }
 
 function joinChunkText(words: WordItem[]): string {

@@ -1,6 +1,12 @@
 import { useState, type ReactNode } from 'react'
 import type { AppSettings } from '../platform/types'
 import {
+  isWholeLineChunkSize,
+  normaliseChunkSize,
+  CJK_CHUNK_SIZES,
+  LATIN_CHUNK_SIZES,
+} from '../reader/pacer/chunker'
+import {
   AUTO_HIGHLIGHT_COLOR,
   MAX_HIGHLIGHT_OPACITY,
   MIN_HIGHLIGHT_OPACITY,
@@ -13,6 +19,7 @@ import {
 import {
   IconClock,
   IconGlobe,
+  IconInfo,
   IconKeyboard,
   IconHighlight,
   IconMonitor,
@@ -49,6 +56,7 @@ const SHORTCUT_KEYS: [string, MessageKey][] = [
 
 /** Pointer gestures, whose trigger has to be described in words. */
 const SHORTCUT_GESTURES: [MessageKey, MessageKey][] = [
+  ['gesture.swipe', 'shortcut.swipe'],
   ['gesture.clickText', 'shortcut.clickText'],
   ['gesture.clickBlank', 'shortcut.clickBlank'],
   ['gesture.select', 'shortcut.select'],
@@ -66,8 +74,8 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
   const dailyGoal = settings.dailyReadingGoalMinutes ?? 15
   const pacerWpm = settings.pacerWpm ?? 250
   const pacerCpm = settings.pacerCpm ?? 300
-  const pacerChunkSize = settings.pacerChunkSize ?? 3
-  const pacerCjkCharCount = settings.pacerCjkCharCount ?? 4
+  const pacerChunkSize = normaliseChunkSize(settings.pacerChunkSize, 'latin')
+  const pacerCjkCharCount = normaliseChunkSize(settings.pacerCjkCharCount, 'cjk')
   const highlight = readHighlightStyle(settings)
   const clickToPosition = settings.clickToPositionPacer ?? true
   // The preview should look like the page it describes, so it follows the
@@ -101,7 +109,7 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
         aria-modal="true"
         aria-labelledby="app-settings-title"
         tabIndex={-1}
-        className="relative z-10 flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-black/[0.12] bg-[#FBFBFA]/96 shadow-[0_30px_70px_rgba(0,0,0,0.22)] backdrop-blur-3xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/96 dark:text-neutral-100 vr-animate-pop"
+        className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-black/[0.12] bg-[#FBFBFA]/96 shadow-[0_30px_70px_rgba(0,0,0,0.22)] backdrop-blur-3xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/96 dark:text-neutral-100 vr-animate-pop"
       >
         <header className="flex items-center justify-between border-b border-black/[0.10] px-6 py-5 dark:border-white/[0.06]">
           <div className="flex items-center gap-3">
@@ -127,7 +135,7 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
           </button>
         </header>
 
-        <div className="space-y-5 overflow-y-auto overscroll-contain p-6">
+        <div className="divide-y divide-black/[0.07] overflow-y-auto overscroll-contain px-7 dark:divide-white/[0.06]">
           <SettingSection
             icon={<IconMonitor />}
             title={t('settings.appearance')}
@@ -143,7 +151,7 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
                   key={option.id}
                   type="button"
                   onClick={() => void save({ themeMode: option.id })}
-                  className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-[11px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
+                  className={`flex h-9 items-center justify-center gap-1.5 rounded-xl text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
                     themeMode === option.id
                       ? 'bg-blue-500/12 text-blue-700 ring-1 ring-inset ring-blue-500/35 dark:bg-[#303033] dark:text-white dark:ring-0'
                       : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
@@ -168,7 +176,7 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
                   key={option}
                   type="button"
                   onClick={() => void save({ language: option })}
-                  className={`rounded-xl py-2 text-[11px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
+                  className={`h-9 rounded-xl text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
                     languagePreference === option
                       ? 'bg-blue-500/12 text-blue-700 ring-1 ring-inset ring-blue-500/35 dark:bg-[#303033] dark:text-white dark:ring-0'
                       : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
@@ -179,6 +187,38 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
                 </button>
               ))}
             </div>
+          </SettingSection>
+
+          <SettingSection
+            icon={<IconClock />}
+            title={t('settings.goal')}
+            description={t('settings.goalHint')}
+          >
+            <div className="mt-4 grid grid-cols-6 gap-1.5">
+              {GOAL_OPTIONS.map((minutes) => (
+                <button
+                  key={minutes}
+                  type="button"
+                  onClick={() => void save({ dailyReadingGoalMinutes: minutes })}
+                  className={`h-9 rounded-xl border text-xs font-mono font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
+                    dailyGoal === minutes
+                      ? 'border-blue-500/70 bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                      : 'border-black/[0.10] bg-white/60 text-neutral-600 hover:border-black/15 dark:border-white/[0.07] dark:bg-white/[0.03] dark:text-neutral-300 dark:hover:border-white/15'
+                  }`}
+                  aria-pressed={dailyGoal === minutes}
+                >
+                  {t('settings.goalPreset', { n: minutes })}
+                </button>
+              ))}
+            </div>
+
+            <DailyGoalInput
+              key={dailyGoal}
+              value={dailyGoal}
+              isPreset={GOAL_OPTIONS.includes(dailyGoal)}
+              onCommit={(minutes) => void save({ dailyReadingGoalMinutes: minutes })}
+              t={t}
+            />
           </SettingSection>
 
           <SettingSection
@@ -196,12 +236,9 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
                 chunkSize={pacerChunkSize}
                 chunkUnit="latin"
                 t={t}
-                chunkOptions={[1, 2, 3, 4, 5]}
+                chunkOptions={LATIN_CHUNK_SIZES}
                 onSpeedCommit={(value) => void save({ pacerWpm: value })}
-                onChunkChange={(value) => {
-                  const nextWpm = value === 1 && pacerWpm > 600 ? 600 : pacerWpm
-                  void save({ pacerChunkSize: value, pacerWpm: nextWpm })
-                }}
+                onChunkChange={(value) => void save({ pacerChunkSize: value })}
               />
               <PacerProfileEditor
                 key={`cjk-${pacerCpm}`}
@@ -212,12 +249,29 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
                 chunkSize={pacerCjkCharCount}
                 chunkUnit="cjk"
                 t={t}
-                chunkOptions={[2, 4, 6, 8, 10]}
+                chunkOptions={CJK_CHUNK_SIZES}
                 onSpeedCommit={(value) => void save({ pacerCpm: value })}
                 onChunkChange={(value) => void save({ pacerCjkCharCount: value })}
               />
             </div>
-            <div className="mt-3 flex items-center justify-between gap-4 border-t border-black/[0.08] pt-3 text-[10px] text-neutral-500 dark:text-neutral-400 dark:border-white/[0.06]">
+            <label className="mt-4 flex cursor-pointer items-start justify-between gap-4 rounded-2xl border border-black/[0.06] bg-black/[0.02] p-3 dark:border-white/[0.07] dark:bg-white/[0.025]">
+              <span>
+                <span className="block text-xs font-medium text-neutral-800 dark:text-neutral-200">
+                  {t('settings.clickToPosition')}
+                </span>
+                <span className="mt-1 block text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
+                  {t('settings.clickToPositionHint')}
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={clickToPosition}
+                onChange={(event) => void save({ clickToPositionPacer: event.target.checked })}
+                className="mt-0.5 size-4 shrink-0 cursor-pointer rounded-md accent-blue-600"
+              />
+            </label>
+
+            <div className="mt-4 flex items-center justify-between gap-4 border-t border-black/[0.08] pt-3 text-[11px] text-neutral-500 dark:text-neutral-400 dark:border-white/[0.06]">
               <span>{t('settings.pacerRecommended')}</span>
               <button
                 type="button"
@@ -252,27 +306,10 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
             title={t('settings.controls')}
             description={t('settings.controlsHint')}
           >
-            <label className="mt-4 flex cursor-pointer items-start justify-between gap-4 rounded-2xl border border-black/[0.06] bg-black/[0.02] p-3 dark:border-white/[0.07] dark:bg-white/[0.025]">
-              <span>
-                <span className="block text-[11px] font-medium text-neutral-800 dark:text-neutral-200">
-                  {t('settings.clickToPosition')}
-                </span>
-                <span className="mt-0.5 block text-[10px] leading-relaxed text-neutral-500 dark:text-neutral-400">
-                  {t('settings.clickToPositionHint')}
-                </span>
-              </span>
-              <input
-                type="checkbox"
-                checked={clickToPosition}
-                onChange={(event) => void save({ clickToPositionPacer: event.target.checked })}
-                className="mt-0.5 size-4 shrink-0 cursor-pointer rounded-md accent-blue-600"
-              />
-            </label>
-
             {/* Everything the reader responds to that nothing on screen
                 announces. Kept here rather than as a hint that appears once and
                 is gone: the question "what can this thing do" comes back. */}
-            <dl className="mt-3 space-y-1.5 rounded-2xl border border-black/[0.06] bg-black/[0.02] p-3 dark:border-white/[0.07] dark:bg-white/[0.025]">
+            <dl className="mt-4 space-y-1.5 rounded-2xl border border-black/[0.06] bg-black/[0.02] p-3 dark:border-white/[0.07] dark:bg-white/[0.025]">
               {SHORTCUT_KEYS.map(([keys, description]) => (
                 <ShortcutRow key={keys} trigger={keys} mono description={t(description)} />
               ))}
@@ -284,35 +321,21 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
           </SettingSection>
 
           <SettingSection
-            icon={<IconClock />}
-            title={t('settings.goal')}
-            description={t('settings.goalHint')}
+            icon={<IconInfo />}
+            title={t('settings.about')}
+            description={t('settings.aboutHint')}
           >
-            <div className="mt-4 grid grid-cols-6 gap-1.5">
-              {GOAL_OPTIONS.map((minutes) => (
-                <button
-                  key={minutes}
-                  type="button"
-                  onClick={() => void save({ dailyReadingGoalMinutes: minutes })}
-                  className={`rounded-xl border py-2 text-[11px] font-mono font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
-                    dailyGoal === minutes
-                      ? 'border-blue-500/70 bg-blue-500/10 text-blue-600 dark:text-blue-400'
-                      : 'border-black/[0.10] bg-white/60 text-neutral-600 hover:border-black/15 dark:border-white/[0.07] dark:bg-white/[0.03] dark:text-neutral-300 dark:hover:border-white/15'
-                  }`}
-                  aria-pressed={dailyGoal === minutes}
-                >
-                  {t('settings.goalPreset', { n: minutes })}
-                </button>
-              ))}
+            <div className="mt-4 flex items-center justify-between gap-4 rounded-2xl border border-black/[0.06] bg-black/[0.02] px-4 py-3 dark:border-white/[0.07] dark:bg-white/[0.025]">
+              <div>
+                <p className="text-xs font-medium text-neutral-800 dark:text-neutral-200">VeloRead</p>
+                <p className="mt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+                  {t('settings.aboutTagline')}
+                </p>
+              </div>
+              <span className="shrink-0 font-mono text-xs font-semibold text-neutral-600 dark:text-neutral-300">
+                v{__APP_VERSION__}
+              </span>
             </div>
-
-            <DailyGoalInput
-              key={dailyGoal}
-              value={dailyGoal}
-              isPreset={GOAL_OPTIONS.includes(dailyGoal)}
-              onCommit={(minutes) => void save({ dailyReadingGoalMinutes: minutes })}
-              t={t}
-            />
           </SettingSection>
 
           {error && (
@@ -356,7 +379,7 @@ function DailyGoalInput({
 
   return (
     <div className="mt-2.5 flex items-center justify-between gap-3 border-t border-black/[0.08] pt-2.5 dark:border-white/[0.06]">
-      <span className="text-[10px] text-neutral-500 dark:text-neutral-400">
+      <span className="text-[11px] text-neutral-500 dark:text-neutral-400">
         {t('settings.goalCustomHint', { min: GOAL_MIN, max: GOAL_MAX })}
       </span>
       <label
@@ -381,11 +404,11 @@ function DailyGoalInput({
           onKeyDown={(event) => {
             if (event.key === 'Enter') event.currentTarget.blur()
           }}
-          className={`w-12 bg-transparent text-right font-mono text-[11px] font-bold outline-none ${
+          className={`w-14 bg-transparent text-right font-mono text-xs font-bold outline-none ${
             isPreset ? '' : 'text-blue-600 dark:text-blue-400'
           }`}
         />
-        <span className="text-[9px] font-medium text-neutral-500 dark:text-neutral-400">{t('settings.minutes')}</span>
+        <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">{t('settings.minutes')}</span>
       </label>
     </div>
   )
@@ -416,7 +439,7 @@ function PacerProfileEditor({
   t: Translate
 }) {
   const [draft, setDraft] = useState(String(speed))
-  const maxSpeed = chunkUnit === 'latin' && chunkSize === 1 ? 600 : 1000
+  const maxSpeed = 1000
 
   const commit = () => {
     const parsed = Number(draft)
@@ -430,9 +453,12 @@ function PacerProfileEditor({
   return (
     <div className="rounded-2xl border border-black/[0.10] bg-black/[0.03] p-3.5 dark:border-white/[0.07] dark:bg-white/[0.025]">
       <div className="flex items-start justify-between gap-2">
-        <div>
-          <h4 className="text-[11px] font-semibold text-neutral-800 dark:text-neutral-200">{title}</h4>
-          <p className="mt-0.5 text-[9px] text-neutral-500 dark:text-neutral-400">{caption}</p>
+        {/* Two of these sit side by side and one language name is longer than
+            the other, so the block reserves the second line either way — the
+            speed inputs beside them have to line up. */}
+        <div className="min-h-[2.6rem]">
+          <h4 className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">{title}</h4>
+          <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">{caption}</p>
         </div>
         <label className="flex items-center gap-1 rounded-lg border border-black/[0.11] bg-white/70 px-2 py-1 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 dark:border-white/[0.08] dark:bg-black/15">
           <span className="sr-only">{t('settings.pacerSpeedLabel', { profile: title })}</span>
@@ -450,29 +476,33 @@ function PacerProfileEditor({
             onKeyDown={(event) => {
               if (event.key === 'Enter') event.currentTarget.blur()
             }}
-            className="w-12 bg-transparent text-right font-mono text-[11px] font-bold outline-none"
+            className="w-14 bg-transparent text-right font-mono text-xs font-bold outline-none"
           />
-          <span className="text-[8px] font-medium text-neutral-500 dark:text-neutral-400">{unit}</span>
+          <span className="text-[10px] font-medium text-neutral-500 dark:text-neutral-400">{unit}</span>
         </label>
       </div>
-      <div className="mt-3 flex items-center justify-between gap-2">
-        <span className="text-[9px] font-medium text-neutral-500 dark:text-neutral-400">{t('settings.pacerChunk')}</span>
-        <div className="flex rounded-lg bg-black/[0.06] p-0.5 dark:bg-white/[0.06]">
+      {/* Label above, options across the full width: two of these cards sit side
+          by side, and "whole line" has nowhere to go on a shared row. */}
+      <div className="mt-3">
+        <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">{t('settings.pacerChunk')}</span>
+        <div className="mt-1.5 flex rounded-lg bg-black/[0.06] p-0.5 dark:bg-white/[0.06]">
           {chunkOptions.map((option) => (
             <button
               key={option}
               type="button"
               onClick={() => onChunkChange(option)}
-              className={`rounded-md px-1.5 py-1 text-[9px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 ${
+              className={`rounded-md px-1.5 py-1 text-[11px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 disabled:pointer-events-none ${
                 chunkSize === option
                   ? 'bg-blue-500/12 text-blue-700 ring-1 ring-inset ring-blue-500/35 dark:bg-[#303033] dark:text-white dark:ring-0'
                   : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
               }`}
               aria-pressed={chunkSize === option}
             >
-              {t(chunkUnit === 'latin' ? 'pacer.chunkUnitLatin' : 'pacer.chunkUnitCjk', {
-                n: option,
-              })}
+              {isWholeLineChunkSize(option)
+                ? t('pacer.chunkLine')
+                : t(chunkUnit === 'latin' ? 'pacer.chunkUnitLatin' : 'pacer.chunkUnitCjk', {
+                    n: option,
+                  })}
             </button>
           ))}
         </div>
@@ -509,10 +539,12 @@ function HighlightStyleEditor({
     { id: 'underline', label: t('settings.highlight.shapeUnderline') },
   ]
 
+
+
   return (
-    <div className="mt-4 space-y-3.5">
+    <div className="mt-5 space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
           {t('settings.highlight.color')}
         </span>
         <div className="flex items-center gap-1.5">
@@ -532,7 +564,7 @@ function HighlightStyleEditor({
                 }
                 title={auto ? t('settings.highlight.auto') : swatch.hex ?? ''}
                 style={auto ? undefined : { backgroundColor: swatch.hex ?? undefined }}
-                className={`size-5 rounded-full border transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
+                className={`size-6 rounded-full border transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
                   auto
                     ? 'border-dashed border-black/30 bg-gradient-to-br from-amber-400 via-sky-400 to-violet-500 dark:border-white/30'
                     : 'border-black/10 dark:border-white/15'
@@ -542,7 +574,7 @@ function HighlightStyleEditor({
           })}
           <label
             title={t('settings.highlight.custom')}
-            className={`flex size-5 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-black/10 dark:border-white/15 ${
+            className={`flex size-6 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-black/10 dark:border-white/15 ${
               isCustom ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-white dark:ring-offset-[#1C1C1E]' : ''
             }`}
             style={{ backgroundColor: customHex }}
@@ -559,7 +591,7 @@ function HighlightStyleEditor({
       </div>
 
       <div className="flex items-center justify-between gap-3">
-        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+        <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
           {t('settings.highlight.opacity')}
         </span>
         <div className="flex flex-1 items-center gap-2.5">
@@ -582,8 +614,29 @@ function HighlightStyleEditor({
         </div>
       </div>
 
+      {/* How much the cursor covers is the chunk size, above. This is only
+          whether the line it sits on is marked as well. */}
+      <label className="flex cursor-pointer items-start justify-between gap-4 rounded-2xl border border-black/[0.06] bg-black/[0.02] p-3 dark:border-white/[0.07] dark:bg-white/[0.025]">
+        <span className="min-w-0">
+          <span className="block text-xs font-medium text-neutral-800 dark:text-neutral-200">
+            {t('settings.highlight.lineBand')}
+          </span>
+          <span className="mt-1 block text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
+            {t('settings.highlight.lineBandHint')}
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          checked={style.cursorMode === 'chunk-in-line'}
+          onChange={(event) =>
+            onChange({ pacerCursorMode: event.target.checked ? 'chunk-in-line' : 'chunk' })
+          }
+          className="mt-0.5 size-4 shrink-0 cursor-pointer rounded-md accent-blue-600"
+        />
+      </label>
+
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
           {t('settings.highlight.shape')}
         </span>
         <div className="flex rounded-xl bg-black/[0.06] p-1 dark:bg-white/[0.06]">
@@ -593,7 +646,7 @@ function HighlightStyleEditor({
               type="button"
               onClick={() => onChange({ pacerHighlightShape: shape.id })}
               aria-pressed={style.shape === shape.id}
-              className={`rounded-lg px-2.5 py-1 text-[10px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 ${
+              className={`rounded-lg px-3 py-1.5 text-[11px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 ${
                 style.shape === shape.id
                   ? 'bg-blue-500/12 text-blue-700 ring-1 ring-inset ring-blue-500/35 dark:bg-[#303033] dark:text-white dark:ring-0'
                   : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
@@ -609,9 +662,18 @@ function HighlightStyleEditor({
         className="rounded-2xl border border-black/[0.10] px-4 py-3.5 dark:border-white/[0.07]"
         style={{ backgroundColor: isDark ? '#16161A' : '#FBF8F1' }}
       >
+        {/* The sample is drawn from the same resolved style the page uses, so
+            what is previewed here is what the book will look like — including
+            how much of the line the cursor covers. */}
         <p
           className="font-serif text-[13px] leading-loose"
-          style={{ color: isDark ? '#D8D4CC' : '#2B2622' }}
+          style={{
+            color: isDark ? '#D8D4CC' : '#2B2622',
+            // `line` puts the whole line under the cursor; `chunk-in-line` puts
+            // the band there and leaves the cursor on the words.
+            backgroundColor: resolved.lineBackgroundColor ?? undefined,
+            mixBlendMode: resolved.lineBackgroundColor ? resolved.mixBlendMode : undefined,
+          }}
         >
           <span>{t('settings.highlight.previewBefore')}</span>
           <span
@@ -645,13 +707,13 @@ function ShortcutRow({
   return (
     <div className="flex items-baseline justify-between gap-4">
       <dt
-        className={`shrink-0 text-[10px] text-neutral-500 dark:text-neutral-400 ${
+        className={`shrink-0 text-[11px] text-neutral-500 dark:text-neutral-400 ${
           mono ? 'font-mono' : ''
         }`}
       >
         {trigger}
       </dt>
-      <dd className="text-right text-[10px] leading-relaxed text-neutral-600 dark:text-neutral-300">
+      <dd className="text-right text-[11px] leading-relaxed text-neutral-600 dark:text-neutral-300">
         {description}
       </dd>
     </div>
@@ -670,14 +732,14 @@ function SettingSection({
   children: ReactNode
 }) {
   return (
-    <section className="rounded-2xl border border-black/[0.10] bg-white/55 p-4 dark:border-white/[0.07] dark:bg-white/[0.025]">
+    <section className="py-6 first:pt-5 last:pb-6">
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-neutral-900/[0.055] text-neutral-600 dark:bg-white/[0.07] dark:text-neutral-300">
+        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg text-neutral-500 dark:text-neutral-400">
           {icon}
         </span>
         <div>
-          <h3 className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">{title}</h3>
-          <p className="mt-0.5 text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
+          <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{title}</h3>
+          <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
             {description}
           </p>
         </div>

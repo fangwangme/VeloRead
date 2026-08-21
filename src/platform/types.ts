@@ -7,7 +7,7 @@
  */
 
 import type { StyleId, StyleOverride } from '../reader/styles/types'
-import type { PacerHighlightShape } from '../reader/pacer/overlayStyle'
+import type { PacerCursorMode, PacerHighlightShape } from '../reader/pacer/overlayStyle'
 import type { LanguagePreference } from '../i18n/types'
 
 /** A book in the library, without its bytes. */
@@ -111,6 +111,8 @@ export interface AppSettings {
   pacerHighlightColor?: string
   pacerHighlightOpacity?: number
   pacerHighlightShape?: PacerHighlightShape
+  /** How much of the page the auto-reading cursor covers. Defaults to `chunk`. */
+  pacerCursorMode?: PacerCursorMode
 }
 
 /** User bookmark in a book. */
@@ -235,6 +237,32 @@ export interface FsPort {
   exportTextFiles(files: ExportFile[], bundleName: string): Promise<ExportResult>
   /** Show the export in the file manager. No-op where that is not possible. */
   reveal(location: string): Promise<void>
+}
+
+/**
+ * Being told the application is about to go away.
+ *
+ * Not one of the three capability ports named in AGENTS.md, but the same rule
+ * applies: the reader must not reach for a Tauri window itself. It exists
+ * because `beforeunload` is not a shutdown hook on the desktop — WKWebView
+ * barely fires it — so the last debounced write of the reading position and the
+ * buffered reading time were lost every time the app went away.
+ *
+ * It covers the exits that announce themselves: closing the window on the
+ * desktop, and `pagehide` in the browser. macOS Cmd+Q announces nothing that can
+ * be deferred (see `src-tauri/src/lifecycle.rs`), so the reader also keeps how
+ * much it can lose small rather than relying on this alone.
+ */
+export interface LifecyclePort {
+  /**
+   * Run `handler` while the app is closing but still alive. Returns an
+   * unsubscribe.
+   *
+   * The desktop holds the shutdown until every handler has settled, within a
+   * grace period it enforces itself; the browser cannot hold anything, so a
+   * handler there gets whatever time the page has left.
+   */
+  onBeforeExit(handler: () => Promise<void>): () => void
 }
 
 /**

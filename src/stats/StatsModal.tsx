@@ -165,7 +165,7 @@ export function StatsModal({ dailyGoalMinutes, onClose }: StatsModalProps) {
                   <div className="flex items-center gap-1.5 text-[10px] text-neutral-500 dark:text-neutral-400">
                     <span>{t('stats.heatmapLess')}</span>
                     <span
-                      className="h-2.5 w-2.5 rounded-xs bg-neutral-200/70 ring-1 ring-inset ring-black/[0.07] dark:bg-neutral-800 dark:ring-0"
+                      className={`h-2.5 w-2.5 rounded-xs ${HEATMAP_EMPTY_SWATCH}`}
                       title={t('stats.heatmap.none')}
                     />
                     {[...HEATMAP_LEVELS].reverse().map((level) => (
@@ -505,21 +505,33 @@ function ReadingVolumeCard({
   t: Translate
   language: Language
 }) {
+  const leadingIsCjk = cjkCharacters > latinWords
+  const leading = leadingIsCjk ? cjkCharacters : latinWords
+  const trailing = leadingIsCjk ? latinWords : cjkCharacters
+
   return (
     <div className="flex flex-col justify-between rounded-2xl border border-black/[0.10] bg-black/[0.035] p-4 transition hover:bg-black/[0.05] dark:border-white/[0.06] dark:bg-white/[0.03] dark:hover:bg-white/[0.05]">
       <div className="mb-2 flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
         <span className="text-[11px] font-medium">{t('stats.volume')}</span>
         <span className="opacity-70"><IconBook /></span>
       </div>
-      <div className="space-y-0.5 font-mono text-[11px] font-semibold text-neutral-800 dark:text-neutral-200">
-        <p>
-          {formatReadingCount(latinWords, t, language)}{' '}
-          <span className="font-sans font-medium text-neutral-500 dark:text-neutral-400">{t('stats.latinWords')}</span>
-        </p>
-        <p>
-          {formatReadingCount(cjkCharacters, t, language)}{' '}
-          <span className="font-sans font-medium text-neutral-500 dark:text-neutral-400">{t('stats.cjkCharacters')}</span>
-        </p>
+      {/* Both numbers matter, but two small lines next to three big ones broke
+          the row: the one you read more of leads, the other follows quietly. */}
+      <div>
+        <div className="flex items-baseline gap-1">
+          <span className="font-mono text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
+            {formatReadingCount(leading, t, language)}
+          </span>
+          <span className="text-xs font-medium text-neutral-500">
+            {t(leadingIsCjk ? 'stats.cjkCharacters' : 'stats.latinWords')}
+          </span>
+        </div>
+        {trailing > 0 && (
+          <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+            <span className="font-mono font-semibold">{formatReadingCount(trailing, t, language)}</span>{' '}
+            {t(leadingIsCjk ? 'stats.latinWords' : 'stats.cjkCharacters')}
+          </p>
+        )}
       </div>
     </div>
   )
@@ -538,13 +550,28 @@ function formatReadingCount(value: number, t: Translate, language: Language): st
   return String(value)
 }
 
-/** Descending, so the first match wins. The legend renders from this same list
- *  — the two used to disagree on both the number of steps and the shades. */
+/**
+ * A day with nothing on it. Same neutral GitHub uses, so the grid reads as a
+ * grid rather than as four greens floating on a background.
+ */
+const HEATMAP_EMPTY_SWATCH = 'bg-[#ebedf0] dark:bg-[#161b22]'
+
+/**
+ * Descending, so the first match wins. The legend renders from this same list
+ * — the two used to disagree on both the number of steps and the shades.
+ *
+ * The ramp is GitHub's contribution scale in blue: in light mode it *darkens*
+ * as the days get longer, in dark mode it *brightens*, and every step is a
+ * saturated blue rather than a tint of one. The previous ramp used Tailwind's
+ * emerald scale, whose top step in dark mode (`emerald-400`) is a pale mint —
+ * so the busiest days came out looking washed out, which reads as less, not
+ * more.
+ */
 const HEATMAP_LEVELS: { min: number; swatch: string; labelKey: MessageKey }[] = [
-  { min: 60, swatch: 'bg-emerald-600 dark:bg-emerald-400', labelKey: 'stats.heatmap.over60' },
-  { min: 30, swatch: 'bg-emerald-500 dark:bg-emerald-600', labelKey: 'stats.heatmap.30to60' },
-  { min: 15, swatch: 'bg-emerald-400 dark:bg-emerald-700', labelKey: 'stats.heatmap.15to30' },
-  { min: 0, swatch: 'bg-emerald-300 dark:bg-emerald-900', labelKey: 'stats.heatmap.under15' },
+  { min: 60, swatch: 'bg-[#0a3069] dark:bg-[#58a6ff]', labelKey: 'stats.heatmap.over60' },
+  { min: 30, swatch: 'bg-[#0969da] dark:bg-[#1f6feb]', labelKey: 'stats.heatmap.30to60' },
+  { min: 15, swatch: 'bg-[#54aeff] dark:bg-[#0550ae]', labelKey: 'stats.heatmap.15to30' },
+  { min: 0, swatch: 'bg-[#b6e3ff] dark:bg-[#0a3069]', labelKey: 'stats.heatmap.under15' },
 ]
 
 function HeatmapGrid({
@@ -621,8 +648,9 @@ function HeatmapGrid({
                 )
               }
 
-              const bg = HEATMAP_LEVELS.find((level) => day.minutes > level.min)?.swatch
-                ?? 'bg-neutral-200/70 ring-1 ring-inset ring-black/[0.07] dark:bg-neutral-800 dark:ring-0'
+              const bg =
+                HEATMAP_LEVELS.find((level) => day.minutes > level.min)?.swatch ??
+                HEATMAP_EMPTY_SWATCH
 
               return (
                 <div
