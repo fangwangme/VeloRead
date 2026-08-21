@@ -121,7 +121,7 @@ export function Toc({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-neutral-500 dark:text-neutral-400 hover:bg-black/5 hover:text-neutral-700 dark:hover:bg-white/10 dark:hover:text-neutral-200 transition"
+            className="flex h-7 w-7 items-center justify-center rounded-full border border-black/[0.12] dark:border-white/[0.10] text-neutral-500 dark:text-neutral-400 hover:bg-black/5 hover:text-neutral-700 dark:hover:bg-white/10 dark:hover:text-neutral-200 transition"
             aria-label={t('toc.close')}
           >
             <IconClose />

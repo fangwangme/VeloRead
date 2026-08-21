@@ -6,6 +6,8 @@ import type {
   Bookmark,
   BookSettings,
   HighlightColor,
+  ScriptKey,
+  TypographyProfile,
   ReadingProgress,
   TocItem,
 } from '../platform/types'
@@ -68,7 +70,14 @@ const HEADER_CONTROL_ACTIVE =
 const SAVE_DEBOUNCE_MS = 400
 const RESIZE_DEBOUNCE_MS = 150
 const AUTO_HIDE_CHROME_MS = 3200
-const MAX_PAGE_DWELL_SECONDS = 300 // Max 5 minutes per page to prevent idle tracking
+const MAX_PAGE_DWELL_SECONDS = 300
+
+/**
+ * Shared so a profile without overrides yields the same object every render.
+ * A fresh `{}` would make `resolvedStyle` recompute on every render and
+ * re-register the theme with it.
+ */
+const NO_OVERRIDES: StyleOverride = Object.freeze({}) // Max 5 minutes per page to prevent idle tracking
 
 export function Reader({
   bookId,
@@ -101,9 +110,21 @@ export function Reader({
   const hideChromeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Settings & Style
-  const [styleId, setStyleId] = useState<StyleId>('book')
-  const [overrides, setOverrides] = useState<StyleOverride>({})
-  const [flow, setFlow] = useState<'paginated' | 'scrolled-doc'>('paginated')
+  /**
+   * Which typography profile this book reads under. From the book's `language`
+   * metadata: a Chinese book wants a Chinese setup, and there is no useful
+   * middle case to distinguish.
+   */
+  const script: ScriptKey = /^zh/i.test(bookLanguage ?? '') ? 'cjk' : 'latin'
+  const profile = appSettings.typography?.[script]
+  const styleId: StyleId =
+    profile?.styleId && PRESETS[profile.styleId]
+      ? profile.styleId
+      : script === 'cjk'
+        ? 'song'
+        : 'book'
+  const overrides: StyleOverride = profile?.overrides ?? NO_OVERRIDES
+  const flow = appSettings.flow ?? 'paginated'
 
   // UI Panels
   const [showSettings, setShowSettings] = useState(false)
@@ -670,32 +691,17 @@ export function Reader({
 
         if (cancelled || !containerRef.current) return
 
-        const isChinese = bookLanguage?.toLowerCase().startsWith('zh')
-        let rawStyleId = savedSettings?.styleId as StyleId | 'night' | undefined
-        if (rawStyleId === 'night') {
-          rawStyleId = 'book'
-        }
         const initialAppSettings = initialAppSettingsRef.current
-        // A book opened for the first time inherits the typography you last
-        // chose. Resetting to the factory preset every time means a setting
-        // like single-column has to be re-applied for every book on the shelf.
-        // The global default only carries across books written in the same
-        // script. Handing a Chinese book a Latin serif preset — or an English
-        // one Songti — is worse than ignoring the preference, because the
-        // typeface is the whole point of the preset.
-        const fallbackStyleId: StyleId = isChinese ? 'song' : 'book'
-        const defaultStyleId = initialAppSettings.defaultStyleId
-        const defaultFitsScript =
-          defaultStyleId !== undefined &&
-          PRESETS[defaultStyleId] !== undefined &&
-          Boolean(PRESETS[defaultStyleId].body.isCjk) === Boolean(isChinese)
+        const initialScript: ScriptKey = /^zh/i.test(bookLanguage ?? '') ? 'cjk' : 'latin'
+        const initialProfile = initialAppSettings.typography?.[initialScript]
         const initialStyleId: StyleId =
-          (rawStyleId && PRESETS[rawStyleId as StyleId] ? (rawStyleId as StyleId) : undefined) ??
-          (defaultFitsScript ? defaultStyleId : undefined) ??
-          fallbackStyleId
-        const initialOverrides: StyleOverride =
-          savedSettings?.overrides ?? initialAppSettings.defaultOverrides ?? {}
-        const initialFlow = savedSettings?.flow ?? initialAppSettings.flow ?? 'paginated'
+          initialProfile?.styleId && PRESETS[initialProfile.styleId]
+            ? initialProfile.styleId
+            : initialScript === 'cjk'
+              ? 'song'
+              : 'book'
+        const initialOverrides: StyleOverride = initialProfile?.overrides ?? {}
+        const initialFlow = initialAppSettings.flow ?? 'paginated'
         const initialPacerWpm = savedSettings?.pacerWpm ?? initialAppSettings.pacerWpm ?? 250
         const initialPacerCpm = savedSettings?.pacerCpm ?? initialAppSettings.pacerCpm ?? 300
         const initialPacerChunkSize =
@@ -722,9 +728,6 @@ export function Reader({
           updatedAt: savedSettings?.updatedAt ?? new Date().toISOString(),
         }
 
-        setStyleId(initialStyleId)
-        setOverrides(initialOverrides)
-        setFlow(initialFlow)
         setBookmarks(savedBookmarks)
         setAnnotations(savedAnnotations)
         setPacerWpm(initialPacerWpm)
@@ -920,6 +923,14 @@ export function Reader({
     }
   }, [bookId, bookLanguage, closeBook, creditReadingUnits, flushReadingSession, measureContainerBounds])
 
+  useEffect(() => {
+    if (!handleRef.current || !ready) return
+    suppressLayoutTracking()
+    void handleRef.current.setFlow(flow).then(() => {
+      setTimeout(() => pacerRef.current.recalculateGeometry(false), 80)
+    })
+  }, [flow, ready, suppressLayoutTracking])
+
   /**
    * Push the column decision to epub.js.
    *
@@ -973,36 +984,30 @@ export function Reader({
   }
 
   /**
-   * Typography changes are saved on the book *and* remembered as the default
-   * for books that have none of their own. Rolling back a failed write is not
-   * worth it here: the value is a default for the next book, and it will be
-   * rewritten by the next adjustment.
+   * Typography is stored per script, so a change applies to every book in that
+   * language rather than to this one. Writing through the app settings is what
+   * makes it stick: the local values above are derived from them, and
+   * `updateAppSettings` applies the change optimistically, so the page responds
+   * on the click and the write settles behind it.
    */
-  const rememberTypographyDefault = (changes: Partial<AppSettings>) => {
-    void onAppSettingsChange(changes).catch(() => undefined)
+  const writeTypography = (next: TypographyProfile) => {
+    void onAppSettingsChange({
+      typography: { ...appSettings.typography, [script]: next },
+    }).catch(() => undefined)
   }
 
   const handleStyleSelect = (id: StyleId) => {
-    setStyleId(id)
-    saveCurrentSettings({ styleId: id })
-    rememberTypographyDefault({ defaultStyleId: id })
+    writeTypography({ styleId: id, overrides })
   }
 
   const handleOverridesChange = (newOverrides: StyleOverride) => {
-    setOverrides(newOverrides)
-    saveCurrentSettings({ overrides: newOverrides })
-    rememberTypographyDefault({ defaultOverrides: newOverrides })
+    writeTypography({ styleId, overrides: newOverrides })
   }
 
-  const handleFlowChange = async (newFlow: 'paginated' | 'scrolled-doc') => {
-    setFlow(newFlow)
-    if (handleRef.current) {
-      suppressLayoutTracking()
-      await handleRef.current.setFlow(newFlow)
-      pacer.recalculateGeometry()
-    }
-    saveCurrentSettings({ flow: newFlow })
-    rememberTypographyDefault({ flow: newFlow })
+  const handleFlowChange = (newFlow: 'paginated' | 'scrolled-doc') => {
+    // Paginated or scrolling is one choice for the whole app, not a per-script
+    // one: it is about how you like to read, not about the script.
+    void onAppSettingsChange({ flow: newFlow }).catch(() => undefined)
   }
 
   const turnPage = (direction: 'prev' | 'next') => {
@@ -1536,7 +1541,7 @@ export function Reader({
           ref={pacerPopoverRef}
           role="dialog"
           aria-labelledby="pacer-settings-title"
-          className="absolute right-6 top-16 z-50 w-88 rounded-3xl border border-black/[0.12] bg-white/[0.97] p-5 shadow-[0_25px_60px_rgba(0,0,0,0.26),0_2px_10px_rgba(0,0,0,0.10)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 vr-animate-pop"
+          className="absolute right-6 top-16 z-50 w-[26rem] rounded-3xl border border-black/[0.12] bg-white/[0.97] p-5 shadow-[0_25px_60px_rgba(0,0,0,0.26),0_2px_10px_rgba(0,0,0,0.10)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 vr-animate-pop"
         >
           {/* Popover Header with Title and Explicit Close Button */}
           <div className="flex items-start justify-between gap-3 pb-3.5 border-b border-black/[0.10] dark:border-white/[0.06]">
@@ -1561,7 +1566,7 @@ export function Reader({
               <button
                 type="button"
                 onClick={() => setShowPacerControls(false)}
-                className="flex h-6 w-6 items-center justify-center rounded-full text-neutral-500 dark:text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-white/10 dark:hover:text-neutral-200"
+                className="flex h-6 w-6 items-center justify-center rounded-full border border-black/[0.12] dark:border-white/[0.10] text-neutral-500 dark:text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-white/10 dark:hover:text-neutral-200"
                 aria-label={t('pacer.closeSettings')}
               >
                 ✕
@@ -1713,6 +1718,7 @@ export function Reader({
           currentStyleId={styleId}
           overrides={overrides}
           flow={flow}
+          script={script}
           isDark={isEffectiveDark}
           resolved={{
             fontSizePx: resolvedStyle.body.fontSizePx,

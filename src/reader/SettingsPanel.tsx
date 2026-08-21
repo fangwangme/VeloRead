@@ -1,4 +1,5 @@
 import type { StyleId, StyleOverride } from './styles/types'
+import type { ScriptKey } from '../platform/types'
 import { PRESETS } from './styles/presets'
 import {
   IconColumnsAuto,
@@ -12,6 +13,8 @@ interface SettingsPanelProps {
   currentStyleId: StyleId
   overrides: StyleOverride
   flow: 'paginated' | 'scrolled-doc'
+  /** Which language profile is being edited — it applies to every book in it. */
+  script: ScriptKey
   isDark: boolean
   /**
    * The values actually in effect after the preset and the overrides are
@@ -55,6 +58,7 @@ export function SettingsPanel({
   currentStyleId,
   overrides,
   flow,
+  script,
   isDark,
   resolved,
   onStyleSelect,
@@ -73,17 +77,17 @@ export function SettingsPanel({
 
   return (
     <div
-      className="absolute right-6 top-16 z-50 w-88 rounded-3xl border border-black/[0.12] bg-white/[0.97] p-5 shadow-[0_25px_60px_rgba(0,0,0,0.26),0_2px_10px_rgba(0,0,0,0.10)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 vr-animate-pop"
+      className="absolute right-6 top-16 z-50 w-[26rem] rounded-3xl border border-black/[0.12] bg-white/[0.97] p-5 shadow-[0_25px_60px_rgba(0,0,0,0.26),0_2px_10px_rgba(0,0,0,0.10)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 vr-animate-pop"
     >
       {/* Header */}
       <div className="flex items-center justify-between pb-3.5 border-b border-black/[0.10] dark:border-white/[0.06]">
         <h3 className="text-[11px] font-semibold tracking-wider text-neutral-500 dark:text-neutral-400 uppercase">
-          {t('typography.title')}
+          {t(script === 'cjk' ? 'typography.titleCjk' : 'typography.titleLatin')}
         </h3>
         <button
           type="button"
           onClick={onClose}
-          className="flex h-6 w-6 items-center justify-center rounded-full text-neutral-500 dark:text-neutral-400 hover:bg-black/5 hover:text-neutral-700 dark:hover:bg-white/10 dark:hover:text-neutral-200 transition"
+          className="flex h-6 w-6 items-center justify-center rounded-full border border-black/[0.12] dark:border-white/[0.10] text-neutral-500 dark:text-neutral-400 hover:bg-black/5 hover:text-neutral-700 dark:hover:bg-white/10 dark:hover:text-neutral-200 transition"
           aria-label={t('common.close')}
         >
           ✕

@@ -170,7 +170,7 @@ describe('web storage port', () => {
     expect(await storage.getBookSettings(book.id)).toEqual(bookSettings)
 
     await storage.saveAppSettings({
-      defaultStyleId: 'sepia',
+      typography: { latin: { styleId: 'sepia', overrides: { fontSizeStep: 1 } } },
       pacerWpm: 300,
       pacerCpm: 320,
       pacerChunkSize: 3,
@@ -179,7 +179,7 @@ describe('web storage port', () => {
     })
     await storage.saveAppSettings({ themeMode: 'dark' })
     expect(await storage.getAppSettings()).toEqual({
-      defaultStyleId: 'sepia',
+      typography: { latin: { styleId: 'sepia', overrides: { fontSizeStep: 1 } } },
       pacerWpm: 300,
       pacerCpm: 320,
       pacerChunkSize: 3,

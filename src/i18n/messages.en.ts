@@ -215,7 +215,8 @@ export const en: Messages = {
   'highlight.color.pink': 'Pink',
   'highlight.color.purple': 'Purple',
 
-  'typography.title': 'Typography, this book',
+  'typography.titleLatin': 'Typography · English books',
+  'typography.titleCjk': 'Typography · Chinese books',
   'typography.spread': 'Columns',
   'typography.spread.auto': 'Adaptive',
   'typography.spread.single': 'Single',

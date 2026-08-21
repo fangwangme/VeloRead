@@ -120,7 +120,7 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
           <button
             type="button"
             onClick={onClose}
-            className="flex size-8 items-center justify-center rounded-full text-neutral-500 dark:text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-white/10 dark:hover:text-neutral-200"
+            className="flex size-8 items-center justify-center rounded-full border border-black/[0.12] dark:border-white/[0.10] text-neutral-500 dark:text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-white/10 dark:hover:text-neutral-200"
             aria-label={t('settings.close')}
           >
             ✕

@@ -209,7 +209,8 @@ export const zh = {
   'highlight.color.pink': '粉',
   'highlight.color.purple': '紫',
 
-  'typography.title': '当前书籍排版',
+  'typography.titleLatin': '英文书籍排版',
+  'typography.titleCjk': '中文书籍排版',
   'typography.spread': '页面分栏',
   'typography.spread.auto': '自适应',
   'typography.spread.single': '单栏',

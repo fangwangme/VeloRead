@@ -44,7 +44,29 @@ export interface ReadingProgress {
   updatedAt: string
 }
 
-/** Book-specific reading settings. */
+/** Which typography profile a book uses. Decided by its `language` metadata. */
+export type ScriptKey = 'latin' | 'cjk'
+
+/**
+ * Typography for one script.
+ *
+ * Per script rather than per book: what you want is a Chinese setup and an
+ * English one, not to re-tune every title on the shelf. This mirrors the shape
+ * the Pacer already had — one engine, two language profiles.
+ */
+export interface TypographyProfile {
+  styleId: StyleId
+  overrides: StyleOverride
+}
+
+/**
+ * Book-specific reading settings.
+ *
+ * `styleId` / `overrides` / `flow` are no longer read: typography moved to
+ * `AppSettings.typography`, keyed by script. They are still written so the row
+ * stays valid against a schema that predates the move, and so the data is there
+ * if per-book typography ever comes back.
+ */
 export interface BookSettings {
   bookId: string
   styleId: StyleId
@@ -67,9 +89,8 @@ export interface BookSettings {
  * off instead of resetting to the factory preset.
  */
 export interface AppSettings {
-  defaultStyleId?: StyleId
-  /** Seeds `BookSettings.overrides` for a book opened for the first time. */
-  defaultOverrides?: StyleOverride
+  /** Typography, one profile per script. See `TypographyProfile`. */
+  typography?: Partial<Record<ScriptKey, TypographyProfile>>
   themeMode?: 'auto' | 'light' | 'dark'
   /** UI language. `auto` follows the system. */
   language?: LanguagePreference
@@ -79,6 +100,7 @@ export interface AppSettings {
   pacerChunkSize?: number
   pacerCjkCharCount?: number
   dailyReadingGoalMinutes?: number
+  /** Paginated or scrolling, for every book — not a per-script choice. */
   flow?: 'paginated' | 'scrolled-doc'
   /**
    * Whether clicking a word moves the auto-reading cursor to it. On by default;

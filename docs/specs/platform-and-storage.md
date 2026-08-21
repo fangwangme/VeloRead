@@ -68,7 +68,8 @@ SQLite 的 `ORDER BY name` 是 UTF-8 字节序，等价于码点序；JS 的 `<`
 `themeMode` / `language` / `defaultStyleId` / `flow` /
 `pacerWpm` `pacerCpm` `pacerChunkSize` `pacerCjkCharCount` /
 `pacerHighlightColor` `pacerHighlightOpacity` `pacerHighlightShape` /
-`dailyReadingGoalMinutes` / `defaultStyleId` `defaultOverrides`（新书的排版起点）。缺省一律由读取处补全，**存储层不写默认值**，
+`typography`（按脚本分的排版档案）/ `clickToPositionPacer` /
+`dailyReadingGoalMinutes`。缺省一律由读取处补全，**存储层不写默认值**，
 这样改默认值不需要迁移已存的行。
 
 **时间戳**一律由前端生成 ISO-8601 字符串，存储层不自己取时钟。
