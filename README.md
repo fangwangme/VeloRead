@@ -1,68 +1,51 @@
 # VeloRead
 
-A clean, elegant, local-first macOS desktop reader for EPUB, PDF, and TXT: featuring an auto-advancing Pacer for focus and speed training, structured highlights and annotations, reading activity tracking, and complete local data freedom with plain-text export.
-
-<p align="center">
-  <img src="docs/images/reader-pacer.png" alt="VeloRead Reader & Pacer" width="800" />
-</p>
-
-## Highlights & Screenshots
-
-### Library & Collections
-Manage books locally with custom shelves, reading progress indicators, and fast filtering.
-
-<p align="center">
-  <img src="docs/images/library.png" alt="Library View" width="700" />
-</p>
-
-### Reader & Pacer
-Immersive reading with customizable typography, six aesthetic presets (Classic Book, Parchment, Modern Prose, Academic, Editorial, Chinese Song), paginated or continuous scrolling, and an auto-advancing **Pacer** that paces your eyes a few words at a time to train reading speed past subvocalization.
-
-<p align="center">
-  <img src="docs/images/reader-pacer.png" alt="Reader & Pacer View" width="700" />
-</p>
-
-### Reading Activity & Statistics
-Track honest active reading time, words and CJK characters read, reading streaks, and daily check-in goals with an activity heatmap.
-
-<p align="center">
-  <img src="docs/images/reading-stats.png" alt="Reading Activity & Statistics" width="700" />
-</p>
+A clean, elegant, local-first macOS desktop reader (EPUB / TXT / PDF) designed for deep focus reading, reading speed training with an auto-advancing Pacer, structured highlights and annotations, and complete data freedom with plain-text export.
 
 ## Features
 
-### Available Now (EPUB)
+### 📖 Reader & Auto-Advancing Pacer
 
-- **Reader Experience** — Table of contents, bookmarks, per-book typography settings, six visual presets, light/dark themes, and paginated or scrolling mode.
-- **Pacer Speed Training** — Auto-advancing highlight with dedicated pacing engines for Latin text (words/min) and CJK text (graphemes/min), fully customizable speed, highlight intensity, and shape.
-- **Highlights & Notes** — Five highlight colors with optional notes, listed alongside TOC/bookmarks, and exportable as standard plain text (`My Clippings` format) per book or across your entire library.
-- **Full-Text Search** — Search across the entire book with on-demand chapter indexing.
-- **Library & Shelves** — Drag-and-drop shelf management and multi-collection organization.
-- **Reading Activity** — Active time tracking, CJK/Latin word counts, reading streaks, and daily goals.
-- **Bilingual Interface** — English and Simplified Chinese UI with system auto-detection.
+- **Immersive Reading**: Customizable typography, 6 aesthetic presets (Classic Book, Parchment, Modern Prose, Academic, Editorial, Chinese Song), light and dark modes, paginated or continuous scrolling, TOC, and bookmarks.
+- **Pacer Speed Training**: An auto-advancing highlight that guides your eye movement across words or CJK character chunks, helping train reading speed past subvocalization. Adjustable speed, highlight intensity, and shape.
+- **Highlights & Notes**: 5 highlight colors with optional notes, listed alongside TOC/bookmarks, and exportable as standard plain text (`My Clippings` format).
 
-### Roadmap
+<p align="center">
+  <img src="docs/images/reader-pacer.png" alt="Reader & Pacer View" width="800" />
+</p>
 
-- **TXT and PDF Support** — TXT support sharing the EPUB rendering pipeline; PDF support with dedicated native renderer. See [`docs/specs/reading-formats.md`](docs/specs/reading-formats.md).
-- **Clippings Import** — Import existing plain-text clippings files to migrate reading history.
-- **Vocabulary Builder** — Instant word lookup, sentence-in-context recording, and plain-text vocabulary export.
+### 📚 Local Library & Collections
 
-## Installation & Running
+- **Local-First Management**: Drag-and-drop book import, custom collection shelves, reading progress tracking, and fast filtering.
+- **Full-Text Search**: Search across entire books with on-demand chapter indexing.
+
+<p align="center">
+  <img src="docs/images/library.png" alt="Library View" width="800" />
+</p>
+
+### 📊 Reading Activity & Statistics
+
+- **Honest Tracking**: Real active reading time (ignoring idle time), separate word and CJK character counters, reading streaks, and daily check-in goals with an activity heatmap.
+
+<p align="center">
+  <img src="docs/images/reading-stats.png" alt="Reading Activity & Statistics" width="800" />
+</p>
+
+## Build & Run
 
 ### Pre-built Releases
 
-Download the latest `.dmg` installer for macOS from [GitHub Releases](https://github.com/fangwangme/VeloRead/releases).
+Pre-compiled `.dmg` packages are automatically published on [GitHub Releases](https://github.com/fangwangme/VeloRead/releases).
 
-> **Note for macOS Gatekeeper:**
-> Because VeloRead is an open-source project without a paid Apple Developer certificate, macOS Gatekeeper may show a warning when opening downloaded builds. You can open it via **Right-click > Open** or run `xattr -cr /Applications/VeloRead.app` in Terminal.
+> **Gatekeeper Note**: For unsigned community builds on macOS, open via **Right-click > Open** in Finder or run `xattr -cr /Applications/VeloRead.app` in Terminal.
 
 ### Building from Source
 
 ```bash
 bun install
-bun run dev        # frontend only (http://localhost:5174) — fastest UI iteration loop
+bun run dev        # frontend only (http://localhost:5174) — fast UI iteration
 bun run app:dev    # full desktop app (Tauri v2 + SQLite)
-bun run app:build  # package .app and .dmg into .local/release/<version>/
+bun run app:build  # build macOS app & dmg into .local/release/<version>/
 bun run lint       # eslint
 bun run test       # vitest unit tests
 bun run build      # tsc -b && vite build
@@ -73,18 +56,16 @@ bun run build      # tsc -b && vite build
 - Rust toolchain ([rustup](https://rustup.rs))
 - Xcode Command Line Tools (`xcode-select --install`)
 
-Packaged artifacts will be generated in `.local/release/<version>/`.
-
 ## Tech Stack
 
 Tauri v2 (Rust + WKWebView) · React 19 · TypeScript · Vite 7 · Tailwind CSS 4
 
 ## Documentation
 
-- Specs — start with [`docs/specs/overview.md`](docs/specs/overview.md); each module has its own spec under [`docs/specs/`](docs/specs/)
-- Building and packaging: [`docs/usage/build.md`](docs/usage/build.md)
-- What changed and what is still missing: [`CHANGELOG.md`](CHANGELOG.md)
-- Contributor and agent conventions: [`AGENTS.md`](AGENTS.md)
+- **Specs & Architecture:** [`docs/specs/overview.md`](docs/specs/overview.md) and module specs in [`docs/specs/`](docs/specs/)
+- **Build & Packaging Guide:** [`docs/usage/build.md`](docs/usage/build.md)
+- **Changelog:** [`CHANGELOG.md`](CHANGELOG.md)
+- **Contributor & Agent Conventions:** [`AGENTS.md`](AGENTS.md)
 
 ## License
 
