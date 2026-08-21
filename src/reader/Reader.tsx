@@ -574,12 +574,20 @@ export function Reader({
         // A book opened for the first time inherits the typography you last
         // chose. Resetting to the factory preset every time means a setting
         // like single-column has to be re-applied for every book on the shelf.
+        // The global default only carries across books written in the same
+        // script. Handing a Chinese book a Latin serif preset — or an English
+        // one Songti — is worse than ignoring the preference, because the
+        // typeface is the whole point of the preset.
+        const fallbackStyleId: StyleId = isChinese ? 'song' : 'book'
+        const defaultStyleId = initialAppSettings.defaultStyleId
+        const defaultFitsScript =
+          defaultStyleId !== undefined &&
+          PRESETS[defaultStyleId] !== undefined &&
+          Boolean(PRESETS[defaultStyleId].body.isCjk) === Boolean(isChinese)
         const initialStyleId: StyleId =
           (rawStyleId && PRESETS[rawStyleId as StyleId] ? (rawStyleId as StyleId) : undefined) ??
-          (initialAppSettings.defaultStyleId && PRESETS[initialAppSettings.defaultStyleId]
-            ? initialAppSettings.defaultStyleId
-            : undefined) ??
-          (isChinese ? 'song' : 'book')
+          (defaultFitsScript ? defaultStyleId : undefined) ??
+          fallbackStyleId
         const initialOverrides: StyleOverride =
           savedSettings?.overrides ?? initialAppSettings.defaultOverrides ?? {}
         const initialFlow = savedSettings?.flow ?? initialAppSettings.flow ?? 'paginated'

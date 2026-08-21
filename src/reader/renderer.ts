@@ -346,12 +346,15 @@ export async function createReader(
       const finish = () => {
         if (settled) return
         settled = true
+        clearTimeout(timer)
+        const index = relocationWaiters.indexOf(finish)
+        if (index !== -1) relocationWaiters.splice(index, 1)
         resolve()
       }
-      relocationWaiters.push(finish)
       // A `next()` that turns out to be a no-op never relocates; the Pacer must
       // not hang waiting for an event that is not coming.
-      setTimeout(finish, timeoutMs)
+      const timer = setTimeout(finish, timeoutMs)
+      relocationWaiters.push(finish)
     })
   }
 

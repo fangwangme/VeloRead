@@ -63,3 +63,12 @@ describe('createTranslate', () => {
     expect(createTranslate('en')('library.title')).toBe('Library')
   })
 })
+
+describe('missing messages', () => {
+  it('renders the key rather than crashing the tree', () => {
+    // `plural` builds its key at runtime, so a hole there would reach render as
+    // `undefined.replace(...)`. There is no error boundary above it.
+    const t = createTranslate('zh')
+    expect((t as unknown as (k: string) => string)('nope.not.a.key')).toBe('nope.not.a.key')
+  })
+})

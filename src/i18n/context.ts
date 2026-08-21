@@ -15,13 +15,23 @@ export interface I18nValue {
 
 export function createTranslate(language: Language): Translate {
   const messages = DICTIONARIES[language]
-  const translate = ((key, values) =>
-    format(messages[key], values)) as Translate
+
+  /**
+   * Types keep a key from going missing, and a test keeps `.one` and `.other`
+   * paired. This last resort exists because `plural` assembles its key at
+   * runtime: a hole there would otherwise be `undefined.replace(...)` inside
+   * render, and with no error boundary in the tree that is a white screen
+   * instead of one odd-looking label.
+   */
+  const lookup = (key: string): string =>
+    (messages as Record<string, string | undefined>)[key] ?? key
+
+  const translate = ((key, values) => format(lookup(key), values)) as Translate
   translate.plural = (key, count, values) => {
     // English needs the pair; Chinese defines both to the same string. Zero
     // takes the plural form, as it does in English.
     const form = count === 1 ? `${key}.one` : `${key}.other`
-    return format(messages[form as keyof Messages], { n: count, ...values })
+    return format(lookup(form), { n: count, ...values })
   }
   return translate
 }

@@ -9,7 +9,18 @@ const FOCUSABLE = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',')
 
-/** Keyboard and focus behavior shared by the library's modal dialogs. */
+/**
+ * Every mounted dialog, innermost last.
+ *
+ * Dialogs nest — a delete confirmation opens on top of the TOC drawer — and
+ * both listen on `document`, where `stopPropagation` does not reach a sibling
+ * listener. Without knowing which one is on top, one Escape cancelled the
+ * confirmation *and* closed the drawer under it, and two focus traps fought
+ * over Tab.
+ */
+const modalStack: symbol[] = []
+
+/** Keyboard and focus behavior shared by the app's modal dialogs. */
 export function useModalDialog<T extends HTMLElement>(onClose: () => void) {
   const dialogRef = useRef<T>(null)
   const onCloseRef = useRef(onClose)
@@ -19,6 +30,10 @@ export function useModalDialog<T extends HTMLElement>(onClose: () => void) {
   }, [onClose])
 
   useEffect(() => {
+    const token = Symbol('modal-dialog')
+    modalStack.push(token)
+    const isTopmost = () => modalStack[modalStack.length - 1] === token
+
     const dialog = dialogRef.current
     const previousFocus = document.activeElement instanceof HTMLElement
       ? document.activeElement
@@ -33,8 +48,12 @@ export function useModalDialog<T extends HTMLElement>(onClose: () => void) {
     focusable()[0]?.focus()
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (!isTopmost()) return
       if (event.key === 'Escape') {
         event.preventDefault()
+        // Escape dismisses one layer. Stopping here also keeps the reader's
+        // own window-level Escape from closing the book behind the dialog.
+        event.stopPropagation()
         onCloseRef.current()
         return
       }
@@ -60,6 +79,8 @@ export function useModalDialog<T extends HTMLElement>(onClose: () => void) {
     document.addEventListener('keydown', handleKeyDown)
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
+      const index = modalStack.lastIndexOf(token)
+      if (index !== -1) modalStack.splice(index, 1)
       previousFocus?.focus()
     }
   }, [])
