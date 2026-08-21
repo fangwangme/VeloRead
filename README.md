@@ -44,7 +44,7 @@ started, and nothing exports yet. Start at
 bun install
 bun run dev        # frontend only, http://localhost:5174 — fastest UI loop
 bun run app:dev    # full desktop app (Tauri; first Rust build takes a while)
-bun run app:build  # bundle .app / .dmg
+bun run app:build  # bundle .app / .dmg into .local/release/<version>/
 bun run lint
 bun run test
 bun run build      # tsc -b && vite build
@@ -54,6 +54,9 @@ Requires [bun](https://bun.sh), a Rust toolchain, and Xcode Command Line Tools.
 
 CI runs lint, tests and the type-checked build on Linux, and `cargo fmt --check`,
 `cargo clippy -D warnings` and `cargo test` on macOS, for every pull request.
+
+Packaging, artifact layout, and what is still missing before the build can be
+handed to anyone else: [`docs/usage/build.md`](docs/usage/build.md).
 
 ## Stack
 
