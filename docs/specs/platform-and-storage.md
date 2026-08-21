@@ -29,6 +29,38 @@ src/platform/
 | `fs` | 摘抄/生词导出，Kindle 文件导入 | 📋 待 [annotations](annotations.md) 落地时定义 |
 | `dict` | 词典查询 | 📋 待 [vocabulary](vocabulary.md) 落地时定义 |
 
+另有一个不属于这三类、但遵守同一条规矩的能力：
+
+| 能力 | 用途 | 状态 |
+| --- | --- | --- |
+| `lifecycle` | 应用退出前的最后一次冲刷 | ✅ 已实现（`getLifecycle()`） |
+
+### LifecyclePort
+
+```ts
+interface LifecyclePort {
+  /** 应用正在退出、但还活着时执行；返回取消订阅。 */
+  onBeforeExit(handler: () => Promise<void>): () => void
+}
+```
+
+存在的理由：`beforeunload` 不是桌面端的退出钩子——WKWebView 基本不触发它，Cmd+Q 根本不经过书页。
+于是「退出应用」会丢掉最后一次防抖的阅读位置（≤ 400 ms）和缓冲中的阅读时长（≤ 15 s）。
+
+- **Tauri 实现**：Rust 在 `CloseRequested` / `ExitRequested` 里挡下退出，发
+  `veloread://before-exit`，前端跑完 handler 后 `invoke('lifecycle_flush_complete')`，Rust 再退出。
+  Rust 侧带**宽限期**（`FLUSH_GRACE_MS`，当前 1.5 s）与「已完成」标志：webview 不回应的代价
+  是退出慢一下，**绝不能是退不掉**；已完成后的退出请求直接放行，不会二次拦截。
+- **覆盖不到 Cmd+Q**（实测 macOS 15 + Tauri 2.11）：`NSApplication` terminate 只发
+  `RunEvent::Exit`，没有 `ExitRequested`、没有 `CloseRequested`，而 `Exit` 不能推迟。
+  这条路要么替换标准 Quit 菜单项，要么接管 `applicationShouldTerminate`——都是独立的决定。
+  在那之前由前端把写入间隔压小来兜底，见 [reader-view §9](reader-view.md)。
+- **web 实现**：`pagehide` + `beforeunload`。页面拦不住自己的卸载，handler 拿到多少时间算多少；
+  两个事件都可能为同一次退出触发，所以 handler 必须可重复执行（冲刷本身就是幂等的）。
+- **一个应用只有一个监听**（Tauri 侧在 port 内部注册），因为回执只能发一次，
+  而且没有任何订阅者时也必须回执——否则从书库退出会白等一个宽限期。
+  `App.tsx` 因此在启动时就 `getLifecycle()`。
+
 `fs` / `dict` **刻意还没定义接口** —— 先写一份必然被推翻的契约没有价值。
 新增时按 `storage` 的同构方式组织。
 
@@ -67,7 +99,7 @@ SQLite 的 `ORDER BY name` 是 UTF-8 字节序，等价于码点序；JS 的 `<`
 它是一组松散的偏好，加一项不该动 schema。当前包含
 `themeMode` / `language` / `defaultStyleId` / `flow` /
 `pacerWpm` `pacerCpm` `pacerChunkSize` `pacerCjkCharCount` /
-`pacerHighlightColor` `pacerHighlightOpacity` `pacerHighlightShape` /
+`pacerHighlightColor` `pacerHighlightOpacity` `pacerHighlightShape` `pacerCursorMode` /
 `typography`（按脚本分的排版档案）/ `clickToPositionPacer` /
 `dailyReadingGoalMinutes`。缺省一律由读取处补全，**存储层不写默认值**，
 这样改默认值不需要迁移已存的行。

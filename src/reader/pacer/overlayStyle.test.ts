@@ -3,6 +3,7 @@ import {
   AUTO_HIGHLIGHT_COLOR,
   DEFAULT_PACER_HIGHLIGHT,
   clampHighlightOpacity,
+  cursorModeChunksWholeLines,
   hexToRgba,
   readHighlightStyle,
   resolveOverlayStyle,
@@ -51,10 +52,54 @@ describe('resolveOverlayStyle', () => {
   })
 })
 
+describe('cursor mode', () => {
+  it('draws no line band unless the cursor asks for one', () => {
+    for (const cursorMode of ['chunk', 'line'] as const) {
+      const resolved = resolveOverlayStyle(
+        { ...DEFAULT_PACER_HIGHLIGHT, cursorMode },
+        '#D97706',
+        false,
+      )
+      expect(resolved.lineBackgroundColor).toBeNull()
+    }
+  })
+
+  it('draws the band fainter than the cursor over it', () => {
+    const resolved = resolveOverlayStyle(
+      { ...DEFAULT_PACER_HIGHLIGHT, cursorMode: 'chunk-in-line' },
+      '#D97706',
+      false,
+    )
+    expect(resolved.lineBackgroundColor).toBe('rgba(217, 119, 6, 0.081)')
+    expect(resolved.backgroundColor).toBe('rgba(217, 119, 6, 0.18)')
+  })
+
+  it('gives the band a fill even when the cursor is a rule only', () => {
+    const resolved = resolveOverlayStyle(
+      { ...DEFAULT_PACER_HIGHLIGHT, cursorMode: 'chunk-in-line', shape: 'underline' },
+      '#D97706',
+      false,
+    )
+    expect(resolved.backgroundColor).toBe('transparent')
+    expect(resolved.lineBackgroundColor).not.toBeNull()
+  })
+
+  it('chunks whole lines only in line mode', () => {
+    expect(cursorModeChunksWholeLines('line')).toBe(true)
+    expect(cursorModeChunksWholeLines('chunk')).toBe(false)
+    expect(cursorModeChunksWholeLines('chunk-in-line')).toBe(false)
+  })
+})
+
 describe('readHighlightStyle', () => {
   it('fills in every default from empty settings', () => {
     expect(readHighlightStyle({})).toEqual(DEFAULT_PACER_HIGHLIGHT)
     expect(readHighlightStyle({}).color).toBe(AUTO_HIGHLIGHT_COLOR)
+  })
+
+  it('keeps the chunk cursor as the default', () => {
+    expect(readHighlightStyle({}).cursorMode).toBe('chunk')
+    expect(readHighlightStyle({ pacerCursorMode: 'line' }).cursorMode).toBe('line')
   })
 
   it('clamps a stored opacity that is out of range', () => {

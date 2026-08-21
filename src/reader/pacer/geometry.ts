@@ -33,3 +33,36 @@ export function chunkToOverlayRect(chunkRect: Rect, metrics: ContainerMetrics): 
     height: Math.round(chunkRect.height),
   }
 }
+
+/**
+ * Distance between the left edges of two adjacent columns of a CSS multi-column
+ * page, given the layout the page reports.
+ *
+ * Not simply `column-width + column-gap`: `column-width` is a request, and the
+ * browser decides how many columns fit and then widens them to fill the space.
+ * `available` must therefore be the content box — measured on a real epub.js
+ * page, the body carries `box-sizing: border-box` and a `gap`-wide padding, and
+ * feeding the border-box width in puts the pitch a whole gap out, which is
+ * enough to put the last words of a line in the wrong column.
+ *
+ * Returns null when the numbers are not usable, which the chunker reads as
+ * "no column awareness" rather than "no chunks".
+ */
+export function columnPitchFromLayout(layout: {
+  /** Width of the content box the columns are laid out in. */
+  available: number
+  /** The computed `column-width`. */
+  columnWidth: number
+  /** The computed `column-gap`. */
+  columnGap: number
+}): number | null {
+  const { available, columnWidth, columnGap } = layout
+  if (!Number.isFinite(available) || !Number.isFinite(columnWidth)) return null
+  if (available <= 0 || columnWidth <= 0) return null
+  const gap = Number.isFinite(columnGap) && columnGap > 0 ? columnGap : 0
+
+  const columns = Math.max(1, Math.floor((available + gap) / (columnWidth + gap)))
+  const usedWidth = (available - (columns - 1) * gap) / columns
+  const pitch = usedWidth + gap
+  return pitch > 0 ? pitch : null
+}

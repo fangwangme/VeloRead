@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLibrary } from './library/store'
 import { Library } from './library/Library'
 import { Reader } from './reader/Reader'
-import { getStorage } from './platform'
+import { getLifecycle, getStorage } from './platform'
 import type { AppSettings } from './platform/types'
 import { I18nProvider } from './i18n/I18nProvider'
 import { resolveLanguage } from './i18n/resolveLanguage'
@@ -32,6 +32,10 @@ export default function App() {
   useEffect(() => {
     let cancelled = false
     void load()
+    // Created up front, with nothing subscribed yet: on the desktop this port
+    // owns the one listener that answers the shutdown handshake, and an app that
+    // never creates it makes every quit wait out the grace period instead.
+    void getLifecycle().catch(() => undefined)
     const loadVersion = appSettingsVersionRef.current
     void getStorage()
       .then((storage) => storage.getAppSettings())

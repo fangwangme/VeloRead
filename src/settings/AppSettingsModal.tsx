@@ -7,6 +7,7 @@ import {
   PACER_HIGHLIGHT_SWATCHES,
   readHighlightStyle,
   resolveOverlayStyle,
+  type PacerCursorMode,
   type PacerHighlightShape,
   type PacerHighlightStyle,
 } from '../reader/pacer/overlayStyle'
@@ -49,6 +50,7 @@ const SHORTCUT_KEYS: [string, MessageKey][] = [
 
 /** Pointer gestures, whose trigger has to be described in words. */
 const SHORTCUT_GESTURES: [MessageKey, MessageKey][] = [
+  ['gesture.swipe', 'shortcut.swipe'],
   ['gesture.clickText', 'shortcut.clickText'],
   ['gesture.clickBlank', 'shortcut.clickBlank'],
   ['gesture.select', 'shortcut.select'],
@@ -197,6 +199,7 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
                 chunkUnit="latin"
                 t={t}
                 chunkOptions={[1, 2, 3, 4, 5]}
+                chunkDisabled={highlight.cursorMode === 'line'}
                 onSpeedCommit={(value) => void save({ pacerWpm: value })}
                 onChunkChange={(value) => {
                   const nextWpm = value === 1 && pacerWpm > 600 ? 600 : pacerWpm
@@ -213,6 +216,7 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
                 chunkUnit="cjk"
                 t={t}
                 chunkOptions={[2, 4, 6, 8, 10]}
+                chunkDisabled={highlight.cursorMode === 'line'}
                 onSpeedCommit={(value) => void save({ pacerCpm: value })}
                 onChunkChange={(value) => void save({ pacerCjkCharCount: value })}
               />
@@ -399,6 +403,7 @@ function PacerProfileEditor({
   chunkSize,
   chunkUnit,
   chunkOptions,
+  chunkDisabled = false,
   onSpeedCommit,
   onChunkChange,
   t,
@@ -411,6 +416,8 @@ function PacerProfileEditor({
   /** Which profile this editor drives, not a display string. */
   chunkUnit: 'latin' | 'cjk'
   chunkOptions: number[]
+  /** A whole-line cursor has no chunk size to choose: the line is the chunk. */
+  chunkDisabled?: boolean
   onSpeedCommit: (value: number) => void
   onChunkChange: (value: number) => void
   t: Translate
@@ -455,15 +462,19 @@ function PacerProfileEditor({
           <span className="text-[8px] font-medium text-neutral-500 dark:text-neutral-400">{unit}</span>
         </label>
       </div>
-      <div className="mt-3 flex items-center justify-between gap-2">
+      <div
+        className={`mt-3 flex items-center justify-between gap-2 ${chunkDisabled ? 'opacity-40' : ''}`}
+        title={chunkDisabled ? t('pacer.chunkLineMode') : undefined}
+      >
         <span className="text-[9px] font-medium text-neutral-500 dark:text-neutral-400">{t('settings.pacerChunk')}</span>
         <div className="flex rounded-lg bg-black/[0.06] p-0.5 dark:bg-white/[0.06]">
           {chunkOptions.map((option) => (
             <button
               key={option}
               type="button"
+              disabled={chunkDisabled}
               onClick={() => onChunkChange(option)}
-              className={`rounded-md px-1.5 py-1 text-[9px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 ${
+              className={`rounded-md px-1.5 py-1 text-[9px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 disabled:pointer-events-none ${
                 chunkSize === option
                   ? 'bg-blue-500/12 text-blue-700 ring-1 ring-inset ring-blue-500/35 dark:bg-[#303033] dark:text-white dark:ring-0'
                   : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
@@ -507,6 +518,12 @@ function HighlightStyleEditor({
     { id: 'block', label: t('settings.highlight.shapeBlock') },
     { id: 'block-underline', label: t('settings.highlight.shapeBlockUnderline') },
     { id: 'underline', label: t('settings.highlight.shapeUnderline') },
+  ]
+
+  const cursorModes: { id: PacerCursorMode; label: string }[] = [
+    { id: 'chunk', label: t('settings.highlight.cursorChunk') },
+    { id: 'line', label: t('settings.highlight.cursorLine') },
+    { id: 'chunk-in-line', label: t('settings.highlight.cursorChunkInLine') },
   ]
 
   return (
@@ -584,6 +601,32 @@ function HighlightStyleEditor({
 
       <div className="flex items-center justify-between gap-3">
         <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+          {t('settings.highlight.cursorMode')}
+        </span>
+        <div className="flex rounded-xl bg-black/[0.06] p-1 dark:bg-white/[0.06]">
+          {cursorModes.map((mode) => (
+            <button
+              key={mode.id}
+              type="button"
+              onClick={() => onChange({ pacerCursorMode: mode.id })}
+              aria-pressed={style.cursorMode === mode.id}
+              className={`rounded-lg px-2.5 py-1 text-[10px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 ${
+                style.cursorMode === mode.id
+                  ? 'bg-blue-500/12 text-blue-700 ring-1 ring-inset ring-blue-500/35 dark:bg-[#303033] dark:text-white dark:ring-0'
+                  : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
+              }`}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="-mt-1.5 text-right text-[10px] leading-relaxed text-neutral-500 dark:text-neutral-400">
+        {t('settings.highlight.cursorModeHint')}
+      </p>
+
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
           {t('settings.highlight.shape')}
         </span>
         <div className="flex rounded-xl bg-black/[0.06] p-1 dark:bg-white/[0.06]">
@@ -609,20 +652,41 @@ function HighlightStyleEditor({
         className="rounded-2xl border border-black/[0.10] px-4 py-3.5 dark:border-white/[0.07]"
         style={{ backgroundColor: isDark ? '#16161A' : '#FBF8F1' }}
       >
+        {/* The sample is drawn from the same resolved style the page uses, so
+            what is previewed here is what the book will look like — including
+            how much of the line the cursor covers. */}
         <p
           className="font-serif text-[13px] leading-loose"
-          style={{ color: isDark ? '#D8D4CC' : '#2B2622' }}
+          style={{
+            color: isDark ? '#D8D4CC' : '#2B2622',
+            // `line` puts the whole line under the cursor; `chunk-in-line` puts
+            // the band there and leaves the cursor on the words.
+            backgroundColor:
+              style.cursorMode === 'line'
+                ? resolved.backgroundColor
+                : resolved.lineBackgroundColor ?? undefined,
+            borderBottom:
+              style.cursorMode === 'line' && resolved.underlineColor
+                ? `2.5px solid ${resolved.underlineColor}`
+                : undefined,
+            mixBlendMode:
+              style.cursorMode === 'chunk' ? undefined : resolved.mixBlendMode,
+          }}
         >
           <span>{t('settings.highlight.previewBefore')}</span>
           <span
             className="rounded-xs px-0.5"
-            style={{
-              backgroundColor: resolved.backgroundColor,
-              borderBottom: resolved.underlineColor
-                ? `2.5px solid ${resolved.underlineColor}`
-                : undefined,
-              mixBlendMode: resolved.mixBlendMode,
-            }}
+            style={
+              style.cursorMode === 'line'
+                ? undefined
+                : {
+                    backgroundColor: resolved.backgroundColor,
+                    borderBottom: resolved.underlineColor
+                      ? `2.5px solid ${resolved.underlineColor}`
+                      : undefined,
+                    mixBlendMode: resolved.mixBlendMode,
+                  }
+            }
           >
             {t('settings.highlight.previewHighlighted')}
           </span>
