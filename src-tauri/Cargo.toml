@@ -26,3 +26,4 @@ tauri-plugin-log = "2"
 base64 = "0.22"
 # `bundled` compiles SQLite in, so the app never depends on the host's copy.
 rusqlite = { version = "0.37", features = ["bundled"] }
+tauri-plugin-window-state = "2"

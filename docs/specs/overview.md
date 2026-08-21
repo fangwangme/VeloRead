@@ -35,13 +35,15 @@
 
 | 模块 | Spec | 状态 |
 | --- | --- | --- |
-| 书库 | [library.md](library.md) | 🚧 部分实现 |
+| 书库 | [library.md](library.md) | 🚧 导入 / 书架 / 合集已实现 |
 | 格式支持（EPUB / TXT / PDF） | [reading-formats.md](reading-formats.md) | 🚧 仅 EPUB |
-| 阅读视图（排版 / 风格 / 导航） | [reader-view.md](reader-view.md) | 🚧 仅基础翻页 |
-| 自动阅读（Pacer） | [pacer.md](pacer.md) | 📋 规划中 |
-| 划线摘抄 | [annotations.md](annotations.md) | 📋 规划中 |
+| 阅读视图（排版 / 风格 / 导航） | [reader-view.md](reader-view.md) | ✅ EPUB 已实现 |
+| 自动阅读（Pacer） | [pacer.md](pacer.md) | ✅ EPUB 已实现 |
+| 阅读统计与打卡 | [reading-activity.md](reading-activity.md) | ✅ 已实现 |
+| 划线摘抄 | [annotations.md](annotations.md) | 🚧 划线、笔记与导出已实现，Kindle 导入规划中 |
 | 划词与生词本 | [vocabulary.md](vocabulary.md) | 📋 规划中 |
-| 平台适配层与存储 | [platform-and-storage.md](platform-and-storage.md) | 🚧 storage 已实现 |
+| 平台适配层与存储 | [platform-and-storage.md](platform-and-storage.md) | 🚧 `storage` 已实现，`fs` / `dict` 未定义 |
+| 界面语言 | [i18n.md](i18n.md) | ✅ 简体中文 / English 已实现 |
 
 状态图例：✅ 已实现 · 🚧 部分实现 · 📋 规划中
 
@@ -72,20 +74,22 @@ PDF 是**独立的一条轨**，功能对等性天然打折。详见 [reading-fo
 | --- | --- |
 | **Locator** | 格式无关的位置标识。EPUB 用 CFI，TXT 用字符偏移，PDF 用页码+偏移。见 [reading-formats](reading-formats.md) |
 | **CFI** | EPUB Canonical Fragment Identifier，EPUB 内部的精确位置锚点 |
-| **注视块（fixation chunk）** | Pacer 一次高亮的词组，默认 3 词，约等于人眼一次注视的跨度 |
+| **注视块（fixation chunk）** | Pacer 一次高亮的阅读单位组；英文默认 3 词，CJK 默认 4 个字素 |
 | **风格（Style）** | 一整套成品排版：配色 + 字体 + 字号 + 行距 + 版心，选中即整组套用 |
 | **版心（measure）** | 正文每行的宽度，以字符数计（目标 45–75） |
 | **摘抄（clipping）** | 与 Kindle `My Clippings.txt` 对齐的一条划线/笔记/书签记录 |
+| **合集（collection）** | 用户自建的书架分组，一本书可同时属于多个。见 [library](library.md) |
+| **打卡（check-in）** | 由有效阅读分钟数自动产生的每日达标记录，分四档。见 [reading-activity](reading-activity.md) |
 
 ## 6. 里程碑
 
 按依赖顺序，不是承诺排期：
 
 1. **阅读闭环**（✅ 已完成）：导入 EPUB → 渲染翻页 → 进度持久化 → 平台适配层
-2. **像样的阅读器**：排版与风格系统、字体设置、目录、位置信息、书签、滚动模式
-3. **自动阅读**：Pacer 引擎
+2. **像样的阅读器**（✅ 已完成）：排版与风格系统、字体设置、目录、位置信息、书签、滚动模式
+3. **自动阅读与统计**（✅ 已完成）：Pacer 引擎、可信计时、趋势总览与每日打卡
 4. **格式扩展**：TXT（与 EPUB 共用引擎），之后 PDF（独立轨）
-5. **沉淀**：划线摘抄 + Kindle 格式导入导出
+5. **沉淀**（🚧 进行中）：划线笔记与书内列表已完成；摘抄导出与 Kindle 格式导入待做
 6. **词汇**：词典入 SQLite、划词、生词本、导出
 
 ## 7. 候选功能（尚未纳入任何里程碑）
@@ -97,15 +101,13 @@ PDF 是**独立的一条轨**，功能对等性天然打折。详见 [reading-fo
   用户正是从 Kindle 迁过来的，这是留住人的第一步。
 - **按个人速度估算剩余时间**：「本章还剩 12 分钟」。Kindle 最被低估的小功能，
   而我们有 Pacer 的真实速度数据，能比 Kindle 估得准。
-- **阅读统计**：速度趋势、时长、连续天数。Pacer 是「训练工具」，没有统计就不成立。
-- **书内全文搜索**：Apple Books / Kindle 都有，属于基础预期。
+- **更深入的速度趋势**：按会话展示 Pacer 实际吞吐与理解训练变化。基础时长、字数、连续天数与打卡已实现。
 
 **中等价值**
 - 脚注/尾注就地弹出，不跳走
-- 书库的合集/标签、阅读状态筛选
+- 书库的阅读状态筛选（未读 / 在读 / 读完）；合集已实现，见 [library](library.md)
 - 元数据编辑（修正错误的书名/作者/封面）
 - 宽窗口下的多栏排版（Apple Books 有）
-- 自动夜间主题（跟随系统）
 - 全库数据一键导出（备份）
 
 **存疑，需要product判断**

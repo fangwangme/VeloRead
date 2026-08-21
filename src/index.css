@@ -1,1 +1,90 @@
 @import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  html, body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "kern" 1, "liga" 1;
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+}
+
+/* Entrance animations.
+   Written out rather than pulled from tailwindcss-animate: the `animate-in` /
+   `fade-in` / `zoom-in-95` / `slide-in-from-left` class names that plugin
+   provides are not part of Tailwind core, so without the plugin they emitted no
+   CSS at all and every modal, popover and drawer simply appeared. Reduced motion
+   is handled once here, so call sites cannot forget it. */
+@keyframes vr-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes vr-pop-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes vr-slide-in-left {
+  from { opacity: 0; transform: translateX(-1.5rem); }
+  to   { opacity: 1; transform: none; }
+}
+
+@utility vr-animate-fade {
+  animation: vr-fade-in 200ms ease-out both;
+}
+
+@utility vr-animate-pop {
+  animation: vr-pop-in 180ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@utility vr-animate-drawer {
+  animation: vr-slide-in-left 240ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vr-animate-fade,
+  .vr-animate-pop,
+  .vr-animate-drawer {
+    animation: none;
+  }
+}
+
+/* Custom delicate scrollbars matching macOS */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* Follows the app's `.dark` class, not the OS: theme mode is a user setting, so
+   a light theme on a dark system must not get a near-invisible white thumb. */
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+}

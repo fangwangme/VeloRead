@@ -41,7 +41,7 @@
     "android": {
       "debugApplicationIdSuffix": ".debug"
     },
-    "category": "Book",
+    "category": "Reference",
     "shortDescription": "EPUB reader with a speed-reading pacer",
     "macOS": {
       "minimumSystemVersion": "13.0"

@@ -1,7 +1,7 @@
 {
   "name": "veloread",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,7 +12,10 @@
     "fixture": "bun run scripts/make-fixture-epub.ts",
     "tauri": "tauri",
     "app:dev": "tauri dev",
-    "app:build": "tauri build"
+    "app:build": "bun run scripts/build-app.ts",
+    "app:build:universal": "bun run scripts/build-app.ts -- --universal",
+    "clean": "rm -rf .local/dist .local/release",
+    "clean:all": "rm -rf .local/dist .local/release .local/target"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -26,6 +29,7 @@
     "@eslint/js": "^9.39.1",
     "@tailwindcss/vite": "^4.1.16",
     "@tauri-apps/cli": "^2",
+    "@types/bun": "^1.4.0",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",

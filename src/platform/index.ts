@@ -1,4 +1,4 @@
-import type { StoragePort } from './types'
+import type { FsPort, StoragePort } from './types'
 
 /**
  * True inside the Tauri webview. Tauri v2 injects `__TAURI_INTERNALS__` before
@@ -33,4 +33,27 @@ export function getStorage(): Promise<StoragePort> {
   return storage
 }
 
-export type { BookRecord, BookImport, ReadingProgress, StoragePort } from './types'
+let fs: Promise<FsPort> | null = null
+
+/** The filesystem implementation for the current runtime. */
+export function getFs(): Promise<FsPort> {
+  if (!fs) {
+    fs = isTauri()
+      ? import('./tauri/fs').then((m) => m.createTauriFs())
+      : import('./web/fs').then((m) => m.createWebFs())
+    fs.catch(() => {
+      fs = null
+    })
+  }
+  return fs
+}
+
+export type {
+  BookRecord,
+  BookImport,
+  ExportFile,
+  ExportResult,
+  FsPort,
+  ReadingProgress,
+  StoragePort,
+} from './types'

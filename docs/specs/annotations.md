@@ -1,6 +1,7 @@
 # 划线摘抄
 
-> 状态：📋 规划中。
+> 状态（导出）：✅ 已实现；导入仍为规划中。
+> 原状态：🚧 划线、笔记、书内列表已实现；Kindle 格式导入导出规划中。
 > 参照物：Kindle 的 `My Clippings.txt`。
 > 相关：[reading-formats](reading-formats.md)、[vocabulary](vocabulary.md)、[platform-and-storage](platform-and-storage.md)
 
@@ -74,29 +75,89 @@ Perhaps consciousness arises when the brain's simulation of the world becomes so
 
 ```sql
 CREATE TABLE annotations (
-    id          TEXT PRIMARY KEY,
-    book_id     TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
-    kind        TEXT NOT NULL,      -- 'highlight' | 'note' | 'bookmark'
-    locator     TEXT NOT NULL,      -- JSON Locator
-    locator_end TEXT,               -- JSON Locator，选区终点；书签为 NULL
-    text        TEXT,               -- 划线的原文；书签为 NULL
-    note        TEXT,               -- 用户笔记
-    color       TEXT,
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL,
-    source      TEXT NOT NULL       -- 'local' | 'kindle-import'
+    id            TEXT PRIMARY KEY,
+    book_id       TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    cfi_range     TEXT NOT NULL,    -- 覆盖整个选区的 EPUB CFI range
+    text          TEXT NOT NULL,    -- 划线时的原文
+    note          TEXT NOT NULL DEFAULT '',
+    color         TEXT NOT NULL,    -- yellow | green | blue | pink | purple
+    chapter_title TEXT,             -- 建立时捕获，列表离线可读
+    source        TEXT NOT NULL DEFAULT 'local',  -- 'local' | 'kindle-import'
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
 );
-CREATE INDEX annotations_book ON annotations(book_id, created_at DESC);
+CREATE INDEX idx_annotations_book ON annotations(book_id, created_at);
 ```
 
-`source` 用于区分导入数据与本地数据 —— 导入的 Kindle 条目往往无法精确锚定到我们的
-`Locator`（Kindle location 与 CFI 之间没有可靠映射），这类条目应：
-- 保留原文与元数据，**可查看、可导出**
-- 但**不保证能跳转定位**，UI 上要区别对待，不要给一个点了没反应的跳转按钮
+### 与早期设计的两处差异
 
+1. **书签不在这张表里。** 书签保留独立的 `bookmarks` 表：书签是一个*位置*，划线是一段
+   被刻意留下的*文本*，两者的字段、列表形态和交互都不同。导出 Kindle 格式时再把两张表
+   合并成一个文件（`My Clippings.txt` 本来就把三种类型混在一起）。
+2. **没有 `kind` 列，笔记是划线的一个字段。** 本应用里笔记永远依附于一段划线，一行同时
+   持有原文和笔记比拆成两行更贴近实际操作。导出时若 `note` 非空，再拆成 Highlight 与
+   Note 两条记录写出去。
+
+**一个 CFI range 只能对应一条划线。** 重新选中一段已划线的文字，是*编辑那一条*，
+不是新建第二条：epub.js 按 cfiRange 存 mark，重复的行在页面上看不出来，却会在抽屉里
+出现两条一模一样的记录，而删掉任意一条都会把另一条的着色一并抹掉。
+
+`locator` 抽象（格式无关的位置标识）尚未落地，当前直接存 EPUB CFI range；TXT / PDF 接入时
+与 `bookmarks`、`reading_progress` 一起迁移，见 [reading-formats](reading-formats.md)。
+
+`source` 用于区分导入数据与本地数据 —— 导入的 Kindle 条目往往无法精确锚定，UI 必须区别
+对待，不要给一个点了没反应的跳转按钮。
+
+导入的 Kindle 条目往往无法精确锚定到 CFI（Kindle location 与 CFI 之间没有可靠映射），
+这类条目应保留原文与元数据、**可查看、可导出**，但**不保证能跳转定位**。
 这是诚实处理导入数据的关键 —— 假装能定位比不能定位更糟。
 
+划线浮层的颜色与笔记是组件本地状态，**必须按段落重新挂载**（以 annotation id 或 cfiRange 作 key）。
+浮层在选色后保持打开是为了接着写笔记；此时另选一段文字，若沿用同一个实例，
+新段落会带着上一段的笔记，下一次点色就把它存了进去。
+
+## 5.1 查看与返回
+
+摘抄的用法是**反复进出**：在列表里看到一条，跳过去读上下文，再回到原处继续。所以：
+
+- **跳到划线必须记录返回位置**，和从目录、书签跳转一样。此前只有划线这一条路径不记——
+  而它恰恰是最需要「跳过去看一眼再回来」的那一条。
+- **抽屉记住上次停留的页签**。页签状态存在阅读器而不是抽屉里，否则关一次就回到「目录」，
+  在整理笔记时每次都要重新点一下。
+- **跳过去之后要看得出落在哪一条**。一页上往往不止一条划线，所以目标划线会被短暂加重
+  （约 1.4 秒后恢复）——否则「跳转」只意味着页面变了。
+
 ## 6. 导出
+
+**已实现**，入口在书库工具栏。两种形态，没有第三种：
+
+1. **全部导出为一个文件** —— 按书名码点序排列，同一本书的划线连续放在一起。
+2. **每本书一个文件** —— 文件名取自书名。
+
+**书内一律按阅读位置排序，不按划线时间。** 用 `EpubCFI.compare()`，它是纯字符串比较，
+不需要打开书。CFI 不可用（例如导入条目）时退回创建时间——那是它仅有的另一个顺序。
+
+落盘由 `FsPort` 负责，两端行为不同且都是各自平台唯一合理的做法：
+
+| | 桌面（Tauri） | 浏览器 |
+| --- | --- | --- |
+| 单文件 | 直接写进「下载」 | 触发下载 |
+| 多文件 | 「下载」下建一个同名文件夹 | 打包成一个 zip（网页写不了文件夹） |
+| 导出后 | 可在访达中显示 | 无法得知落点 |
+
+重复导出**覆盖**上一次：同一份数据，攒一堆 `(2)` 副本对谁都没好处。
+
+文件名来自书名，而书名来自 EPUB 元数据——**不可信输入**。Rust 侧对每个文件名做白名单校验
+（非空、无分隔符、不以 `.` 开头、不含 `..`、有长度上限），**校验失败直接拒绝，不做净化**。
+
+### 位置字段的诚实处理
+
+`location` 写的是**该书内第几条划线**（1 起），不是 Kindle 的 location：EPUB 没有那个坐标，
+编一个长得像 Kindle location 的数字比一个诚实的序号更糟。`page` **整个省略**而不是伪造——
+这里的页码取决于窗口大小和字号，没有哪个数字明天还成立；真实的 Kindle 文件也常常没有 `page`，
+解析器本就要能应付它缺席。
+
+## 6.1 早先的设计说明
 
 - 一次导出全部，或按书导出
 - 输出单个 `.txt`

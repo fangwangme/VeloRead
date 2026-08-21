@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push to a PR makes the previous run's answer irrelevant.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend (lint · test · build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Test
+        run: bun run test
+
+      # `bun run build` is `tsc -b && vite build`, so this is the type check too.
+      - name: Type check and build
+        run: bun run build
+
+  rust:
+    name: Rust (fmt · clippy · test)
+    # macOS, not Linux: the Tauri shell links against WKWebView here, and the
+    # product is a macOS app. Building it on Linux would only prove that the
+    # gtk/webkit2gtk stack installs.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      # `.cargo/config.toml` redirects the target dir out of src-tauri, so the
+      # cache has to be pointed at it explicitly.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> ../.local/target
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # `tauri::generate_context!` reads `frontendDist`, so the Rust crate does
+      # not compile until the frontend has been built at least once.
+      - name: Build frontend bundle
+        run: bun run build
+
+      - name: Format
+        working-directory: src-tauri
+        run: cargo fmt --check
+
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test
+        working-directory: src-tauri
+        run: cargo test
