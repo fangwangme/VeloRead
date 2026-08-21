@@ -589,3 +589,24 @@ export function IconGlobe(props: SVGProps<SVGSVGElement>) {
     </svg>
   )
 }
+
+export function IconKeyboard(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width={14}
+      height={14}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.4}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      <rect x="1.3" y="3.6" width="13.4" height="8.8" rx="1.6" />
+      <path d="M4 6.3h.01M6.4 6.3h.01M8.8 6.3h.01M11.2 6.3h.01M4 8.7h.01M6.4 8.7h.01M8.8 8.7h.01M11.2 8.7h.01" />
+      <path d="M5.2 10.9h5.6" />
+    </svg>
+  )
+}

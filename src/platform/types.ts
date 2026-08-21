@@ -80,6 +80,11 @@ export interface AppSettings {
   pacerCjkCharCount?: number
   dailyReadingGoalMinutes?: number
   flow?: 'paginated' | 'scrolled-doc'
+  /**
+   * Whether clicking a word moves the auto-reading cursor to it. On by default;
+   * off for readers who want a click in the text to do nothing at all.
+   */
+  clickToPositionPacer?: boolean
   /** Pacer highlight appearance. A hex colour, or `auto` to follow the reading style accent. */
   pacerHighlightColor?: string
   pacerHighlightOpacity?: number

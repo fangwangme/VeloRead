@@ -304,6 +304,7 @@ export function Reader({
   const showTocRef = useRef(showToc)
   const showSearchRef = useRef(showSearch)
   const showPacerControlsRef = useRef(showPacerControls)
+  const clickToPositionRef = useRef(true)
   const pacerPopoverRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -314,6 +315,7 @@ export function Reader({
     showTocRef.current = showToc
     showSearchRef.current = showSearch
     showPacerControlsRef.current = showPacerControls
+    clickToPositionRef.current = appSettings.clickToPositionPacer ?? true
     errorRef.current = error
   })
 
@@ -725,7 +727,7 @@ export function Reader({
             // The first click after a panel was open only dismisses it.
             if (panelWasOpen) return
             if (range) {
-              pacerRef.current.seekToRange(range)
+              if (clickToPositionRef.current) pacerRef.current.seekToRange(range)
               return
             }
             // Blank space inside the page turns it, same as the margin beside

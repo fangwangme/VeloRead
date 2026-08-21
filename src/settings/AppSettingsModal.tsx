@@ -13,6 +13,7 @@ import {
 import {
   IconClock,
   IconGlobe,
+  IconKeyboard,
   IconHighlight,
   IconMonitor,
   IconMoon,
@@ -36,6 +37,23 @@ const GOAL_OPTIONS = [10, 15, 20, 30, 45, 60]
 /** Stands in for the reading style's accent while previewing. */
 const PREVIEW_ACCENT = '#D97706'
 
+/** Reader keys. The left column is literal, so it needs no translation. */
+const SHORTCUT_KEYS: [string, MessageKey][] = [
+  ['Space', 'shortcut.space'],
+  ['← →', 'shortcut.arrows'],
+  ['T', 'shortcut.toc'],
+  ['A', 'shortcut.typography'],
+  ['/ · F', 'shortcut.search'],
+  ['Esc', 'shortcut.escape'],
+]
+
+/** Pointer gestures, whose trigger has to be described in words. */
+const SHORTCUT_GESTURES: [MessageKey, MessageKey][] = [
+  ['gesture.clickText', 'shortcut.clickText'],
+  ['gesture.clickBlank', 'shortcut.clickBlank'],
+  ['gesture.select', 'shortcut.select'],
+]
+
 const GOAL_MIN = 1
 const GOAL_MAX = 600
 
@@ -51,6 +69,7 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
   const pacerChunkSize = settings.pacerChunkSize ?? 3
   const pacerCjkCharCount = settings.pacerCjkCharCount ?? 4
   const highlight = readHighlightStyle(settings)
+  const clickToPosition = settings.clickToPositionPacer ?? true
   // The preview should look like the page it describes, so it follows the
   // appearance the app is actually showing rather than the OS.
   const previewDark =
@@ -226,6 +245,42 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
               onChange={(changes) => void save(changes)}
               t={t}
             />
+          </SettingSection>
+
+          <SettingSection
+            icon={<IconKeyboard />}
+            title={t('settings.controls')}
+            description={t('settings.controlsHint')}
+          >
+            <label className="mt-4 flex cursor-pointer items-start justify-between gap-4 rounded-2xl border border-black/[0.06] bg-black/[0.02] p-3 dark:border-white/[0.07] dark:bg-white/[0.025]">
+              <span>
+                <span className="block text-[11px] font-medium text-neutral-800 dark:text-neutral-200">
+                  {t('settings.clickToPosition')}
+                </span>
+                <span className="mt-0.5 block text-[10px] leading-relaxed text-neutral-500 dark:text-neutral-400">
+                  {t('settings.clickToPositionHint')}
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={clickToPosition}
+                onChange={(event) => void save({ clickToPositionPacer: event.target.checked })}
+                className="mt-0.5 size-4 shrink-0 cursor-pointer rounded-md accent-blue-600"
+              />
+            </label>
+
+            {/* Everything the reader responds to that nothing on screen
+                announces. Kept here rather than as a hint that appears once and
+                is gone: the question "what can this thing do" comes back. */}
+            <dl className="mt-3 space-y-1.5 rounded-2xl border border-black/[0.06] bg-black/[0.02] p-3 dark:border-white/[0.07] dark:bg-white/[0.025]">
+              {SHORTCUT_KEYS.map(([keys, description]) => (
+                <ShortcutRow key={keys} trigger={keys} mono description={t(description)} />
+              ))}
+              <div className="!mt-2.5 border-t border-black/[0.06] pt-2.5 dark:border-white/[0.07]" />
+              {SHORTCUT_GESTURES.map(([trigger, description]) => (
+                <ShortcutRow key={trigger} trigger={t(trigger)} description={t(description)} />
+              ))}
+            </dl>
           </SettingSection>
 
           <SettingSection
@@ -574,6 +629,31 @@ function HighlightStyleEditor({
           <span>{t('settings.highlight.previewAfter')}</span>
         </p>
       </div>
+    </div>
+  )
+}
+
+function ShortcutRow({
+  trigger,
+  description,
+  mono = false,
+}: {
+  trigger: string
+  description: string
+  mono?: boolean
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-4">
+      <dt
+        className={`shrink-0 text-[10px] text-neutral-500 dark:text-neutral-400 ${
+          mono ? 'font-mono' : ''
+        }`}
+      >
+        {trigger}
+      </dt>
+      <dd className="text-right text-[10px] leading-relaxed text-neutral-600 dark:text-neutral-300">
+        {description}
+      </dd>
     </div>
   )
 }
