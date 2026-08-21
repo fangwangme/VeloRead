@@ -75,17 +75,18 @@ export function Library({
       }}
       onDrop={onDrop}
     >
-      {/* Top Navbar. `data-tauri-drag-region` makes the bar itself behave like a
-          title bar — the window has none, since it is drawn with an overlay
-          title bar and a hidden title. Tauri only starts a drag when the
-          mousedown lands on the element carrying the attribute, so the buttons
-          and the file input below stay clickable. */}
+      {/* Top Navbar. `deep` makes the whole bar behave like a title bar — the
+          window has none, since it is drawn with an overlay title bar and a
+          hidden title. Clickable descendants still block the drag, so the
+          buttons and the file input keep working; a bare attribute would only
+          have dragged from the slivers of background between them. Requires
+          `core:window:allow-start-dragging`, which `core:default` omits. */}
       <header
-        data-tauri-drag-region
+        data-tauri-drag-region="deep"
         className="sticky top-0 z-30 flex items-center justify-between gap-4 px-8 pt-8 pb-5 backdrop-blur-md bg-[#FBFBFA]/80 dark:bg-[#121214]/80 border-b border-black/[0.07] dark:border-white/[0.04]"
       >
-        <div data-tauri-drag-region>
-          <h1 data-tauri-drag-region className="text-xl font-bold tracking-tight">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight">
             {t('library.title')}
           </h1>
           {books.length > 0 && (

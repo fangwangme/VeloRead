@@ -1212,7 +1212,7 @@ export function Reader({
     >
       {/* Top Header Bar with Apple Books floating glass aesthetic & Auto-hide */}
       <header
-        data-tauri-drag-region
+        data-tauri-drag-region="deep"
         className={`fixed top-0 inset-x-0 z-30 flex items-center justify-between gap-4 px-6 pt-5 pb-3 transition-[opacity,transform] duration-300 motion-reduce:transition-none ${
           chromeVisible
             ? 'opacity-100 translate-y-0 pointer-events-auto'
@@ -1267,8 +1267,8 @@ export function Reader({
           </button>
         </div>
 
-        <div data-tauri-drag-region className="min-w-0 flex-1 px-4 text-center">
-          <p data-tauri-drag-region className="truncate text-xs font-semibold tracking-tight opacity-90">
+        <div className="min-w-0 flex-1 px-4 text-center">
+          <p className="truncate text-xs font-semibold tracking-tight opacity-90">
             {book?.title ?? t('reader.reading')}
           </p>
           {location?.chapterTitle && (

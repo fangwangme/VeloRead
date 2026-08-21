@@ -1,11 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "enables the default permissions",
+  "description": "Default core permissions, plus dragging the window by its own chrome: the window has an overlay title bar and a hidden title, so there is no native bar to grab and `data-tauri-drag-region` is the only way to move it. `core:window:default` grants 28 read-only permissions and not this one, so without it the attribute resolves and `start_dragging` is denied silently.",
   "windows": [
     "main"
   ],
   "permissions": [
-    "core:default"
+    "core:default",
+    "core:window:allow-start-dragging"
   ]
 }
