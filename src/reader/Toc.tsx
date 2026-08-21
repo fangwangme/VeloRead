@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import type { Annotation, Bookmark, TocItem } from '../platform/types'
 import { IconBookmark, IconClose, IconHighlight, IconPlus, IconToc, IconTrash } from '../ui/icons'
 import { highlightPalette } from './annotations/colors'
@@ -9,9 +8,12 @@ import { useLanguage, useT } from '../i18n/useT'
 import type { Translate } from '../i18n/types'
 
 /** Apple Books organizes this drawer as Contents / Bookmarks / Highlights. */
-type DrawerTab = 'toc' | 'bookmarks' | 'annotations'
+export type DrawerTab = 'toc' | 'bookmarks' | 'annotations'
 
 interface TocProps {
+  /** Controlled by the reader so the choice outlives closing the drawer. */
+  tab: DrawerTab
+  onTabChange: (tab: DrawerTab) => void
   toc: TocItem[]
   bookmarks: Bookmark[]
   annotations: Annotation[]
@@ -27,6 +29,8 @@ interface TocProps {
 }
 
 export function Toc({
+  tab,
+  onTabChange,
   toc,
   bookmarks,
   annotations,
@@ -40,7 +44,6 @@ export function Toc({
   onDeleteAnnotation,
   onClose,
 }: TocProps) {
-  const [tab, setTab] = useState<DrawerTab>('toc')
   const activeTocId = resolveActiveTocId(toc, currentTocId, currentHref)
   const noteCount = annotations.filter((item) => item.note.trim().length > 0).length
   const drawerRef = useModalDialog<HTMLElement>(onClose)
@@ -103,7 +106,7 @@ export function Toc({
                 type="button"
                 role="tab"
                 aria-selected={tab === item.id}
-                onClick={() => setTab(item.id)}
+                onClick={() => onTabChange(item.id)}
                 className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-[color,background-color,box-shadow] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
                   tab === item.id
                     ? 'bg-white font-semibold text-neutral-900 shadow-[0_1px_4px_rgba(0,0,0,0.08)] dark:bg-[#2C2C2E] dark:text-white'

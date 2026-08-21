@@ -97,8 +97,16 @@ export interface ReaderHandle {
   getIframeElement(): HTMLIFrameElement | null
   getScrollElement(): HTMLElement | null
   getCurrentLocation(): ReaderLocation | null
-  /** Paint a stored highlight onto the page. Re-adding the same id repaints it. */
-  addHighlight(annotationId: string, cfiRange: string, color: HighlightColor): void
+  /**
+   * Paint a stored highlight onto the page. Re-adding the same id repaints it.
+   * `emphasis` paints it stronger, to answer "which one did I just jump to".
+   */
+  addHighlight(
+    annotationId: string,
+    cfiRange: string,
+    color: HighlightColor,
+    emphasis?: boolean,
+  ): void
   removeHighlight(cfiRange: string): void
   /** Where a stored highlight sits right now, in container coordinates. */
   rectForCfiRange(cfiRange: string): SelectionInfo['rect'] | null
@@ -623,8 +631,11 @@ export async function createReader(
     getIframeElement: getIframe,
     getScrollElement,
     getCurrentLocation: () => lastLocation,
-    addHighlight: (annotationId, cfiRange, color) => {
+    addHighlight: (annotationId, cfiRange, color, emphasis = false) => {
       const palette = highlightPalette(color)
+      const fillOpacity = emphasis
+        ? String(Math.min(0.85, Number(palette.fillOpacity) * 2.4))
+        : palette.fillOpacity
       // Removing first makes this idempotent, so a recolor is just a re-add and
       // a repaint after page turns cannot stack duplicate marks.
       try {
@@ -640,7 +651,7 @@ export async function createReader(
           'vr-highlight',
           {
             fill: palette.fill,
-            'fill-opacity': palette.fillOpacity,
+            'fill-opacity': fillOpacity,
             'mix-blend-mode': 'multiply',
           },
         )

@@ -19,7 +19,7 @@ import { PRESETS } from './styles/presets'
 import type { StyleId, StyleOverride } from './styles/types'
 import { resolveStyle } from './styles/resolve'
 import { SettingsPanel } from './SettingsPanel'
-import { Toc } from './Toc'
+import { Toc, type DrawerTab } from './Toc'
 import { SearchPanel } from './SearchPanel'
 import { PositionInfo } from './PositionInfo'
 import { Overlay } from './pacer/Overlay'
@@ -70,6 +70,8 @@ const HEADER_CONTROL_ACTIVE =
 const SAVE_DEBOUNCE_MS = 400
 const RESIZE_DEBOUNCE_MS = 150
 const AUTO_HIDE_CHROME_MS = 3200
+/** How long a jumped-to highlight stays emphasised. */
+const HIGHLIGHT_FLASH_MS = 1400
 const MAX_PAGE_DWELL_SECONDS = 300
 
 /**
@@ -135,6 +137,13 @@ export function Reader({
 
   // Jump History (1-level)
   const [jumpOrigin, setJumpOrigin] = useState<string | null>(null)
+  const highlightFlashRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /**
+   * Which drawer tab was last open. Held here rather than in the drawer so it
+   * survives closing it: working through your notes should not mean re-picking
+   * the tab on every visit.
+   */
+  const [drawerTab, setDrawerTab] = useState<DrawerTab>('toc')
 
   // Highlights & notes
   const [annotations, setAnnotations] = useState<Annotation[]>([])
@@ -905,6 +914,7 @@ export function Reader({
       window.removeEventListener('mousemove', pingActivity)
       if (hideChromeTimerRef.current) clearTimeout(hideChromeTimerRef.current)
       if (layoutSuppressionTimerRef.current) clearTimeout(layoutSuppressionTimerRef.current)
+      if (highlightFlashRef.current) clearTimeout(highlightFlashRef.current)
 
       // Credit the final visible page only when a real page was rendered and
       // the close was not caused by a layout-only relocation.
@@ -1112,8 +1122,22 @@ export function Reader({
   }
 
   const handleNavigateToAnnotation = (annotation: Annotation) => {
+    // Jumping to a highlight records where you came from, exactly as jumping
+    // from the contents or a bookmark does. Without it there was no way back —
+    // the one place in the drawer you cannot return from was the one you are
+    // most likely to be dipping into and out of.
+    if (location?.cfi) setJumpOrigin(location.cfi)
     setShowToc(false)
-    void handleRef.current?.display(annotation.cfiRange)
+    void handleRef.current?.display(annotation.cfiRange).then(() => {
+      // A page has several highlights on it more often than not. Paint the one
+      // you asked for stronger for a moment, or "jumped there" only means the
+      // page changed.
+      handleRef.current?.addHighlight(annotation.id, annotation.cfiRange, annotation.color, true)
+      if (highlightFlashRef.current) clearTimeout(highlightFlashRef.current)
+      highlightFlashRef.current = setTimeout(() => {
+        handleRef.current?.addHighlight(annotation.id, annotation.cfiRange, annotation.color)
+      }, HIGHLIGHT_FLASH_MS)
+    })
   }
 
   function firstWordsOnPage(): string {
@@ -1749,6 +1773,8 @@ export function Reader({
       {/* TOC & Bookmarks Drawer */}
       {showToc && (
         <Toc
+          tab={drawerTab}
+          onTabChange={setDrawerTab}
           toc={toc}
           bookmarks={bookmarks}
           annotations={annotations}
