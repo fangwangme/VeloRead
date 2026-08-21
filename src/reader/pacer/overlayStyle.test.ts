@@ -3,7 +3,6 @@ import {
   AUTO_HIGHLIGHT_COLOR,
   DEFAULT_PACER_HIGHLIGHT,
   clampHighlightOpacity,
-  cursorModeChunksWholeLines,
   hexToRgba,
   readHighlightStyle,
   resolveOverlayStyle,
@@ -54,14 +53,12 @@ describe('resolveOverlayStyle', () => {
 
 describe('cursor mode', () => {
   it('draws no line band unless the cursor asks for one', () => {
-    for (const cursorMode of ['chunk', 'line'] as const) {
-      const resolved = resolveOverlayStyle(
-        { ...DEFAULT_PACER_HIGHLIGHT, cursorMode },
-        '#D97706',
-        false,
-      )
-      expect(resolved.lineBackgroundColor).toBeNull()
-    }
+    const resolved = resolveOverlayStyle(
+      { ...DEFAULT_PACER_HIGHLIGHT, cursorMode: 'chunk' },
+      '#D97706',
+      false,
+    )
+    expect(resolved.lineBackgroundColor).toBeNull()
   })
 
   it('draws the band fainter than the cursor over it', () => {
@@ -84,10 +81,10 @@ describe('cursor mode', () => {
     expect(resolved.lineBackgroundColor).not.toBeNull()
   })
 
-  it('chunks whole lines only in line mode', () => {
-    expect(cursorModeChunksWholeLines('line')).toBe(true)
-    expect(cursorModeChunksWholeLines('chunk')).toBe(false)
-    expect(cursorModeChunksWholeLines('chunk-in-line')).toBe(false)
+  it('reads a size setting that landed in the cursor field as no band', () => {
+    // `line` was a cursor mode before whole-line became a chunk size.
+    const legacy = { pacerCursorMode: 'line' } as unknown as { pacerCursorMode: undefined }
+    expect(readHighlightStyle(legacy).cursorMode).toBe('chunk')
   })
 })
 
@@ -97,9 +94,9 @@ describe('readHighlightStyle', () => {
     expect(readHighlightStyle({}).color).toBe(AUTO_HIGHLIGHT_COLOR)
   })
 
-  it('keeps the chunk cursor as the default', () => {
+  it('keeps the plain cursor as the default', () => {
     expect(readHighlightStyle({}).cursorMode).toBe('chunk')
-    expect(readHighlightStyle({ pacerCursorMode: 'line' }).cursorMode).toBe('line')
+    expect(readHighlightStyle({ pacerCursorMode: 'chunk-in-line' }).cursorMode).toBe('chunk-in-line')
   })
 
   it('clamps a stored opacity that is out of range', () => {

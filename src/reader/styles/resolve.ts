@@ -7,9 +7,14 @@ export function resolveStyle(
 ): ResolvedStyle {
   const isCjk = Boolean(style.body.isCjk)
 
-  // Font size step: each step adjusts font size by 2px (bounded 12px..36px)
+  // Font size step: one step is one pixel, bounded 12px..36px.
+  //
+  // It used to be two, over nine positions. Reading size is the setting people
+  // fiddle with until it is right, and at 2px a tap was a visible jolt with no
+  // stop in between — while the range still ran out before either end of what
+  // the renderer allows.
   const fontSizeStep = override.fontSizeStep ?? 0
-  const fontSizePx = Math.max(12, Math.min(36, style.body.fontSizePx + fontSizeStep * 2))
+  const fontSizePx = Math.max(12, Math.min(36, style.body.fontSizePx + fontSizeStep))
 
   // Line height step: -1 (tight: base - 0.15), 0 (normal: base), 1 (loose: base + 0.15)
   const lineHeightStep = override.lineHeightStep ?? 0

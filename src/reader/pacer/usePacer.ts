@@ -2,13 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   dominantPacerUnit,
   groupWordsIntoChunks,
+  isWholeLineChunkSize,
+  DEFAULT_CJK_CHUNK_SIZE,
+  DEFAULT_LATIN_CHUNK_SIZE,
   type ChunkerOptions,
   type PacerChunk,
   type PacerUnitKind,
+  type WordItem,
 } from './chunker'
 import { chunkToOverlayRect, type Rect } from './geometry'
 import { PacerEngine, type PacerState } from './engine'
-import { cursorModeChunksWholeLines, type PacerCursorMode } from './overlayStyle'
 import type { ReaderHandle } from '../renderer'
 
 interface UsePacerOptions {
@@ -16,10 +19,10 @@ interface UsePacerOptions {
   containerRef: React.RefObject<HTMLDivElement | null>
   latinWpm: number
   cjkCpm: number
+  /** Words per chunk, or `PACER_CHUNK_SIZE_LINE` for one chunk per line. */
   latinChunkSize?: number
+  /** Graphemes per chunk, or `PACER_CHUNK_SIZE_LINE`. */
   cjkChunkSize?: number
-  /** Chunk-sized cursor, whole-line cursor, or both. */
-  cursorMode?: PacerCursorMode
   defaultUnit?: PacerUnitKind
   onPageConsumed?: () => void
   canAdvancePage?: () => boolean
@@ -38,9 +41,8 @@ export function usePacer({
   containerRef,
   latinWpm,
   cjkCpm,
-  latinChunkSize = 3,
-  cjkChunkSize = 4,
-  cursorMode = 'chunk',
+  latinChunkSize = DEFAULT_LATIN_CHUNK_SIZE,
+  cjkChunkSize = DEFAULT_CJK_CHUNK_SIZE,
   defaultUnit = 'latin',
   onPageConsumed,
   canAdvancePage,
@@ -56,13 +58,7 @@ export function usePacer({
   const [dominantUnit, setDominantUnit] = useState<PacerUnitKind>(defaultUnit)
 
   const engineRef = useRef<PacerEngine | null>(null)
-  const configRef = useRef<ChunkerOptions>({
-    latinWpm,
-    cjkCpm,
-    latinChunkSize,
-    cjkChunkSize,
-    wholeLine: cursorModeChunksWholeLines(cursorMode),
-  })
+  const configRef = useRef<ChunkerOptions>({ latinWpm, cjkCpm, latinChunkSize, cjkChunkSize })
   const defaultUnitRef = useRef(defaultUnit)
   const onPageConsumedRef = useRef(onPageConsumed)
   const canAdvancePageRef = useRef(canAdvancePage)
@@ -78,15 +74,36 @@ export function usePacer({
   }, [defaultUnit, onPageConsumed, canAdvancePage, canCreditPage, onCursorMove])
 
   /**
-   * The chunker's settings plus the page's current column layout.
+   * The chunker's settings for the words actually on this page.
    *
-   * Read at every chunking rather than stored: the pitch changes with the font
-   * size, the window width and the spread, and `recalculateGeometry` is already
-   * called for all three.
+   * Two things are decided here rather than stored. The column pitch, because it
+   * changes with the font size, the window width and the spread — all of which
+   * already call `recalculateGeometry`. And whether a chunk is a whole line,
+   * because that is one of the sizes and the size that applies is the one for
+   * the script this page is mostly written in — the same profile the controls
+   * are showing.
    */
-  const chunkerConfig = useCallback((): ChunkerOptions => {
-    return { ...configRef.current, columnPitch: readerHandle?.getColumnPitch() ?? null }
-  }, [readerHandle])
+  const chunkerConfig = useCallback(
+    (words: WordItem[]): ChunkerOptions => {
+      const config = configRef.current
+      const unit = dominantPacerUnit(words, defaultUnitRef.current)
+      const size = unit === 'cjk' ? config.cjkChunkSize : config.latinChunkSize
+      return {
+        ...config,
+        // A size of "whole line" for the other script must not reach the chunker
+        // as a limit of zero, which would put every word in a chunk of its own.
+        latinChunkSize: isWholeLineChunkSize(config.latinChunkSize ?? 0)
+          ? DEFAULT_LATIN_CHUNK_SIZE
+          : config.latinChunkSize,
+        cjkChunkSize: isWholeLineChunkSize(config.cjkChunkSize ?? 0)
+          ? DEFAULT_CJK_CHUNK_SIZE
+          : config.cjkChunkSize,
+        wholeLine: isWholeLineChunkSize(size ?? 0),
+        columnPitch: readerHandle?.getColumnPitch() ?? null,
+      }
+    },
+    [readerHandle],
+  )
 
   const updateOverlay = useCallback(
     (chunk: PacerChunk | null, ensureVisible = true) => {
@@ -127,7 +144,7 @@ export function usePacer({
     (preserveIndex = true) => {
       if (!readerHandle) return
       const words = readerHandle.getVisibleWords()
-      const chunks = groupWordsIntoChunks(words, chunkerConfig())
+      const chunks = groupWordsIntoChunks(words, chunkerConfig(words))
       setDominantUnit(dominantPacerUnit(words, defaultUnitRef.current))
       setTotalChunks(chunks.length)
 
@@ -202,7 +219,7 @@ export function usePacer({
             words = readerHandle.getVisibleWords()
           }
 
-          const chunks = groupWordsIntoChunks(words, chunkerConfig())
+          const chunks = groupWordsIntoChunks(words, chunkerConfig(words))
           setDominantUnit(dominantPacerUnit(words, defaultUnitRef.current))
           setTotalChunks(chunks.length)
           if (chunks.length > 0) {
@@ -228,19 +245,13 @@ export function usePacer({
     }
   }, [chunkerConfig, readerHandle, updateOverlay])
 
-  // Recalculate when either language profile, or the cursor's shape, changes.
+  // Recalculate when either language profile changes.
   useEffect(() => {
-    configRef.current = {
-      latinWpm,
-      cjkCpm,
-      latinChunkSize,
-      cjkChunkSize,
-      wholeLine: cursorModeChunksWholeLines(cursorMode),
-    }
+    configRef.current = { latinWpm, cjkCpm, latinChunkSize, cjkChunkSize }
     if (engineRef.current) {
       recalculateGeometry()
     }
-  }, [latinWpm, cjkCpm, latinChunkSize, cjkChunkSize, cursorMode, recalculateGeometry])
+  }, [latinWpm, cjkCpm, latinChunkSize, cjkChunkSize, recalculateGeometry])
 
   // Keep the parent-document overlay attached to its chunk during smooth
   // scrolling. getBoundingClientRect() already includes the scroller offset.

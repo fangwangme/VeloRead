@@ -81,6 +81,41 @@ export interface ChunkerOptions {
   wholeLine?: boolean
 }
 
+/**
+ * "A whole line" as a chunk size.
+ *
+ * How much the cursor covers is one decision, so it is one control: three, four
+ * or five words — or the line. Zero is the sentinel because the size is stored
+ * in an INTEGER column, and because no other count could ever mean it.
+ */
+export const PACER_CHUNK_SIZE_LINE = 0
+
+export function isWholeLineChunkSize(size: number): boolean {
+  return size === PACER_CHUNK_SIZE_LINE
+}
+
+/**
+ * The sizes offered, per script.
+ *
+ * One and two words are gone: a fixation covers two to three words, so pacing
+ * one at a time is a word-by-word crawl that had to cap the speed at 600 wpm to
+ * stay above the 100 ms floor. Anything stored below the smallest offer is read
+ * as the smallest offer rather than kept alive invisibly.
+ */
+export const LATIN_CHUNK_SIZES = [3, 4, 5, PACER_CHUNK_SIZE_LINE]
+export const CJK_CHUNK_SIZES = [4, 6, 8, 10, PACER_CHUNK_SIZE_LINE]
+
+export const DEFAULT_LATIN_CHUNK_SIZE = 3
+export const DEFAULT_CJK_CHUNK_SIZE = 4
+
+/** Read a stored size into one the reader still offers. */
+export function normaliseChunkSize(size: number | undefined, kind: PacerUnitKind): number {
+  const fallback = kind === 'cjk' ? DEFAULT_CJK_CHUNK_SIZE : DEFAULT_LATIN_CHUNK_SIZE
+  if (size === undefined || !Number.isFinite(size)) return fallback
+  if (isWholeLineChunkSize(size)) return PACER_CHUNK_SIZE_LINE
+  return Math.max(fallback, Math.round(size))
+}
+
 /** Kept as a compatibility name for existing callers and tests. */
 export const isCjkChar = isCjkGrapheme
 

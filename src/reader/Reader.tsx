@@ -29,6 +29,10 @@ import { readHighlightStyle } from './pacer/overlayStyle'
 import {
   countCharacters,
   countReadingUnits,
+  isWholeLineChunkSize,
+  normaliseChunkSize,
+  CJK_CHUNK_SIZES,
+  LATIN_CHUNK_SIZES,
   type PacerChunk,
   type PacerUnitKind,
   type ReadingUnitCounts,
@@ -68,6 +72,14 @@ const HEADER_CONTROL_IDLE =
   'border-black/10 bg-white/60 hover:border-black/20 hover:bg-white dark:border-white/10 dark:bg-black/40 dark:hover:bg-black/70'
 const HEADER_CONTROL_ACTIVE =
   'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/80 dark:text-blue-400'
+
+/**
+ * Ceiling for the pacing rate.
+ *
+ * A single flat number now that one and two unit chunks are gone: the 600 cap
+ * existed so a one-word chunk still cleared the 100 ms dwell floor.
+ */
+const PACER_MAX_RATE = 1000
 
 const SAVE_DEBOUNCE_MS = 400
 /**
@@ -186,8 +198,12 @@ export function Reader({
   // Pacer state
   const [pacerWpm, setPacerWpm] = useState(appSettings.pacerWpm ?? 250)
   const [pacerCpm, setPacerCpm] = useState(appSettings.pacerCpm ?? 300)
-  const [pacerChunkSize, setPacerChunkSize] = useState(appSettings.pacerChunkSize ?? 3)
-  const [pacerCjkChunkSize, setPacerCjkChunkSize] = useState(appSettings.pacerCjkCharCount ?? 4)
+  const [pacerChunkSize, setPacerChunkSize] = useState(() =>
+    normaliseChunkSize(appSettings.pacerChunkSize, 'latin'),
+  )
+  const [pacerCjkChunkSize, setPacerCjkChunkSize] = useState(() =>
+    normaliseChunkSize(appSettings.pacerCjkCharCount, 'cjk'),
+  )
   const [hasPacerOverride, setHasPacerOverride] = useState(false)
   const [showPacerControls, setShowPacerControls] = useState(false)
 
@@ -381,7 +397,6 @@ export function Reader({
     cjkCpm: pacerCpm,
     latinChunkSize: pacerChunkSize,
     cjkChunkSize: pacerCjkChunkSize,
-    cursorMode: pacerHighlightStyle.cursorMode,
     defaultUnit: defaultPacerUnit,
     onCursorMove: handleCursorMove,
     onPageConsumed: () => {
@@ -425,8 +440,6 @@ export function Reader({
     [pageUnits, pageCharacters, location, learnedRate],
   )
 
-  // A whole-line cursor has no chunk size to choose: the line is the chunk.
-  const chunkSizeDisabled = pacerHighlightStyle.cursorMode === 'line'
   const pacerUsesCjkUnits = pacer.dominantUnit === 'cjk'
   const pacerSpeed = pacerUsesCjkUnits ? pacerCpm : pacerWpm
   const activePacerChunkSize = pacerUsesCjkUnits ? pacerCjkChunkSize : pacerChunkSize
@@ -872,10 +885,14 @@ export function Reader({
         const initialFlow = initialAppSettings.flow ?? 'paginated'
         const initialPacerWpm = savedSettings?.pacerWpm ?? initialAppSettings.pacerWpm ?? 250
         const initialPacerCpm = savedSettings?.pacerCpm ?? initialAppSettings.pacerCpm ?? 300
-        const initialPacerChunkSize =
-          savedSettings?.pacerChunkSize ?? initialAppSettings.pacerChunkSize ?? 3
-        const initialPacerCjkChunkSize =
-          savedSettings?.pacerCjkCharCount ?? initialAppSettings.pacerCjkCharCount ?? 4
+        const initialPacerChunkSize = normaliseChunkSize(
+          savedSettings?.pacerChunkSize ?? initialAppSettings.pacerChunkSize,
+          'latin',
+        )
+        const initialPacerCjkChunkSize = normaliseChunkSize(
+          savedSettings?.pacerCjkCharCount ?? initialAppSettings.pacerCjkCharCount,
+          'cjk',
+        )
         const hasSavedPacerOverride = Boolean(
           savedSettings &&
           (savedSettings.pacerWpm !== undefined ||
@@ -1441,8 +1458,7 @@ export function Reader({
   }, [suppressLayoutTracking])
 
   const updatePacerSpeed = (value: number) => {
-    const maxRate = pacerUsesCjkUnits || activePacerChunkSize > 1 ? 1000 : 600
-    const next = Math.max(100, Math.min(maxRate, value))
+    const next = Math.max(100, Math.min(PACER_MAX_RATE, value))
     if (pacerUsesCjkUnits) {
       setPacerCpm(next)
       saveCurrentSettings({ pacerCpm: next })
@@ -1458,10 +1474,8 @@ export function Reader({
       setPacerCjkChunkSize(value)
       saveCurrentSettings({ pacerCjkCharCount: value })
     } else {
-      const nextWpm = value === 1 && pacerWpm > 600 ? 600 : pacerWpm
       setPacerChunkSize(value)
-      if (nextWpm !== pacerWpm) setPacerWpm(nextWpm)
-      saveCurrentSettings({ pacerWpm: nextWpm, pacerChunkSize: value })
+      saveCurrentSettings({ pacerChunkSize: value })
     }
     setHasPacerOverride(true)
   }
@@ -1469,8 +1483,8 @@ export function Reader({
   const resetPacerToAppDefaults = () => {
     setPacerWpm(appSettings.pacerWpm ?? 250)
     setPacerCpm(appSettings.pacerCpm ?? 300)
-    setPacerChunkSize(appSettings.pacerChunkSize ?? 3)
-    setPacerCjkChunkSize(appSettings.pacerCjkCharCount ?? 4)
+    setPacerChunkSize(normaliseChunkSize(appSettings.pacerChunkSize, 'latin'))
+    setPacerCjkChunkSize(normaliseChunkSize(appSettings.pacerCjkCharCount, 'cjk'))
     setHasPacerOverride(false)
     saveCurrentSettings({
       pacerWpm: undefined,
@@ -1500,8 +1514,8 @@ export function Reader({
     sub: t(pacerUsesCjkUnits ? 'pacer.tierSubCjk' : 'pacer.tierSubLatin', { n: wpm }),
   }))
 
-  const pacerChunkOptions = pacerUsesCjkUnits ? [2, 4, 6, 8, 10] : [1, 2, 3, 4, 5]
-  const pacerMaxRate = pacerUsesCjkUnits || activePacerChunkSize > 1 ? 1000 : 600
+  const pacerChunkOptions = pacerUsesCjkUnits ? CJK_CHUNK_SIZES : LATIN_CHUNK_SIZES
+  const pacerMaxRate = PACER_MAX_RATE
 
   return (
     <div
@@ -1794,7 +1808,7 @@ export function Reader({
           ref={pacerPopoverRef}
           role="dialog"
           aria-labelledby="pacer-settings-title"
-          className="absolute right-6 top-16 z-50 w-[26rem] rounded-3xl border border-black/[0.12] bg-white/[0.97] p-5 shadow-[0_25px_60px_rgba(0,0,0,0.26),0_2px_10px_rgba(0,0,0,0.10)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 vr-animate-pop"
+          className="absolute right-6 top-16 z-50 w-[30rem] rounded-3xl border border-black/[0.12] bg-white/[0.97] p-5 shadow-[0_25px_60px_rgba(0,0,0,0.26),0_2px_10px_rgba(0,0,0,0.10)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 vr-animate-pop"
         >
           {/* Popover Header with Title and Explicit Close Button */}
           <div className="flex items-start justify-between gap-3 pb-3.5 border-b border-black/[0.10] dark:border-white/[0.06]">
@@ -1934,45 +1948,36 @@ export function Reader({
               </div>
             </div>
 
-            {/* Chunk Size Selector. A whole-line cursor has no chunk size to
-                pick, the same way an underline highlight has no strength. */}
+            {/* How much the cursor covers, in one control: a few words, or the
+                whole line. */}
             <div className="pt-3 border-t border-black/[0.10] dark:border-white/[0.06] flex items-center justify-between">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
                 {t(pacerUsesCjkUnits ? 'pacer.chunkCjk' : 'pacer.chunkLatin')}
               </span>
-              <div
-                className={`flex rounded-xl bg-black/[0.06] p-1 dark:bg-white/[0.06] ${
-                  chunkSizeDisabled ? 'opacity-40' : ''
-                }`}
-                title={chunkSizeDisabled ? t('pacer.chunkLineMode') : undefined}
-              >
+              <div className="flex rounded-xl bg-black/[0.06] p-1 dark:bg-white/[0.06]">
                 {pacerChunkOptions.map((size) => (
                   <button
                     key={size}
                     type="button"
-                    disabled={chunkSizeDisabled}
                     onClick={() => {
                       updatePacerChunkSize(size)
                     }}
-                    className={`px-2.5 py-1 rounded-lg transition text-[11px] font-medium focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 disabled:pointer-events-none ${
+                    className={`px-2.5 py-1.5 rounded-lg transition text-[11px] font-medium focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 ${
                       activePacerChunkSize === size
                         ? 'bg-blue-500/12 text-blue-700 ring-1 ring-inset ring-blue-500/35 dark:bg-[#2C2C2E] dark:text-white dark:ring-0 font-semibold'
                         : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
                     }`}
                     aria-pressed={activePacerChunkSize === size}
                   >
-                    {t(pacerUsesCjkUnits ? 'pacer.chunkUnitCjk' : 'pacer.chunkUnitLatin', {
-                      n: size,
-                    })}
+                    {isWholeLineChunkSize(size)
+                      ? t('pacer.chunkLine')
+                      : t(pacerUsesCjkUnits ? 'pacer.chunkUnitCjk' : 'pacer.chunkUnitLatin', {
+                          n: size,
+                        })}
                   </button>
                 ))}
               </div>
             </div>
-            {chunkSizeDisabled && (
-              <p className="text-[10px] text-neutral-500 dark:text-neutral-400">
-                {t('pacer.chunkLineMode')}
-              </p>
-            )}
           </div>
         </div>
       )}

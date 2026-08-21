@@ -9,13 +9,15 @@
 export type PacerHighlightShape = 'block' | 'block-underline' | 'underline'
 
 /**
- * How much of the page the cursor covers.
+ * Whether the line under the cursor is marked as well.
  *
- * `chunk` is the fixation-sized band this reader has always drawn. `line` is the
- * ruler people use to keep their place down a page, and `chunk-in-line` is both:
- * the line you are on, faintly, with the chunk you are reading inside it.
+ * *How much* the cursor covers is the chunk size, including its "whole line"
+ * setting — one decision, one control. This is a different question: with a
+ * chunk-sized cursor, faintly marking the line it sits on is the ruler that
+ * keeps your place between fixations. It has nothing to say when the cursor is
+ * already the line.
  */
-export type PacerCursorMode = 'chunk' | 'line' | 'chunk-in-line'
+export type PacerCursorMode = 'chunk' | 'chunk-in-line'
 
 export interface PacerHighlightStyle {
   /** A hex colour, or `auto` to follow the reading style's accent. */
@@ -95,19 +97,16 @@ export function readHighlightStyle(settings: {
       settings.pacerHighlightOpacity ?? DEFAULT_PACER_HIGHLIGHT.opacity,
     ),
     shape: settings.pacerHighlightShape ?? DEFAULT_PACER_HIGHLIGHT.shape,
-    cursorMode: settings.pacerCursorMode ?? DEFAULT_PACER_HIGHLIGHT.cursorMode,
+    // Anything that is not the band — including `line`, which used to live here
+    // before whole-line became a chunk size — reads as the plain cursor.
+    cursorMode:
+      settings.pacerCursorMode === 'chunk-in-line'
+        ? 'chunk-in-line'
+        : DEFAULT_PACER_HIGHLIGHT.cursorMode,
   }
 }
 
-/**
- * Whole-line cursor mode, where a line is one chunk.
- *
- * `chunk-in-line` still chunks: it only adds the band. The chunker needs the
- * distinction, and reading it through here keeps the mapping in one place.
- */
-export function cursorModeChunksWholeLines(mode: PacerCursorMode): boolean {
-  return mode === 'line'
-}
+
 
 export function resolveOverlayStyle(
   style: PacerHighlightStyle,

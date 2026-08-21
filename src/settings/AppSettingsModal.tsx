@@ -1,19 +1,25 @@
 import { useState, type ReactNode } from 'react'
 import type { AppSettings } from '../platform/types'
 import {
+  isWholeLineChunkSize,
+  normaliseChunkSize,
+  CJK_CHUNK_SIZES,
+  LATIN_CHUNK_SIZES,
+} from '../reader/pacer/chunker'
+import {
   AUTO_HIGHLIGHT_COLOR,
   MAX_HIGHLIGHT_OPACITY,
   MIN_HIGHLIGHT_OPACITY,
   PACER_HIGHLIGHT_SWATCHES,
   readHighlightStyle,
   resolveOverlayStyle,
-  type PacerCursorMode,
   type PacerHighlightShape,
   type PacerHighlightStyle,
 } from '../reader/pacer/overlayStyle'
 import {
   IconClock,
   IconGlobe,
+  IconInfo,
   IconKeyboard,
   IconHighlight,
   IconMonitor,
@@ -68,8 +74,8 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
   const dailyGoal = settings.dailyReadingGoalMinutes ?? 15
   const pacerWpm = settings.pacerWpm ?? 250
   const pacerCpm = settings.pacerCpm ?? 300
-  const pacerChunkSize = settings.pacerChunkSize ?? 3
-  const pacerCjkCharCount = settings.pacerCjkCharCount ?? 4
+  const pacerChunkSize = normaliseChunkSize(settings.pacerChunkSize, 'latin')
+  const pacerCjkCharCount = normaliseChunkSize(settings.pacerCjkCharCount, 'cjk')
   const highlight = readHighlightStyle(settings)
   const clickToPosition = settings.clickToPositionPacer ?? true
   // The preview should look like the page it describes, so it follows the
@@ -184,6 +190,38 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
           </SettingSection>
 
           <SettingSection
+            icon={<IconClock />}
+            title={t('settings.goal')}
+            description={t('settings.goalHint')}
+          >
+            <div className="mt-4 grid grid-cols-6 gap-1.5">
+              {GOAL_OPTIONS.map((minutes) => (
+                <button
+                  key={minutes}
+                  type="button"
+                  onClick={() => void save({ dailyReadingGoalMinutes: minutes })}
+                  className={`h-9 rounded-xl border text-xs font-mono font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
+                    dailyGoal === minutes
+                      ? 'border-blue-500/70 bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                      : 'border-black/[0.10] bg-white/60 text-neutral-600 hover:border-black/15 dark:border-white/[0.07] dark:bg-white/[0.03] dark:text-neutral-300 dark:hover:border-white/15'
+                  }`}
+                  aria-pressed={dailyGoal === minutes}
+                >
+                  {t('settings.goalPreset', { n: minutes })}
+                </button>
+              ))}
+            </div>
+
+            <DailyGoalInput
+              key={dailyGoal}
+              value={dailyGoal}
+              isPreset={GOAL_OPTIONS.includes(dailyGoal)}
+              onCommit={(minutes) => void save({ dailyReadingGoalMinutes: minutes })}
+              t={t}
+            />
+          </SettingSection>
+
+          <SettingSection
             icon={<IconPlay />}
             title={t('settings.pacerDefaults')}
             description={t('settings.pacerDefaultsHint')}
@@ -198,13 +236,9 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
                 chunkSize={pacerChunkSize}
                 chunkUnit="latin"
                 t={t}
-                chunkOptions={[1, 2, 3, 4, 5]}
-                chunkDisabled={highlight.cursorMode === 'line'}
+                chunkOptions={LATIN_CHUNK_SIZES}
                 onSpeedCommit={(value) => void save({ pacerWpm: value })}
-                onChunkChange={(value) => {
-                  const nextWpm = value === 1 && pacerWpm > 600 ? 600 : pacerWpm
-                  void save({ pacerChunkSize: value, pacerWpm: nextWpm })
-                }}
+                onChunkChange={(value) => void save({ pacerChunkSize: value })}
               />
               <PacerProfileEditor
                 key={`cjk-${pacerCpm}`}
@@ -215,12 +249,28 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
                 chunkSize={pacerCjkCharCount}
                 chunkUnit="cjk"
                 t={t}
-                chunkOptions={[2, 4, 6, 8, 10]}
-                chunkDisabled={highlight.cursorMode === 'line'}
+                chunkOptions={CJK_CHUNK_SIZES}
                 onSpeedCommit={(value) => void save({ pacerCpm: value })}
                 onChunkChange={(value) => void save({ pacerCjkCharCount: value })}
               />
             </div>
+            <label className="mt-4 flex cursor-pointer items-start justify-between gap-4 rounded-2xl border border-black/[0.06] bg-black/[0.02] p-3 dark:border-white/[0.07] dark:bg-white/[0.025]">
+              <span>
+                <span className="block text-xs font-medium text-neutral-800 dark:text-neutral-200">
+                  {t('settings.clickToPosition')}
+                </span>
+                <span className="mt-1 block text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
+                  {t('settings.clickToPositionHint')}
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={clickToPosition}
+                onChange={(event) => void save({ clickToPositionPacer: event.target.checked })}
+                className="mt-0.5 size-4 shrink-0 cursor-pointer rounded-md accent-blue-600"
+              />
+            </label>
+
             <div className="mt-4 flex items-center justify-between gap-4 border-t border-black/[0.08] pt-3 text-[11px] text-neutral-500 dark:text-neutral-400 dark:border-white/[0.06]">
               <span>{t('settings.pacerRecommended')}</span>
               <button
@@ -256,27 +306,10 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
             title={t('settings.controls')}
             description={t('settings.controlsHint')}
           >
-            <label className="mt-4 flex cursor-pointer items-start justify-between gap-4 rounded-2xl border border-black/[0.06] bg-black/[0.02] p-3 dark:border-white/[0.07] dark:bg-white/[0.025]">
-              <span>
-                <span className="block text-xs font-medium text-neutral-800 dark:text-neutral-200">
-                  {t('settings.clickToPosition')}
-                </span>
-                <span className="mt-1 block text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
-                  {t('settings.clickToPositionHint')}
-                </span>
-              </span>
-              <input
-                type="checkbox"
-                checked={clickToPosition}
-                onChange={(event) => void save({ clickToPositionPacer: event.target.checked })}
-                className="mt-0.5 size-4 shrink-0 cursor-pointer rounded-md accent-blue-600"
-              />
-            </label>
-
             {/* Everything the reader responds to that nothing on screen
                 announces. Kept here rather than as a hint that appears once and
                 is gone: the question "what can this thing do" comes back. */}
-            <dl className="mt-3 space-y-1.5 rounded-2xl border border-black/[0.06] bg-black/[0.02] p-3 dark:border-white/[0.07] dark:bg-white/[0.025]">
+            <dl className="mt-4 space-y-1.5 rounded-2xl border border-black/[0.06] bg-black/[0.02] p-3 dark:border-white/[0.07] dark:bg-white/[0.025]">
               {SHORTCUT_KEYS.map(([keys, description]) => (
                 <ShortcutRow key={keys} trigger={keys} mono description={t(description)} />
               ))}
@@ -288,35 +321,21 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
           </SettingSection>
 
           <SettingSection
-            icon={<IconClock />}
-            title={t('settings.goal')}
-            description={t('settings.goalHint')}
+            icon={<IconInfo />}
+            title={t('settings.about')}
+            description={t('settings.aboutHint')}
           >
-            <div className="mt-4 grid grid-cols-6 gap-1.5">
-              {GOAL_OPTIONS.map((minutes) => (
-                <button
-                  key={minutes}
-                  type="button"
-                  onClick={() => void save({ dailyReadingGoalMinutes: minutes })}
-                  className={`h-9 rounded-xl border text-xs font-mono font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
-                    dailyGoal === minutes
-                      ? 'border-blue-500/70 bg-blue-500/10 text-blue-600 dark:text-blue-400'
-                      : 'border-black/[0.10] bg-white/60 text-neutral-600 hover:border-black/15 dark:border-white/[0.07] dark:bg-white/[0.03] dark:text-neutral-300 dark:hover:border-white/15'
-                  }`}
-                  aria-pressed={dailyGoal === minutes}
-                >
-                  {t('settings.goalPreset', { n: minutes })}
-                </button>
-              ))}
+            <div className="mt-4 flex items-center justify-between gap-4 rounded-2xl border border-black/[0.06] bg-black/[0.02] px-4 py-3 dark:border-white/[0.07] dark:bg-white/[0.025]">
+              <div>
+                <p className="text-xs font-medium text-neutral-800 dark:text-neutral-200">VeloRead</p>
+                <p className="mt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+                  {t('settings.aboutTagline')}
+                </p>
+              </div>
+              <span className="shrink-0 font-mono text-xs font-semibold text-neutral-600 dark:text-neutral-300">
+                v{__APP_VERSION__}
+              </span>
             </div>
-
-            <DailyGoalInput
-              key={dailyGoal}
-              value={dailyGoal}
-              isPreset={GOAL_OPTIONS.includes(dailyGoal)}
-              onCommit={(minutes) => void save({ dailyReadingGoalMinutes: minutes })}
-              t={t}
-            />
           </SettingSection>
 
           {error && (
@@ -403,7 +422,6 @@ function PacerProfileEditor({
   chunkSize,
   chunkUnit,
   chunkOptions,
-  chunkDisabled = false,
   onSpeedCommit,
   onChunkChange,
   t,
@@ -416,14 +434,12 @@ function PacerProfileEditor({
   /** Which profile this editor drives, not a display string. */
   chunkUnit: 'latin' | 'cjk'
   chunkOptions: number[]
-  /** A whole-line cursor has no chunk size to choose: the line is the chunk. */
-  chunkDisabled?: boolean
   onSpeedCommit: (value: number) => void
   onChunkChange: (value: number) => void
   t: Translate
 }) {
   const [draft, setDraft] = useState(String(speed))
-  const maxSpeed = chunkUnit === 'latin' && chunkSize === 1 ? 600 : 1000
+  const maxSpeed = 1000
 
   const commit = () => {
     const parsed = Number(draft)
@@ -465,17 +481,15 @@ function PacerProfileEditor({
           <span className="text-[10px] font-medium text-neutral-500 dark:text-neutral-400">{unit}</span>
         </label>
       </div>
-      <div
-        className={`mt-3 flex items-center justify-between gap-2 ${chunkDisabled ? 'opacity-40' : ''}`}
-        title={chunkDisabled ? t('pacer.chunkLineMode') : undefined}
-      >
+      {/* Label above, options across the full width: two of these cards sit side
+          by side, and "whole line" has nowhere to go on a shared row. */}
+      <div className="mt-3">
         <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">{t('settings.pacerChunk')}</span>
-        <div className="flex rounded-lg bg-black/[0.06] p-0.5 dark:bg-white/[0.06]">
+        <div className="mt-1.5 flex rounded-lg bg-black/[0.06] p-0.5 dark:bg-white/[0.06]">
           {chunkOptions.map((option) => (
             <button
               key={option}
               type="button"
-              disabled={chunkDisabled}
               onClick={() => onChunkChange(option)}
               className={`rounded-md px-1.5 py-1 text-[11px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 disabled:pointer-events-none ${
                 chunkSize === option
@@ -484,9 +498,11 @@ function PacerProfileEditor({
               }`}
               aria-pressed={chunkSize === option}
             >
-              {t(chunkUnit === 'latin' ? 'pacer.chunkUnitLatin' : 'pacer.chunkUnitCjk', {
-                n: option,
-              })}
+              {isWholeLineChunkSize(option)
+                ? t('pacer.chunkLine')
+                : t(chunkUnit === 'latin' ? 'pacer.chunkUnitLatin' : 'pacer.chunkUnitCjk', {
+                    n: option,
+                  })}
             </button>
           ))}
         </div>
@@ -523,11 +539,7 @@ function HighlightStyleEditor({
     { id: 'underline', label: t('settings.highlight.shapeUnderline') },
   ]
 
-  const cursorModes: { id: PacerCursorMode; label: string }[] = [
-    { id: 'chunk', label: t('settings.highlight.cursorChunk') },
-    { id: 'line', label: t('settings.highlight.cursorLine') },
-    { id: 'chunk-in-line', label: t('settings.highlight.cursorChunkInLine') },
-  ]
+
 
   return (
     <div className="mt-5 space-y-4">
@@ -602,33 +614,26 @@ function HighlightStyleEditor({
         </div>
       </div>
 
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-            {t('settings.highlight.cursorMode')}
+      {/* How much the cursor covers is the chunk size, above. This is only
+          whether the line it sits on is marked as well. */}
+      <label className="flex cursor-pointer items-start justify-between gap-4 rounded-2xl border border-black/[0.06] bg-black/[0.02] p-3 dark:border-white/[0.07] dark:bg-white/[0.025]">
+        <span className="min-w-0">
+          <span className="block text-xs font-medium text-neutral-800 dark:text-neutral-200">
+            {t('settings.highlight.lineBand')}
           </span>
-          <p className="mt-1 text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
-            {t('settings.highlight.cursorModeHint')}
-          </p>
-        </div>
-        <div className="flex shrink-0 rounded-xl bg-black/[0.06] p-1 dark:bg-white/[0.06]">
-          {cursorModes.map((mode) => (
-            <button
-              key={mode.id}
-              type="button"
-              onClick={() => onChange({ pacerCursorMode: mode.id })}
-              aria-pressed={style.cursorMode === mode.id}
-              className={`rounded-lg px-3 py-1.5 text-[11px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 ${
-                style.cursorMode === mode.id
-                  ? 'bg-blue-500/12 text-blue-700 ring-1 ring-inset ring-blue-500/35 dark:bg-[#303033] dark:text-white dark:ring-0'
-                  : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
-              }`}
-            >
-              {mode.label}
-            </button>
-          ))}
-        </div>
-      </div>
+          <span className="mt-1 block text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
+            {t('settings.highlight.lineBandHint')}
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          checked={style.cursorMode === 'chunk-in-line'}
+          onChange={(event) =>
+            onChange({ pacerCursorMode: event.target.checked ? 'chunk-in-line' : 'chunk' })
+          }
+          className="mt-0.5 size-4 shrink-0 cursor-pointer rounded-md accent-blue-600"
+        />
+      </label>
 
       <div className="flex items-center justify-between gap-3">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
@@ -666,32 +671,20 @@ function HighlightStyleEditor({
             color: isDark ? '#D8D4CC' : '#2B2622',
             // `line` puts the whole line under the cursor; `chunk-in-line` puts
             // the band there and leaves the cursor on the words.
-            backgroundColor:
-              style.cursorMode === 'line'
-                ? resolved.backgroundColor
-                : resolved.lineBackgroundColor ?? undefined,
-            borderBottom:
-              style.cursorMode === 'line' && resolved.underlineColor
-                ? `2.5px solid ${resolved.underlineColor}`
-                : undefined,
-            mixBlendMode:
-              style.cursorMode === 'chunk' ? undefined : resolved.mixBlendMode,
+            backgroundColor: resolved.lineBackgroundColor ?? undefined,
+            mixBlendMode: resolved.lineBackgroundColor ? resolved.mixBlendMode : undefined,
           }}
         >
           <span>{t('settings.highlight.previewBefore')}</span>
           <span
             className="rounded-xs px-0.5"
-            style={
-              style.cursorMode === 'line'
-                ? undefined
-                : {
-                    backgroundColor: resolved.backgroundColor,
-                    borderBottom: resolved.underlineColor
-                      ? `2.5px solid ${resolved.underlineColor}`
-                      : undefined,
-                    mixBlendMode: resolved.mixBlendMode,
-                  }
-            }
+            style={{
+              backgroundColor: resolved.backgroundColor,
+              borderBottom: resolved.underlineColor
+                ? `2.5px solid ${resolved.underlineColor}`
+                : undefined,
+              mixBlendMode: resolved.mixBlendMode,
+            }}
           >
             {t('settings.highlight.previewHighlighted')}
           </span>
