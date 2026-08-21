@@ -221,6 +221,7 @@ export async function createReader(
 
   rendition.hooks.content.register((contents: Contents) => {
     const doc = contents.document
+    if (doc.defaultView) neutraliseOffscreenText(doc, doc.defaultView)
     if (onKeyDown) {
       doc.addEventListener('keydown', onKeyDown as EventListener)
     }
@@ -749,6 +750,60 @@ export async function createReader(
       rendition.destroy()
       book.destroy()
     },
+  }
+}
+
+/**
+ * How far off-screen a box has to sit before it is the hiding trick below
+ * rather than a legitimate layout.
+ */
+const OFFSCREEN_THRESHOLD_PX = -2000
+
+/**
+ * Re-express "hidden off-screen" text so it does not blow up pagination.
+ *
+ * Books hide text from sighted readers while keeping it for screen readers with
+ * the old recipe `position: absolute; left: -999em` — Standard Ebooks uses it on
+ * every title page, imprint and colophon, where the words are already in the
+ * artwork. It is correct HTML.
+ *
+ * epub.js measures a section's width from `range.getBoundingClientRect().width`
+ * over the whole body, and that box spans from the hidden element to the last
+ * glyph: −999em at a 34px heading is −33966px, so a title page measured 34740px
+ * wide and paginated into forty-one columns, forty of them empty. That is the
+ * "dozens of blank pages" — not the book, and not the parse.
+ *
+ * The fix keeps the element exactly as visible as it was, and in the
+ * accessibility tree, by swapping the offset for the modern clip recipe: a 1px
+ * box at the origin. Only elements actually parked off-screen are touched.
+ */
+function neutraliseOffscreenText(doc: Document, view: Window) {
+  // One measurement first: a section without the trick pays nothing.
+  const probe = doc.createRange()
+  probe.selectNodeContents(doc.body)
+  if (probe.getBoundingClientRect().left > OFFSCREEN_THRESHOLD_PX) return
+
+  for (const element of doc.body.querySelectorAll<HTMLElement>('*')) {
+    const style = view.getComputedStyle(element)
+    if (style.position !== 'absolute' && style.position !== 'fixed') continue
+    const left = Number.parseFloat(style.left)
+    const top = Number.parseFloat(style.top)
+    const parked =
+      (Number.isFinite(left) && left < OFFSCREEN_THRESHOLD_PX) ||
+      (Number.isFinite(top) && top < OFFSCREEN_THRESHOLD_PX)
+    if (!parked) continue
+
+    for (const [property, value] of [
+      ['left', '0'],
+      ['top', '0'],
+      ['width', '1px'],
+      ['height', '1px'],
+      ['overflow', 'hidden'],
+      ['clip-path', 'inset(50%)'],
+      ['white-space', 'nowrap'],
+    ] as const) {
+      element.style.setProperty(property, value, 'important')
+    }
   }
 }
 
