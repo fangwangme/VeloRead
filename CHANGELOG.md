@@ -7,7 +7,7 @@ and [semantic versioning](https://semver.org/spec/v2.0.0.html).
 follows it. There are no published binaries — see
 [`docs/usage/build.md`](docs/usage/build.md) for why and how to build.
 
-## [Unreleased]
+## [0.2.0] — 2026-08-22
 
 ### Added
 
@@ -117,5 +117,5 @@ and nothing exports yet.
 - **Unsigned and un-notarized**, and built for the host architecture only.
 - The main JS chunk is ~813 kB (~250 kB gzipped); no code splitting yet.
 
-[Unreleased]: https://github.com/fangwangme/VeloRead/compare/v0.1.0...HEAD
+[0.2.0]: https://github.com/fangwangme/VeloRead/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/fangwangme/VeloRead/releases/tag/v0.1.0
