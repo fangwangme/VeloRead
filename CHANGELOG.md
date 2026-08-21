@@ -9,7 +9,62 @@ follows it. There are no published binaries — see
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Turn the page with a sideways swipe** on a trackpad or Magic Mouse. One
+  flick is one page, however long its inertia runs; vertical scrolling is left
+  alone, and scrolling flow opts out because it has no page to turn.
+- **A whole line as a Pacer cursor size**, alongside three, four and five words
+  — the ruler people use to keep their place, rather than a fixation guide.
+  Optionally, the line under a chunk-sized cursor can be tinted as well.
+- **The reading position is now a word, not a page.** Auto-reading records the
+  word under the cursor, so reopening a book puts the cursor back where it was
+  and changing the font size no longer loses it.
+- **Read a highlight where you are.** Opening one from the drawer shows the
+  passage and its note over the page; jumping to it is a button inside that
+  card, and imported clippings can be read there too. While there is somewhere
+  to jump back to, the top bar stops hiding itself.
+- **About**, with the version this build was made from.
+
+### Changed
+
+- **How much the cursor covers is one control.** Whole line used to be a cursor
+  mode while size was a separate stepper, so the two could contradict each
+  other. One- and two-unit chunks are gone: a fixation covers two to three
+  words, and they were the only reason the rate was capped at 600 wpm.
+- **Text size steps one pixel at a time** across a range that reaches what the
+  renderer allows, instead of two pixels across nine positions, and shows its
+  value between the two buttons that change it.
+- Both panels in the reader's top-right corner are wider; settings are ordered
+  by how often they are touched, with the key reference and About last; the
+  panel itself drops a level of nested boxes and has no type below 11px.
+- **The heatmap follows GitHub's ramp, in blue** — darkening with the hours in
+  light mode, brightening in dark. The previous scale's top step in dark mode
+  was a pale mint, so the busiest days looked like the emptiest.
+
+### Fixed
+
+- **The Pacer cursor no longer spans two columns.** A line was "the same
+  vertical position", which in a two-column spread is also true of the line
+  beside it, so a chunk could run from the end of one column into the start of
+  the next.
+- **A word hyphenated across a line break is lit on both lines.** Only the first
+  half used to be, which made the next line look like it started mid-word.
+- **A chunk of mixed Chinese and English is timed by both rates** rather than by
+  whichever script it was labelled with.
+- **Changing the font size while paused keeps the cursor on its word** instead
+  of dropping it at the top of the page.
+- **Closing the window writes what is still queued** — the reading position and
+  the buffered reading time — through a platform lifecycle port with a
+  grace period on the Rust side.
+
+### Known gaps
+
+- **macOS Cmd+Q cannot be held.** `NSApplication` terminate reaches the app as
+  `RunEvent::Exit` alone — no `ExitRequested`, no window `CloseRequested` — and
+  `Exit` cannot be deferred, so there is no window in which to flush. The reader
+  keeps its exposure small instead (the within-page position is written at most
+  every two seconds, and on blur), which costs at most a line and a half.
 
 ## [0.1.0] — 2026-08-21
 
