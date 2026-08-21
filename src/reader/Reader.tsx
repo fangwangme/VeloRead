@@ -236,10 +236,11 @@ export function Reader({
     onPageConsumed: () => {
       pagePacerConsumedRef.current = true
     },
+    // Turning the page is a pacing decision, so it does not ask for focus —
+    // only that the book is up and no panel is covering it.
     canAdvancePage: () =>
       readerTrackableRef.current &&
       document.visibilityState === 'visible' &&
-      document.hasFocus() &&
       !showSettingsRef.current &&
       !showTocRef.current &&
       !showSearchRef.current,
@@ -300,16 +301,24 @@ export function Reader({
   }, [blockingReaderPanelOpen, pausePacer])
 
   useEffect(() => {
-    const pauseWhenInactive = () => {
-      if (document.visibilityState === 'hidden' || !document.hasFocus()) {
-        pacerRef.current.pause()
-      }
+    // Losing focus is not a reason to stop pacing. Reading beside another
+    // window is normal, and the Pacer is a metronome: once started it runs
+    // until you pause it or leave the book.
+    //
+    // Being *hidden* is different. A minimized or occluded window throttles its
+    // timers to about one tick a second, so "keep running" there would not keep
+    // time anyway — it would just walk the book forward in jerks with nobody
+    // watching.
+    //
+    // The statistics stay honest independently: the per-second ticker and
+    // `canCreditPage` both still require focus, so pages the Pacer turns while
+    // you are in another window are paced but never counted as read.
+    const pauseWhenHidden = () => {
+      if (document.visibilityState === 'hidden') pacerRef.current.pause()
     }
-    document.addEventListener('visibilitychange', pauseWhenInactive)
-    window.addEventListener('blur', pauseWhenInactive)
+    document.addEventListener('visibilitychange', pauseWhenHidden)
     return () => {
-      document.removeEventListener('visibilitychange', pauseWhenInactive)
-      window.removeEventListener('blur', pauseWhenInactive)
+      document.removeEventListener('visibilitychange', pauseWhenHidden)
     }
   }, [])
 
@@ -432,6 +441,21 @@ export function Reader({
     }
   }, [sessionBuffer])
 
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const stats = await (await getStorage()).getReadingStats()
+        if (!cancelled) setReadingRate(stats)
+      } catch {
+        // No history means no learned rate, which the estimator handles.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [bookId])
+
   const measureContainerBounds = useCallback(() => {
     const container = containerRef.current
     return { width: container?.clientWidth ?? 0, height: container?.clientHeight ?? 0 }
@@ -475,23 +499,30 @@ export function Reader({
     function onKeyDown(event: KeyboardEvent) {
       pingActivity()
 
+      // Only real text entry swallows the shortcuts. Buttons and links used to
+      // be in this list, which meant that after clicking any header control the
+      // control kept focus and Space returned here before reaching
+      // `preventDefault()` — so the browser's own "Space activates the focused
+      // button" took over and Space re-clicked whatever was last pressed.
+      // Space looked like it worked when that happened to be play/pause and
+      // opened the drawer when it was 目录.
       const target = event.target instanceof Element ? event.target : null
-      const isInteractiveTarget = Boolean(
-        target?.closest('input, textarea, select, button, a, [contenteditable="true"]'),
+      const isTextEntry = Boolean(
+        target?.closest('input, textarea, select, [contenteditable="true"]'),
       )
-      if (isInteractiveTarget && event.key !== 'Escape') return
+      if (isTextEntry && event.key !== 'Escape') return
 
       const blockingPanelOpen =
         showSettingsRef.current || showTocRef.current || showSearchRef.current
 
-      // Space: toggle Pacer (prevent scroll)
+      // Space is the reader's transport control, the way it is in a video
+      // player: it belongs to the Pacer no matter which control happens to hold
+      // focus. While a panel is open it belongs to that panel's buttons
+      // instead — opening one already paused the Pacer.
       if (event.code === 'Space' || event.key === ' ') {
+        if (blockingPanelOpen) return
         event.preventDefault()
-        if (blockingPanelOpen || !readerTrackableRef.current) {
-          pacerRef.current.pause()
-        } else {
-          pacerRef.current.toggle()
-        }
+        if (readerTrackableRef.current) pacerRef.current.toggle()
         return
       }
 
