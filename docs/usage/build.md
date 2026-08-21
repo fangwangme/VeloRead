@@ -1,15 +1,8 @@
 # 构建与运行
 
-**VeloRead 提供 GitHub Releases 自动构建的 `.dmg` 安装包，也可以在本地直接通过源码构建。**
+VeloRead 提供 GitHub Releases 自动构建的 `.dmg` 安装包，也可以在本地直接通过源码构建。
 
-### 关于预编译包与 macOS Gatekeeper
-
-由于开源构建尚未集成付费的 Apple Developer ID 证书签名，从 GitHub Releases 下载的 `.dmg` / `.app` 在 macOS 上初次打开时可能被 Gatekeeper 拦截（提示无法验证开发者或文件损坏）。
-
-- **打开方式**：在 Finder 中右键点击应用并选择「打开」，或在终端执行 `xattr -cr /Applications/VeloRead.app` 移除隔离属性。
-- **本地构建优势**：本地通过 `bun run app:build` 编译生成的产物由系统认定为本地创建，不会被打上隔离标记，双击即可直接运行。
-
-## 前置
+## 前置依赖
 
 - [bun](https://bun.sh)
 - Rust 工具链（[rustup](https://rustup.rs)）
@@ -77,12 +70,12 @@ bun run app:build:universal    # Intel + Apple silicon 合一
 自己构建不会遇到这个问题——你就在目标机器上。`app:build:universal` 是给「一台机器打包、
 另一台机器用」准备的，代价是编译两遍。
 
-## 关于代码签名与分发
+## 代码签名与分发
 
-如果要消除 Gatekeeper 拦截提示，需要配置：
+如需配置 macOS 官方代码签名与公证：
 
-1. **Developer ID 证书**签名，加 `notarytool` 公证。仅签名不公证，Gatekeeper 一样拦截。
-2. **universal binary**（`bun run app:build:universal`），以兼顾 Intel 和 Apple silicon 架构。
+1. 配置 **Developer ID 证书** 签名与 `notarytool` 公证。
+2. 构建 **universal binary**（`bun run app:build:universal`）兼顾 Intel 与 Apple silicon 架构。
 
 ## 产物目录
 

@@ -33,11 +33,7 @@ A clean, elegant, local-first macOS desktop reader (EPUB / TXT / PDF) designed f
 
 ## Build & Run
 
-### Pre-built Releases
-
-Pre-compiled `.dmg` packages are automatically published on [GitHub Releases](https://github.com/fangwangme/VeloRead/releases).
-
-> **Gatekeeper Note**: For unsigned community builds on macOS, open via **Right-click > Open** in Finder or run `xattr -cr /Applications/VeloRead.app` in Terminal.
+Pre-compiled `.dmg` packages are available on [GitHub Releases](https://github.com/fangwangme/VeloRead/releases).
 
 ### Building from Source
 
