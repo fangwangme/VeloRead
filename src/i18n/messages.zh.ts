@@ -8,6 +8,10 @@
 export const zh = {
   'app.loading': '正在载入 VeloRead…',
 
+  'crash.title': '出错了',
+  'crash.body': '这一页没能渲染出来。回到书库通常就能继续；如果同一本书每次都这样，请把下面这行贴进 issue。',
+  'crash.backToLibrary': '返回书库',
+  'crash.retry': '重试',
   'common.cancel': '取消',
   'common.delete': '删除',
   'common.close': '关闭',

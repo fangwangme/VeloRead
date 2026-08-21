@@ -7,6 +7,8 @@ import type { AppSettings } from './platform/types'
 import { I18nProvider } from './i18n/I18nProvider'
 import { resolveLanguage } from './i18n/resolveLanguage'
 import { useT } from './i18n/useT'
+import { ErrorBoundary } from './ui/ErrorBoundary'
+import { CrashScreen } from './ui/CrashScreen'
 
 const DEFAULT_APP_SETTINGS: AppSettings = {
   themeMode: 'auto',
@@ -21,6 +23,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
 export default function App() {
   const view = useLibrary((s) => s.view)
   const load = useLibrary((s) => s.load)
+  const closeBook = useLibrary((s) => s.closeBook)
   const [appSettings, setAppSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS)
   const [settingsHydrated, setSettingsHydrated] = useState(false)
   const appSettingsRef = useRef(appSettings)
@@ -107,18 +110,38 @@ export default function App() {
 
   return (
     <I18nProvider language={language}>
-      {!settingsHydrated ? (
-        <BootScreen />
-      ) : view.name === 'reader' ? (
-        <Reader
-          key={view.bookId}
-          bookId={view.bookId}
-          appSettings={appSettings}
-          onAppSettingsChange={updateAppSettings}
-        />
-      ) : (
-        <Library appSettings={appSettings} onAppSettingsChange={updateAppSettings} />
-      )}
+      {/* Keyed by what is on screen, so leaving a book that crashed clears the
+          error instead of carrying it into the library. */}
+      <ErrorBoundary
+        key={view.name === 'reader' ? view.bookId : 'library'}
+        fallback={(error, retry) => (
+          <CrashScreen
+            error={error}
+            onRetry={retry}
+            onBackToLibrary={
+              view.name === 'reader'
+                ? () => {
+                    closeBook()
+                    retry()
+                  }
+                : undefined
+            }
+          />
+        )}
+      >
+        {!settingsHydrated ? (
+          <BootScreen />
+        ) : view.name === 'reader' ? (
+          <Reader
+            key={view.bookId}
+            bookId={view.bookId}
+            appSettings={appSettings}
+            onAppSettingsChange={updateAppSettings}
+          />
+        ) : (
+          <Library appSettings={appSettings} onAppSettingsChange={updateAppSettings} />
+        )}
+      </ErrorBoundary>
     </I18nProvider>
   )
 }

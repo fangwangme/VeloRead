@@ -7,6 +7,11 @@ import type { Messages } from './types'
 export const en: Messages = {
   'app.loading': 'Loading VeloRead…',
 
+  'crash.title': 'Something broke',
+  'crash.body':
+    'This view failed to render. Going back to the library usually gets you moving again; if the same book does it every time, the line below is what makes a report actionable.',
+  'crash.backToLibrary': 'Back to library',
+  'crash.retry': 'Try again',
   'common.cancel': 'Cancel',
   'common.delete': 'Delete',
   'common.close': 'Close',

@@ -74,6 +74,8 @@ Tauri v2 (Rust + WKWebView) · React 19 · TypeScript · Vite 7 · Tailwind CSS 
 
 - Specs — start with [`docs/specs/overview.md`](docs/specs/overview.md); each module has its own
   spec under [`docs/specs/`](docs/specs/)
+- Building and packaging: [`docs/usage/build.md`](docs/usage/build.md)
+- What changed and what is still missing: [`CHANGELOG.md`](CHANGELOG.md)
 - Contributor and agent conventions: [`AGENTS.md`](AGENTS.md)
 
 ## License

@@ -70,7 +70,8 @@ bun run app:build:universal    # Intel + Apple silicon 合一
 
 ## 版本号
 
-**改 `src-tauri/tauri.conf.json` 的 `version`，那是唯一来源。** `package.json` 跟着它写，
+**改 `src-tauri/tauri.conf.json` 的 `version`，那是唯一来源**，并在
+[`CHANGELOG.md`](../../CHANGELOG.md) 里同时开一节。 `package.json` 跟着它写，
 打包脚本也从它读——产物文件名、`.local/release/` 的目录名都由它决定。
 
 ## 关于架构
