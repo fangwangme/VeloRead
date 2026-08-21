@@ -7,16 +7,32 @@ import {
 
 export type PacerUnitKind = 'latin' | 'cjk'
 
+interface MeasuredRect {
+  left: number
+  top: number
+  width: number
+  height: number
+  bottom: number
+  right: number
+}
+
 export interface WordItem {
   text: string
-  rect: {
-    left: number
-    top: number
-    width: number
-    height: number
-    bottom: number
-    right: number
-  }
+  /**
+   * Where the word starts. For a word the renderer had to break across two
+   * lines, this is the first piece — the one that decides which line and column
+   * the word belongs to, and therefore where it is read.
+   */
+  rect: MeasuredRect
+  /**
+   * Every piece the word was printed as, when there is more than one.
+   *
+   * Justified English is hyphenated, so "con-" can sit at the end of one line
+   * and "tinued" at the start of the next. It is still one word and it is read
+   * in one go, so the cursor has to cover both — leaving the second piece
+   * unlit made the first line of every hyphenated pair look skipped.
+   */
+  fragments?: MeasuredRect[]
   kind: TextTokenKind
   wordBoundaryAfter?: boolean
   range?: Range
@@ -45,8 +61,15 @@ export interface PacerChunk {
    * by their own rates.
    */
   units: ReadingUnitCounts
+  /** Union of everything in the chunk. Used for locating, not for drawing. */
   rect: ChunkRect
-  rects: ChunkRect[]
+  /**
+   * What to draw: one box per line the chunk touches.
+   *
+   * Almost always one. A chunk whose last word was hyphenated across a line
+   * break gets a second, small box at the start of the next line.
+   */
+  lineBoxes: ChunkRect[]
   /**
    * The whole line this chunk sits on, within its own column.
    *
@@ -236,6 +259,7 @@ export function groupWordsIntoChunks(words: WordItem[], options: ChunkerOptions)
         lineRect,
         latinWpm: safeLatinWpm,
         cjkCpm: safeCjkCpm,
+        columnPitch,
       })
       if (chunk) chunks.push(chunk)
     }
@@ -313,28 +337,31 @@ function splitLineIntoGroups(
  */
 function makeChunk(
   group: WordItem[],
-  context: { id: number; lineRect: ChunkRect; latinWpm: number; cjkCpm: number },
+  context: {
+    id: number
+    lineRect: ChunkRect
+    latinWpm: number
+    cjkCpm: number
+    columnPitch?: number | null
+  },
 ): PacerChunk | null {
   const units = countReadingUnits(group)
   if (group.length === 0 || units.latinWords + units.cjkCharacters === 0) return null
+
+  const pieces = group.flatMap((word) => word.fragments ?? [word.rect])
 
   let left = Infinity
   let top = Infinity
   let right = -Infinity
   let bottom = -Infinity
+  for (const piece of pieces) {
+    left = Math.min(left, piece.left)
+    top = Math.min(top, piece.top)
+    right = Math.max(right, piece.right)
+    bottom = Math.max(bottom, piece.bottom)
+  }
 
-  const rects = group.map((word) => {
-    left = Math.min(left, word.rect.left)
-    top = Math.min(top, word.rect.top)
-    right = Math.max(right, word.rect.right)
-    bottom = Math.max(bottom, word.rect.bottom)
-    return {
-      left: word.rect.left,
-      top: word.rect.top,
-      width: word.rect.width,
-      height: word.rect.height,
-    }
-  })
+  const lineBoxes = groupIntoLineBoxes(pieces, context.columnPitch)
 
   const pause = group.reduce(
     (total, word) => total + (word.kind === 'punctuation' ? punctuationPauseMs(word.text) : 0),
@@ -356,7 +383,7 @@ function makeChunk(
       width: Math.max(0, right - left),
       height: Math.max(0, bottom - top),
     },
-    rects,
+    lineBoxes,
     lineRect: context.lineRect,
     dwellMs,
     // The animation must never outlast the dwell it is moving within.
@@ -369,12 +396,57 @@ function clampRate(rate: number): number {
   return Math.max(50, Math.min(1500, rate))
 }
 
+/**
+ * Collapse measured pieces into one box per line they sit on.
+ *
+ * A single union would stretch from the end of one line to the middle of the
+ * next as soon as one word was hyphenated across the break — a box over two
+ * lines of text rather than over the words.
+ */
+function groupIntoLineBoxes(pieces: MeasuredRect[], columnPitch?: number | null): ChunkRect[] {
+  const boxes: ChunkRect[] = []
+  const anchors: { top: number; column: number }[] = []
+
+  for (const piece of pieces) {
+    if (piece.width <= 0 && piece.height <= 0) continue
+    const column = columnIndexOf(piece, columnPitch)
+    const index = anchors.findIndex(
+      (anchor) =>
+        anchor.column === column &&
+        Math.abs(piece.top - anchor.top) <= Math.max(8, piece.height * 0.5),
+    )
+
+    if (index === -1) {
+      anchors.push({ top: piece.top, column })
+      boxes.push({
+        left: piece.left,
+        top: piece.top,
+        width: Math.max(0, piece.right - piece.left),
+        height: Math.max(0, piece.bottom - piece.top),
+      })
+      continue
+    }
+
+    const box = boxes[index]
+    const right = Math.max(box.left + box.width, piece.right)
+    const bottom = Math.max(box.top + box.height, piece.bottom)
+    box.left = Math.min(box.left, piece.left)
+    box.top = Math.min(box.top, piece.top)
+    box.width = Math.max(0, right - box.left)
+    box.height = Math.max(0, bottom - box.top)
+  }
+
+  return boxes
+}
+
 function unionRect(words: WordItem[]): ChunkRect {
   let left = Infinity
   let top = Infinity
   let right = -Infinity
   let bottom = -Infinity
   for (const word of words) {
+    // The line is the line these words start on; a hyphenated tail belongs to
+    // the next one and must not stretch this band down into it.
     left = Math.min(left, word.rect.left)
     top = Math.min(top, word.rect.top)
     right = Math.max(right, word.rect.right)

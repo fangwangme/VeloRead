@@ -9,7 +9,7 @@ function chunk(id: number, left = id * 100): PacerChunk {
     text: `chunk-${id}`,
     units: { latinWords: 1, cjkCharacters: 0 },
     rect: { left, top: 10, width: 80, height: 20 },
-    rects: [{ left, top: 10, width: 80, height: 20 }],
+    lineBoxes: [{ left, top: 10, width: 80, height: 20 }],
     lineRect: { left, top: 10, width: 80, height: 20 },
     dwellMs: 100,
     animMs: 50,

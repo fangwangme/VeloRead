@@ -51,7 +51,11 @@ export function usePacer({
 }: UsePacerOptions) {
   const [pacerState, setPacerState] = useState<PacerState>('idle')
   const [currentChunk, setCurrentChunk] = useState<PacerChunk | null>(null)
-  const [overlayRect, setOverlayRect] = useState<Rect | null>(null)
+  /**
+   * One box per line the current chunk touches — two when its last word was
+   * hyphenated across the line break, one otherwise.
+   */
+  const [overlayRects, setOverlayRects] = useState<Rect[]>([])
   const [overlayLineRect, setOverlayLineRect] = useState<Rect | null>(null)
   const [totalChunks, setTotalChunks] = useState(0)
   const [chunkIndex, setChunkIndex] = useState(0)
@@ -108,7 +112,7 @@ export function usePacer({
   const updateOverlay = useCallback(
     (chunk: PacerChunk | null, ensureVisible = true) => {
       const clear = () => {
-        setOverlayRect(null)
+        setOverlayRects([])
         setOverlayLineRect(null)
       }
       if (!chunk || !containerRef.current || !readerHandle) {
@@ -134,7 +138,8 @@ export function usePacer({
         scrollTop: container.scrollTop,
       }
 
-      setOverlayRect(chunkToOverlayRect(chunk.rect, metrics))
+      const boxes = chunk.lineBoxes.length > 0 ? chunk.lineBoxes : [chunk.rect]
+      setOverlayRects(boxes.map((box) => chunkToOverlayRect(box, metrics)))
       setOverlayLineRect(chunkToOverlayRect(chunk.lineRect, metrics))
     },
     [containerRef, readerHandle],
@@ -177,7 +182,8 @@ export function usePacer({
       if (cancelled) return
       setPacerState('idle')
       setCurrentChunk(null)
-      setOverlayRect(null)
+      setOverlayRects([])
+      setOverlayLineRect(null)
     })
     const engine = new PacerEngine({
       onChunkChange(index, chunk, cause) {
@@ -362,7 +368,7 @@ export function usePacer({
     chunkIndex,
     totalChunks,
     dominantUnit,
-    overlayRect,
+    overlayRects,
     overlayLineRect,
     speedWarning: (dominantUnit === 'cjk' ? cjkCpm : latinWpm) > 500,
     play,

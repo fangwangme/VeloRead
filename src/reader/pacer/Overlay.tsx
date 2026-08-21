@@ -2,7 +2,12 @@ import type { Rect } from './geometry'
 import { resolveOverlayStyle, type PacerHighlightStyle } from './overlayStyle'
 
 interface OverlayProps {
-  rect: Rect | null
+  /**
+   * One box per line the chunk sits on. Two when a word was hyphenated across
+   * the line break: the cursor has to cover both halves, because they are one
+   * word and are read as one.
+   */
+  rects: Rect[]
   /** The line the chunk sits on, drawn faintly behind it in `chunk-in-line`. */
   lineRect?: Rect | null
   animMs?: number
@@ -13,14 +18,15 @@ interface OverlayProps {
 }
 
 export function Overlay({
-  rect,
+  rects,
   lineRect = null,
   animMs = 150,
   accentColor = '#D97706',
   isDark = false,
   style,
 }: OverlayProps) {
-  if (!rect || rect.width <= 0 || rect.height <= 0) {
+  const boxes = rects.filter((box) => box.width > 0 && box.height > 0)
+  if (boxes.length === 0) {
     return null
   }
 
@@ -54,22 +60,27 @@ export function Overlay({
           }}
         />
       )}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute z-30 rounded-xs"
-        style={{
-          left: `${rect.left - paddingX}px`,
-          top: `${rect.top - paddingY}px`,
-          width: `${rect.width + paddingX * 2}px`,
-          height: `${rect.height + paddingY * 2}px`,
-          backgroundColor: resolved.backgroundColor,
-          borderBottom: resolved.underlineColor
-            ? `2.5px solid ${resolved.underlineColor}`
-            : undefined,
-          mixBlendMode: resolved.mixBlendMode,
-          transition,
-        }}
-      />
+      {boxes.map((box, index) => (
+        <div
+          // Keyed by position in the chunk: box 0 is the one that carries the
+          // cursor's movement, so it animates rather than being replaced.
+          key={index}
+          aria-hidden="true"
+          className="pointer-events-none absolute z-30 rounded-xs"
+          style={{
+            left: `${box.left - paddingX}px`,
+            top: `${box.top - paddingY}px`,
+            width: `${box.width + paddingX * 2}px`,
+            height: `${box.height + paddingY * 2}px`,
+            backgroundColor: resolved.backgroundColor,
+            borderBottom: resolved.underlineColor
+              ? `2.5px solid ${resolved.underlineColor}`
+              : undefined,
+            mixBlendMode: resolved.mixBlendMode,
+            transition,
+          }}
+        />
+      ))}
     </>
   )
 }

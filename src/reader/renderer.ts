@@ -621,6 +621,20 @@ export async function createReader(
               r.height > 0 &&
               (includeWholeScrolledSection && currentFlow === 'scrolled-doc' || intersectsPage)
             ) {
+              // Justified English is hyphenated, so a word the renderer broke
+              // across a line comes back as two boxes. Both are the word.
+              const fragments =
+                rects.length > 1
+                  ? Array.from(rects, (piece) => ({
+                      left: piece.left,
+                      top: piece.top,
+                      width: piece.width,
+                      height: piece.height,
+                      bottom: piece.bottom,
+                      right: piece.right,
+                    })).filter((piece) => piece.width > 0 && piece.height > 0)
+                  : undefined
+
               words.push({
                 text: token.text,
                 rect: {
@@ -631,6 +645,7 @@ export async function createReader(
                   bottom: r.bottom,
                   right: r.right,
                 },
+                ...(fragments && fragments.length > 1 ? { fragments } : {}),
                 kind: token.kind,
                 wordBoundaryAfter: token.wordBoundaryAfter,
                 range,

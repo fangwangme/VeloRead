@@ -1707,7 +1707,7 @@ export function Reader({
           <div ref={containerRef} className="relative h-full w-full">
             {/* Pacer Highlight Overlay */}
             <Overlay
-              rect={pacer.overlayRect}
+              rects={pacer.overlayRects}
               lineRect={pacer.overlayLineRect}
               animMs={pacer.currentChunk?.animMs}
               accentColor={resolvedStyle.palette.accent}

@@ -9,6 +9,30 @@ import {
 /** A two-column spread 400px wide per column with a 40px gutter. */
 const COLUMN_PITCH = 440
 
+/** A word the renderer broke across a line: "con-" then "tinued". */
+function makeHyphenatedWord(
+  text: string,
+  head: { left: number; top: number; width: number },
+  tail: { left: number; top: number; width: number },
+  height = 20,
+): WordItem {
+  const piece = (part: { left: number; top: number; width: number }) => ({
+    left: part.left,
+    top: part.top,
+    width: part.width,
+    height,
+    right: part.left + part.width,
+    bottom: part.top + height,
+  })
+  return {
+    text,
+    rect: piece(head),
+    fragments: [piece(head), piece(tail)],
+    kind: 'latin',
+    wordBoundaryAfter: true,
+  }
+}
+
 function makeWord(
   text: string,
   left: number,
@@ -373,5 +397,67 @@ describe('Pacer Chunker · mixed dwell', () => {
 
     expect(latin[0].dwellMs).toBe(720) // (3 / 250) * 60_000
     expect(cjk[0].dwellMs).toBe(800) // (4 / 300) * 60_000
+  })
+})
+
+describe('Pacer Chunker · hyphenated words', () => {
+  it('covers both halves of a word broken across a line', () => {
+    const words = [
+      makeWord('the', 0, 10),
+      makeWord('long', 50, 10),
+      // "continued" printed as "con-" at the end of the line and "tinued" at
+      // the start of the next.
+      makeHyphenatedWord('continued', { left: 100, top: 10, width: 40 }, { left: 0, top: 40, width: 60 }),
+    ]
+
+    const [chunk] = groupWordsIntoChunks(words, {
+      latinWpm: 250,
+      cjkCpm: 300,
+      latinChunkSize: 3,
+    })
+
+    // One box for the line the chunk is on, one for the tail on the next line.
+    expect(chunk.lineBoxes).toEqual([
+      { left: 0, top: 10, width: 140, height: 20 },
+      { left: 0, top: 40, width: 60, height: 20 },
+    ])
+  })
+
+  it('still counts a broken word once', () => {
+    const words = [
+      makeWord('the', 0, 10),
+      makeHyphenatedWord('continued', { left: 50, top: 10, width: 40 }, { left: 0, top: 40, width: 60 }),
+    ]
+
+    const [chunk] = groupWordsIntoChunks(words, {
+      latinWpm: 250,
+      cjkCpm: 300,
+      latinChunkSize: 3,
+    })
+
+    expect(chunk.units).toEqual({ latinWords: 2, cjkCharacters: 0 })
+    expect(chunk.dwellMs).toBe(480) // (2 / 250) * 60_000
+  })
+
+  it('leaves the line band on the line the chunk starts on', () => {
+    const words = [
+      makeWord('the', 0, 10),
+      makeHyphenatedWord('continued', { left: 50, top: 10, width: 40 }, { left: 0, top: 40, width: 60 }),
+    ]
+
+    const [chunk] = groupWordsIntoChunks(words, {
+      latinWpm: 250,
+      cjkCpm: 300,
+      latinChunkSize: 3,
+    })
+
+    // The band says which line you are on; the tail belongs to the next one.
+    expect(chunk.lineRect).toEqual({ left: 0, top: 10, width: 90, height: 20 })
+  })
+
+  it('gives an ordinary chunk exactly one box', () => {
+    const words = [makeWord('one', 0, 10), makeWord('two', 50, 10)]
+    const [chunk] = groupWordsIntoChunks(words, { latinWpm: 250, cjkCpm: 300, latinChunkSize: 3 })
+    expect(chunk.lineBoxes).toEqual([{ left: 0, top: 10, width: 90, height: 20 }])
   })
 })
