@@ -24,7 +24,7 @@ export function PositionInfo({ chapterTitle, pagesLeftInChapter, percentage }: P
 
   if (parts.length === 0) {
     return (
-      <span className="text-[11px] font-normal text-neutral-400">{t('position.locating')}</span>
+      <span className="text-[11px] font-normal text-neutral-500 dark:text-neutral-400">{t('position.locating')}</span>
     )
   }
 

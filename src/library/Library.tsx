@@ -10,7 +10,7 @@ import { useConfirm } from '../ui/useConfirm'
 import { useT } from '../i18n/useT'
 
 const TOOLBAR_BUTTON_CLASS =
-  'flex items-center gap-1.5 rounded-full border border-black/[0.08] bg-white/80 px-3.5 py-1.5 text-xs font-medium text-neutral-800 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-md transition hover:border-black/20 hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 active:scale-95 disabled:pointer-events-none disabled:opacity-50 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-neutral-200 dark:hover:bg-white/[0.1]'
+  'flex items-center gap-1.5 rounded-full border border-black/[0.12] bg-white/80 px-3.5 py-1.5 text-xs font-medium text-neutral-800 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-md transition hover:border-black/20 hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 active:scale-95 disabled:pointer-events-none disabled:opacity-50 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-neutral-200 dark:hover:bg-white/[0.1]'
 
 export function Library({
   appSettings,
@@ -180,13 +180,13 @@ export function Library({
       {/* Main Bookshelf Grid */}
       <main className="px-8 pt-6 pb-20">
         {loading ? (
-          <div className="flex items-center justify-center py-32 text-xs text-neutral-400">
+          <div className="flex items-center justify-center py-32 text-xs text-neutral-500 dark:text-neutral-400">
             {t('library.loading')}
           </div>
         ) : books.length === 0 ? (
           <EmptyState onPick={() => inputRef.current?.click()} />
         ) : shelf.length === 0 ? (
-          <div className="py-24 text-center text-xs text-neutral-400 dark:text-neutral-500">
+          <div className="py-24 text-center text-xs text-neutral-500 dark:text-neutral-400">
             {t('library.emptyCollection')}
           </div>
         ) : (
@@ -249,7 +249,7 @@ function BookTile({ book }: { book: BookRecord }) {
           {book.title}
         </p>
         {book.author && (
-          <p className="mt-0.5 line-clamp-1 text-[11px] text-neutral-400 dark:text-neutral-500">
+          <p className="mt-0.5 line-clamp-1 text-[11px] text-neutral-500 dark:text-neutral-400">
             {book.author}
           </p>
         )}
@@ -318,19 +318,19 @@ function EmptyState({ onPick }: { onPick: () => void }) {
   const t = useT()
 
   return (
-    <div className="mt-12 flex flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-black/[0.08] dark:border-white/[0.08] bg-black/[0.01] dark:bg-white/[0.01] py-24 text-center px-6">
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-black/[0.04] dark:bg-white/[0.06] text-neutral-400 dark:text-neutral-500 mb-1">
+    <div className="mt-12 flex flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-black/[0.12] dark:border-white/[0.08] bg-black/[0.02] dark:bg-white/[0.01] py-24 text-center px-6">
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-black/[0.06] dark:bg-white/[0.06] text-neutral-500 dark:text-neutral-400 mb-1">
         <IconBook className="size-5" />
       </div>
       <p className="text-sm font-semibold tracking-tight text-neutral-800 dark:text-neutral-200">
         {t('library.empty.title')}
       </p>
-      <p className="max-w-xs text-xs text-neutral-400 dark:text-neutral-500 leading-relaxed">
+      <p className="max-w-xs text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
         {t('library.empty.body')}
       </p>
       <button
         type="button"
-        className="mt-2 rounded-full border border-black/[0.1] dark:border-white/[0.1] bg-white dark:bg-neutral-800 px-4 py-2 text-xs font-medium text-neutral-800 dark:text-neutral-200 shadow-2xs transition hover:bg-neutral-50 dark:hover:bg-neutral-700 active:scale-95"
+        className="mt-2 rounded-full border border-black/[0.14] dark:border-white/[0.1] bg-white dark:bg-neutral-800 px-4 py-2 text-xs font-medium text-neutral-800 dark:text-neutral-200 shadow-2xs transition hover:bg-neutral-50 dark:hover:bg-neutral-700 active:scale-95"
         onClick={onPick}
       >
         {t('library.empty.pick')}

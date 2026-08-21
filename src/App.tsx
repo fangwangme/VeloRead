@@ -126,7 +126,7 @@ export default function App() {
 function BootScreen() {
   const t = useT()
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-[#FBFBFA] text-xs text-neutral-400 dark:bg-[#121214]">
+    <div className="flex min-h-dvh items-center justify-center bg-[#FBFBFA] text-xs text-neutral-500 dark:text-neutral-400 dark:bg-[#121214]">
       {t('app.loading')}
     </div>
   )

@@ -82,9 +82,9 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
         aria-modal="true"
         aria-labelledby="app-settings-title"
         tabIndex={-1}
-        className="relative z-10 flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-black/[0.08] bg-[#FBFBFA]/96 shadow-[0_30px_70px_rgba(0,0,0,0.22)] backdrop-blur-3xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/96 dark:text-neutral-100 vr-animate-pop"
+        className="relative z-10 flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-black/[0.12] bg-[#FBFBFA]/96 shadow-[0_30px_70px_rgba(0,0,0,0.22)] backdrop-blur-3xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/96 dark:text-neutral-100 vr-animate-pop"
       >
-        <header className="flex items-center justify-between border-b border-black/[0.06] px-6 py-5 dark:border-white/[0.06]">
+        <header className="flex items-center justify-between border-b border-black/[0.10] px-6 py-5 dark:border-white/[0.06]">
           <div className="flex items-center gap-3">
             <span className="flex size-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:bg-blue-400/15 dark:text-blue-400">
               <IconSettings />
@@ -101,7 +101,7 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
           <button
             type="button"
             onClick={onClose}
-            className="flex size-8 items-center justify-center rounded-full text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-white/10 dark:hover:text-neutral-200"
+            className="flex size-8 items-center justify-center rounded-full text-neutral-500 dark:text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-white/10 dark:hover:text-neutral-200"
             aria-label={t('settings.close')}
           >
             ✕
@@ -114,7 +114,7 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
             title={t('settings.appearance')}
             description={t('settings.appearanceHint')}
           >
-            <div className="mt-4 grid grid-cols-3 gap-2 rounded-2xl bg-black/[0.035] p-1.5 dark:bg-white/[0.055]">
+            <div className="mt-4 grid grid-cols-3 gap-2 rounded-2xl bg-black/[0.055] p-1.5 dark:bg-white/[0.055]">
               {[
                 { id: 'auto' as const, label: t('settings.theme.auto'), icon: <IconMonitor /> },
                 { id: 'light' as const, label: t('settings.theme.light'), icon: <IconSun /> },
@@ -143,7 +143,7 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
             title={t('settings.language')}
             description={t('settings.languageHint')}
           >
-            <div className="mt-4 grid grid-cols-3 gap-2 rounded-2xl bg-black/[0.035] p-1.5 dark:bg-white/[0.055]">
+            <div className="mt-4 grid grid-cols-3 gap-2 rounded-2xl bg-black/[0.055] p-1.5 dark:bg-white/[0.055]">
               {LANGUAGE_OPTIONS.map((option) => (
                 <button
                   key={option}
@@ -198,7 +198,7 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
                 onChunkChange={(value) => void save({ pacerCjkCharCount: value })}
               />
             </div>
-            <div className="mt-3 flex items-center justify-between gap-4 border-t border-black/[0.05] pt-3 text-[10px] text-neutral-400 dark:border-white/[0.06]">
+            <div className="mt-3 flex items-center justify-between gap-4 border-t border-black/[0.08] pt-3 text-[10px] text-neutral-500 dark:text-neutral-400 dark:border-white/[0.06]">
               <span>{t('settings.pacerRecommended')}</span>
               <button
                 type="button"
@@ -242,7 +242,7 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
                   className={`rounded-xl border py-2 text-[11px] font-mono font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
                     dailyGoal === minutes
                       ? 'border-blue-500/70 bg-blue-500/10 text-blue-600 dark:text-blue-400'
-                      : 'border-black/[0.06] bg-white/60 text-neutral-600 hover:border-black/15 dark:border-white/[0.07] dark:bg-white/[0.03] dark:text-neutral-300 dark:hover:border-white/15'
+                      : 'border-black/[0.10] bg-white/60 text-neutral-600 hover:border-black/15 dark:border-white/[0.07] dark:bg-white/[0.03] dark:text-neutral-300 dark:hover:border-white/15'
                   }`}
                   aria-pressed={dailyGoal === minutes}
                 >
@@ -300,14 +300,14 @@ function DailyGoalInput({
   }
 
   return (
-    <div className="mt-2.5 flex items-center justify-between gap-3 border-t border-black/[0.05] pt-2.5 dark:border-white/[0.06]">
-      <span className="text-[10px] text-neutral-400">
+    <div className="mt-2.5 flex items-center justify-between gap-3 border-t border-black/[0.08] pt-2.5 dark:border-white/[0.06]">
+      <span className="text-[10px] text-neutral-500 dark:text-neutral-400">
         {t('settings.goalCustomHint', { min: GOAL_MIN, max: GOAL_MAX })}
       </span>
       <label
         className={`flex items-center gap-1 rounded-lg border px-2 py-1 transition focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 ${
           isPreset
-            ? 'border-black/[0.07] bg-white/70 dark:border-white/[0.08] dark:bg-black/15'
+            ? 'border-black/[0.11] bg-white/70 dark:border-white/[0.08] dark:bg-black/15'
             : 'border-blue-500/70 bg-blue-500/10'
         }`}
       >
@@ -330,7 +330,7 @@ function DailyGoalInput({
             isPreset ? '' : 'text-blue-600 dark:text-blue-400'
           }`}
         />
-        <span className="text-[9px] font-medium text-neutral-400">{t('settings.minutes')}</span>
+        <span className="text-[9px] font-medium text-neutral-500 dark:text-neutral-400">{t('settings.minutes')}</span>
       </label>
     </div>
   )
@@ -373,13 +373,13 @@ function PacerProfileEditor({
   }
 
   return (
-    <div className="rounded-2xl border border-black/[0.06] bg-black/[0.018] p-3.5 dark:border-white/[0.07] dark:bg-white/[0.025]">
+    <div className="rounded-2xl border border-black/[0.10] bg-black/[0.03] p-3.5 dark:border-white/[0.07] dark:bg-white/[0.025]">
       <div className="flex items-start justify-between gap-2">
         <div>
           <h4 className="text-[11px] font-semibold text-neutral-800 dark:text-neutral-200">{title}</h4>
-          <p className="mt-0.5 text-[9px] text-neutral-400">{caption}</p>
+          <p className="mt-0.5 text-[9px] text-neutral-500 dark:text-neutral-400">{caption}</p>
         </div>
-        <label className="flex items-center gap-1 rounded-lg border border-black/[0.07] bg-white/70 px-2 py-1 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 dark:border-white/[0.08] dark:bg-black/15">
+        <label className="flex items-center gap-1 rounded-lg border border-black/[0.11] bg-white/70 px-2 py-1 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 dark:border-white/[0.08] dark:bg-black/15">
           <span className="sr-only">{t('settings.pacerSpeedLabel', { profile: title })}</span>
           <input
             type="number"
@@ -397,12 +397,12 @@ function PacerProfileEditor({
             }}
             className="w-12 bg-transparent text-right font-mono text-[11px] font-bold outline-none"
           />
-          <span className="text-[8px] font-medium text-neutral-400">{unit}</span>
+          <span className="text-[8px] font-medium text-neutral-500 dark:text-neutral-400">{unit}</span>
         </label>
       </div>
       <div className="mt-3 flex items-center justify-between gap-2">
-        <span className="text-[9px] font-medium text-neutral-400">{t('settings.pacerChunk')}</span>
-        <div className="flex rounded-lg bg-black/[0.04] p-0.5 dark:bg-white/[0.06]">
+        <span className="text-[9px] font-medium text-neutral-500 dark:text-neutral-400">{t('settings.pacerChunk')}</span>
+        <div className="flex rounded-lg bg-black/[0.06] p-0.5 dark:bg-white/[0.06]">
           {chunkOptions.map((option) => (
             <button
               key={option}
@@ -457,7 +457,7 @@ function HighlightStyleEditor({
   return (
     <div className="mt-4 space-y-3.5">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
           {t('settings.highlight.color')}
         </span>
         <div className="flex items-center gap-1.5">
@@ -504,7 +504,7 @@ function HighlightStyleEditor({
       </div>
 
       <div className="flex items-center justify-between gap-3">
-        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
           {t('settings.highlight.opacity')}
         </span>
         <div className="flex flex-1 items-center gap-2.5">
@@ -521,17 +521,17 @@ function HighlightStyleEditor({
             aria-label={t('settings.highlight.opacityLabel')}
             className="h-1.5 flex-1 cursor-pointer rounded-lg bg-black/10 accent-blue-600 disabled:opacity-40 dark:bg-white/10"
           />
-          <span className="w-8 text-right font-mono text-[10px] text-neutral-400">
+          <span className="w-8 text-right font-mono text-[10px] text-neutral-500 dark:text-neutral-400">
             {Math.round(style.opacity * 100)}%
           </span>
         </div>
       </div>
 
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
           {t('settings.highlight.shape')}
         </span>
-        <div className="flex rounded-xl bg-black/[0.04] p-1 dark:bg-white/[0.06]">
+        <div className="flex rounded-xl bg-black/[0.06] p-1 dark:bg-white/[0.06]">
           {shapes.map((shape) => (
             <button
               key={shape.id}
@@ -551,7 +551,7 @@ function HighlightStyleEditor({
       </div>
 
       <div
-        className="rounded-2xl border border-black/[0.06] px-4 py-3.5 dark:border-white/[0.07]"
+        className="rounded-2xl border border-black/[0.10] px-4 py-3.5 dark:border-white/[0.07]"
         style={{ backgroundColor: isDark ? '#16161A' : '#FBF8F1' }}
       >
         <p
@@ -590,7 +590,7 @@ function SettingSection({
   children: ReactNode
 }) {
   return (
-    <section className="rounded-2xl border border-black/[0.06] bg-white/55 p-4 dark:border-white/[0.07] dark:bg-white/[0.025]">
+    <section className="rounded-2xl border border-black/[0.10] bg-white/55 p-4 dark:border-white/[0.07] dark:bg-white/[0.025]">
       <div className="flex items-start gap-3">
         <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-neutral-900/[0.055] text-neutral-600 dark:bg-white/[0.07] dark:text-neutral-300">
           {icon}

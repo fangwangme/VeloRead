@@ -91,10 +91,10 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
         role="dialog"
         aria-modal="true"
         tabIndex={-1}
-        className="fixed inset-y-0 left-0 z-50 flex w-92 flex-col border-r border-black/[0.08] bg-white/92 shadow-[0_25px_60px_rgba(0,0,0,0.18)] backdrop-blur-2xl vr-animate-drawer dark:border-white/[0.08] dark:bg-[#1C1C1E]/92 dark:text-neutral-100"
+        className="fixed inset-y-0 left-0 z-50 flex w-92 flex-col border-r border-black/[0.12] bg-white/92 shadow-[0_25px_60px_rgba(0,0,0,0.18)] backdrop-blur-2xl vr-animate-drawer dark:border-white/[0.08] dark:bg-[#1C1C1E]/92 dark:text-neutral-100"
         aria-label={t('search.title')}
       >
-        <div className="border-b border-black/[0.06] px-5 py-4 dark:border-white/[0.06]">
+        <div className="border-b border-black/[0.10] px-5 py-4 dark:border-white/[0.06]">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-xs font-semibold tracking-wide text-neutral-700 dark:text-neutral-300">
               {t('search.title')}
@@ -102,7 +102,7 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
             <button
               type="button"
               onClick={onClose}
-              className="flex size-7 items-center justify-center rounded-full text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-white/10 dark:hover:text-neutral-200"
+              className="flex size-7 items-center justify-center rounded-full text-neutral-500 dark:text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-white/10 dark:hover:text-neutral-200"
               aria-label={t('search.close')}
             >
               <IconClose />
@@ -116,7 +116,7 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
               void run()
             }}
           >
-            <div className="flex flex-1 items-center gap-2 rounded-xl border border-black/[0.08] bg-black/[0.03] px-2.5 py-1.5 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 dark:border-white/[0.08] dark:bg-white/[0.04]">
+            <div className="flex flex-1 items-center gap-2 rounded-xl border border-black/[0.12] bg-black/[0.05] px-2.5 py-1.5 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 dark:border-white/[0.08] dark:bg-white/[0.04]">
               <IconSearch className="shrink-0 opacity-40" />
               <input
                 ref={inputRef}
@@ -127,14 +127,14 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
                 autoComplete="off"
                 placeholder={t('search.placeholder')}
                 aria-label={t('search.inputLabel')}
-                className="w-full bg-transparent text-xs outline-none placeholder:text-neutral-400"
+                className="w-full bg-transparent text-xs outline-none placeholder:text-neutral-500 dark:text-neutral-400"
               />
             </div>
             {status === 'searching' ? (
               <button
                 type="button"
                 onClick={cancel}
-                className="shrink-0 rounded-xl border border-black/[0.08] px-3 py-1.5 text-xs font-medium text-neutral-600 transition hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-white/[0.08] dark:text-neutral-300 dark:hover:bg-white/10"
+                className="shrink-0 rounded-xl border border-black/[0.12] px-3 py-1.5 text-xs font-medium text-neutral-600 transition hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-white/[0.08] dark:text-neutral-300 dark:hover:bg-white/10"
               >
                 {t('search.stop')}
               </button>
@@ -152,11 +152,11 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
           {/* Whole-book search has no index, so the pass is visible by design. */}
           {status === 'searching' && (
             <div className="mt-2.5" aria-live="polite">
-              <div className="flex items-center justify-between text-[10px] text-neutral-400">
+              <div className="flex items-center justify-between text-[10px] text-neutral-500 dark:text-neutral-400">
                 <span>{t('search.scanning')}</span>
                 <span className="font-mono">{percent}%</span>
               </div>
-              <div className="mt-1 h-1 overflow-hidden rounded-full bg-black/[0.06] dark:bg-white/[0.08]">
+              <div className="mt-1 h-1 overflow-hidden rounded-full bg-black/[0.08] dark:bg-white/[0.08]">
                 <div
                   className="h-full rounded-full bg-blue-600 transition-[width] duration-200 motion-reduce:transition-none dark:bg-blue-400"
                   style={{ width: `${percent}%` }}
@@ -166,7 +166,7 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
           )}
 
           {status !== 'searching' && submitted && (
-            <p className="mt-2.5 text-[10px] text-neutral-400" aria-live="polite">
+            <p className="mt-2.5 text-[10px] text-neutral-500 dark:text-neutral-400" aria-live="polite">
               {hits.length === 0
                 ? t(status === 'cancelled' ? 'search.stopped' : 'search.noResults', {
                     query: submitted,
@@ -185,10 +185,10 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
         <div className="flex-1 overflow-y-auto p-4">
           {status === 'idle' && !submitted ? (
             <div className="space-y-2 py-20 text-center">
-              <p className="text-xs text-neutral-400 dark:text-neutral-500">
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
                 {t('search.idleTitle')}
               </p>
-              <p className="mx-auto max-w-[220px] text-[11px] text-neutral-400/80">
+              <p className="mx-auto max-w-[220px] text-[11px] text-neutral-500/90 dark:text-neutral-400/80">
                 {t('search.idleHint')}
               </p>
             </div>
@@ -199,13 +199,13 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
                   <button
                     type="button"
                     onClick={() => onNavigate(hit.cfi)}
-                    className="w-full rounded-2xl border border-black/[0.06] bg-black/[0.02] p-3 text-left transition hover:border-blue-500/40 hover:bg-black/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-white/[0.06] dark:bg-white/[0.03] dark:hover:border-blue-400/40 dark:hover:bg-white/[0.05]"
+                    className="w-full rounded-2xl border border-black/[0.10] bg-black/[0.035] p-3 text-left transition hover:border-blue-500/40 hover:bg-black/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-white/[0.06] dark:bg-white/[0.03] dark:hover:border-blue-400/40 dark:hover:bg-white/[0.05]"
                   >
                     <p className="line-clamp-3 text-[11px] leading-relaxed text-neutral-700 dark:text-neutral-300">
                       {highlightMatch(hit.excerpt, submitted)}
                     </p>
                     {hit.chapterTitle && (
-                      <p className="mt-1.5 line-clamp-1 text-[10px] text-neutral-400">
+                      <p className="mt-1.5 line-clamp-1 text-[10px] text-neutral-500 dark:text-neutral-400">
                         {hit.chapterTitle}
                       </p>
                     )}

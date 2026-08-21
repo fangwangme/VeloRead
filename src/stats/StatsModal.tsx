@@ -74,9 +74,9 @@ export function StatsModal({ dailyGoalMinutes, onClose }: StatsModalProps) {
         aria-modal="true"
         aria-labelledby="reading-stats-title"
         tabIndex={-1}
-        className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col rounded-3xl border border-black/[0.08] bg-white/94 p-6 shadow-[0_30px_70px_rgba(0,0,0,0.22),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-3xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/94 dark:text-neutral-100 vr-animate-pop"
+        className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col rounded-3xl border border-black/[0.12] bg-white/94 p-6 shadow-[0_30px_70px_rgba(0,0,0,0.22),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-3xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/94 dark:text-neutral-100 vr-animate-pop"
       >
-        <div className="flex items-center justify-between pb-4 border-b border-black/[0.06] dark:border-white/[0.06]">
+        <div className="flex items-center justify-between pb-4 border-b border-black/[0.10] dark:border-white/[0.06]">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:bg-blue-400/15 dark:text-blue-400">
               <IconStats />
@@ -88,14 +88,14 @@ export function StatsModal({ dailyGoalMinutes, onClose }: StatsModalProps) {
           <button
             type="button"
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-white/10 dark:hover:text-neutral-200"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 dark:text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-white/10 dark:hover:text-neutral-200"
             aria-label={t('stats.close')}
           >
             ✕
           </button>
         </div>
 
-        <div className="mt-4 flex w-fit rounded-xl bg-black/[0.04] p-1 dark:bg-white/[0.06]">
+        <div className="mt-4 flex w-fit rounded-xl bg-black/[0.06] p-1 dark:bg-white/[0.06]">
           {[
             { id: 'overview' as const, label: t('stats.tab.overview'), icon: <IconStats /> },
             { id: 'checkin' as const, label: t('stats.tab.checkin'), icon: <IconCalendar /> },
@@ -119,9 +119,9 @@ export function StatsModal({ dailyGoalMinutes, onClose }: StatsModalProps) {
 
         <div className="flex-1 overflow-y-auto overscroll-contain py-5 space-y-6">
           {loading ? (
-            <div className="py-16 text-center text-xs text-neutral-400">{t('stats.loading')}</div>
+            <div className="py-16 text-center text-xs text-neutral-500 dark:text-neutral-400">{t('stats.loading')}</div>
           ) : !stats ? (
-            <div className="py-16 text-center text-xs text-neutral-400">{t('stats.empty')}</div>
+            <div className="py-16 text-center text-xs text-neutral-500 dark:text-neutral-400">{t('stats.empty')}</div>
           ) : tab === 'overview' ? (
             <>
               {/* 4 Top Metric Cards */}
@@ -157,15 +157,15 @@ export function StatsModal({ dailyGoalMinutes, onClose }: StatsModalProps) {
               </div>
 
               {/* Heatmap Activity Grid */}
-              <div className="rounded-2xl border border-black/[0.06] bg-black/[0.02] p-5 dark:border-white/[0.06] dark:bg-white/[0.03]">
+              <div className="rounded-2xl border border-black/[0.10] bg-black/[0.035] p-5 dark:border-white/[0.06] dark:bg-white/[0.03]">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-xs font-semibold tracking-wide text-neutral-700 dark:text-neutral-300">
                     {t('stats.heatmap')}
                   </h3>
-                  <div className="flex items-center gap-1.5 text-[10px] text-neutral-400">
+                  <div className="flex items-center gap-1.5 text-[10px] text-neutral-500 dark:text-neutral-400">
                     <span>{t('stats.heatmapLess')}</span>
                     <span
-                      className="h-2.5 w-2.5 rounded-xs bg-neutral-200/80 dark:bg-neutral-800"
+                      className="h-2.5 w-2.5 rounded-xs bg-neutral-200/70 ring-1 ring-inset ring-black/[0.07] dark:bg-neutral-800 dark:ring-0"
                       title={t('stats.heatmap.none')}
                     />
                     {[...HEATMAP_LEVELS].reverse().map((level) => (
@@ -183,7 +183,7 @@ export function StatsModal({ dailyGoalMinutes, onClose }: StatsModalProps) {
               </div>
 
               {/* Anti-idle note */}
-              <div className="rounded-2xl border border-black/[0.06] bg-black/[0.02] p-4 text-xs text-neutral-600 dark:border-white/[0.06] dark:bg-white/[0.03] dark:text-neutral-300">
+              <div className="rounded-2xl border border-black/[0.10] bg-black/[0.035] p-4 text-xs text-neutral-600 dark:border-white/[0.06] dark:bg-white/[0.03] dark:text-neutral-300">
                 <div className="flex items-start gap-3">
                   <span className="text-blue-500 mt-0.5"><IconInfo /></span>
                   <p className="leading-relaxed text-[11px] opacity-90">
@@ -228,12 +228,12 @@ const CHECKIN_STYLES: Record<
     labelKey: 'stats.checkin.partial',
   },
   empty: {
-    cell: 'border-black/[0.07] bg-white/70 text-neutral-500 dark:border-white/[0.07] dark:bg-white/[0.025] dark:text-neutral-400',
+    cell: 'border-black/[0.11] bg-white/70 text-neutral-500 dark:border-white/[0.07] dark:bg-white/[0.025] dark:text-neutral-400',
     swatch: 'bg-white border border-black/10 dark:bg-white/[0.03] dark:border-white/10',
     labelKey: 'stats.checkin.empty',
   },
   future: {
-    cell: 'border-dashed border-black/[0.06] bg-transparent text-neutral-300 dark:border-white/[0.06] dark:text-neutral-700',
+    cell: 'border-dashed border-black/[0.10] bg-transparent text-neutral-300 dark:border-white/[0.06] dark:text-neutral-700',
     swatch: 'border border-dashed border-black/15 dark:border-white/15',
     labelKey: 'stats.checkin.future',
   },
@@ -308,7 +308,7 @@ function CheckinPage({
             <p className="font-mono text-2xl font-bold text-blue-600 dark:text-blue-400">
               {Math.round((summary.todayMinutes / safeDailyGoalMinutes) * 100)}%
             </p>
-            <p className="mt-1 text-[10px] text-neutral-400">
+            <p className="mt-1 text-[10px] text-neutral-500 dark:text-neutral-400">
               {t('stats.streakDays', { n: currentStreakDays })}
             </p>
           </div>
@@ -328,13 +328,13 @@ function CheckinPage({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-black/[0.06] bg-black/[0.015] p-5 dark:border-white/[0.07] dark:bg-white/[0.025]">
+      <section className="rounded-2xl border border-black/[0.10] bg-black/[0.025] p-5 dark:border-white/[0.07] dark:bg-white/[0.025]">
         <div className="mb-4 flex items-end justify-between gap-4">
           <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => setMonth((current) => shiftMonth(current, -1))}
-              className="flex size-7 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-white/10 dark:hover:text-neutral-200"
+              className="flex size-7 items-center justify-center rounded-lg text-neutral-500 dark:text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-white/10 dark:hover:text-neutral-200"
               aria-label={t('stats.prevMonth')}
             >
               <IconChevronLeft />
@@ -350,7 +350,7 @@ function CheckinPage({
               type="button"
               onClick={() => setMonth((current) => shiftMonth(current, 1))}
               disabled={viewingCurrentMonth}
-              className="flex size-7 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:pointer-events-none disabled:opacity-30 dark:hover:bg-white/10 dark:hover:text-neutral-200"
+              className="flex size-7 items-center justify-center rounded-lg text-neutral-500 dark:text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:pointer-events-none disabled:opacity-30 dark:hover:bg-white/10 dark:hover:text-neutral-200"
               aria-label={t('stats.nextMonth')}
             >
               <IconChevronRight />
@@ -364,7 +364,7 @@ function CheckinPage({
               })}
               {summary.exceededDays > 0 && t('stats.monthExceeded', { n: summary.exceededDays })}
             </p>
-            <p className="mt-0.5 text-neutral-400">
+            <p className="mt-0.5 text-neutral-500 dark:text-neutral-400">
               {t('stats.monthActive', {
                 n: summary.activeDays,
                 duration: formatMinutes(summary.totalMinutes, t),
@@ -375,7 +375,7 @@ function CheckinPage({
 
         <div className="grid grid-cols-7 gap-2">
           {WEEKDAY_KEYS.map((key) => (
-            <div key={key} className="pb-1 text-center text-[9px] font-medium text-neutral-400">
+            <div key={key} className="pb-1 text-center text-[9px] font-medium text-neutral-500 dark:text-neutral-400">
               {t(key)}
             </div>
           ))}
@@ -419,7 +419,7 @@ function CheckinPage({
           })}
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] text-neutral-400">
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] text-neutral-500 dark:text-neutral-400">
           {(['exceeded', 'complete', 'partial', 'empty'] as const).map((state) => (
             <Legend
               key={state}
@@ -479,8 +479,8 @@ function MetricCard({
   icon: ReactNode
 }) {
   return (
-    <div className="flex flex-col justify-between rounded-2xl border border-black/[0.06] bg-black/[0.02] p-4 dark:border-white/[0.06] dark:bg-white/[0.03] transition hover:bg-black/[0.03] dark:hover:bg-white/[0.05]">
-      <div className="flex items-center justify-between text-neutral-400 text-xs mb-2">
+    <div className="flex flex-col justify-between rounded-2xl border border-black/[0.10] bg-black/[0.035] p-4 dark:border-white/[0.06] dark:bg-white/[0.03] transition hover:bg-black/[0.05] dark:hover:bg-white/[0.05]">
+      <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 text-xs mb-2">
         <span className="font-medium text-[11px]">{label}</span>
         <span className="opacity-70">{icon}</span>
       </div>
@@ -506,19 +506,19 @@ function ReadingVolumeCard({
   language: Language
 }) {
   return (
-    <div className="flex flex-col justify-between rounded-2xl border border-black/[0.06] bg-black/[0.02] p-4 transition hover:bg-black/[0.03] dark:border-white/[0.06] dark:bg-white/[0.03] dark:hover:bg-white/[0.05]">
-      <div className="mb-2 flex items-center justify-between text-xs text-neutral-400">
+    <div className="flex flex-col justify-between rounded-2xl border border-black/[0.10] bg-black/[0.035] p-4 transition hover:bg-black/[0.05] dark:border-white/[0.06] dark:bg-white/[0.03] dark:hover:bg-white/[0.05]">
+      <div className="mb-2 flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
         <span className="text-[11px] font-medium">{t('stats.volume')}</span>
         <span className="opacity-70"><IconBook /></span>
       </div>
       <div className="space-y-0.5 font-mono text-[11px] font-semibold text-neutral-800 dark:text-neutral-200">
         <p>
           {formatReadingCount(latinWords, t, language)}{' '}
-          <span className="font-sans font-medium text-neutral-400">{t('stats.latinWords')}</span>
+          <span className="font-sans font-medium text-neutral-500 dark:text-neutral-400">{t('stats.latinWords')}</span>
         </p>
         <p>
           {formatReadingCount(cjkCharacters, t, language)}{' '}
-          <span className="font-sans font-medium text-neutral-400">{t('stats.cjkCharacters')}</span>
+          <span className="font-sans font-medium text-neutral-500 dark:text-neutral-400">{t('stats.cjkCharacters')}</span>
         </p>
       </div>
     </div>
@@ -599,7 +599,7 @@ function HeatmapGrid({
     <div className="overflow-x-auto pb-1">
       <div className="flex gap-1.5 min-w-[500px]">
         {/* Day of week labels */}
-        <div className="flex flex-col gap-1.5 text-[9px] text-neutral-400 font-mono pr-1 pt-0.5">
+        <div className="flex flex-col gap-1.5 text-[9px] text-neutral-500 dark:text-neutral-400 font-mono pr-1 pt-0.5">
           {WEEKDAY_KEYS.map((key) => (
             <span key={key} className="h-3 leading-3">
               {t(key)}
@@ -616,13 +616,13 @@ function HeatmapGrid({
                   <div
                     key={day.dateStr}
                     aria-hidden="true"
-                    className="h-3 w-3 rounded-xs border border-dashed border-black/[0.07] dark:border-white/[0.07]"
+                    className="h-3 w-3 rounded-xs border border-dashed border-black/[0.11] dark:border-white/[0.07]"
                   />
                 )
               }
 
               const bg = HEATMAP_LEVELS.find((level) => day.minutes > level.min)?.swatch
-                ?? 'bg-neutral-200/80 dark:bg-neutral-800'
+                ?? 'bg-neutral-200/70 ring-1 ring-inset ring-black/[0.07] dark:bg-neutral-800 dark:ring-0'
 
               return (
                 <div

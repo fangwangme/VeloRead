@@ -174,7 +174,7 @@ function Chip({
       className={`group inline-flex items-center rounded-full border text-xs font-medium transition ${
         active
           ? 'border-blue-500 bg-blue-500/10 text-blue-600 dark:text-blue-400'
-          : 'border-black/[0.08] bg-white/70 text-neutral-600 hover:border-black/20 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-neutral-300 dark:hover:border-white/25'
+          : 'border-black/[0.12] bg-white/70 text-neutral-600 hover:border-black/20 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-neutral-300 dark:hover:border-white/25'
       }`}
     >
       <button
@@ -193,7 +193,7 @@ function Chip({
           onClick={() => onDelete()}
           aria-label={t('collections.deleteLabel', { name: label })}
           title={t('collections.deleteHint')}
-          className="mr-1.5 flex size-5 items-center justify-center rounded-full text-neutral-400 opacity-0 transition hover:bg-red-500/10 hover:text-red-600 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-red-500 group-focus-within:opacity-100 group-hover:opacity-100 dark:hover:text-red-400"
+          className="mr-1.5 flex size-5 items-center justify-center rounded-full text-neutral-500 dark:text-neutral-400 opacity-0 transition hover:bg-red-500/10 hover:text-red-600 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-red-500 group-focus-within:opacity-100 group-hover:opacity-100 dark:hover:text-red-400"
         >
           <IconTrash width={11} height={11} />
         </button>
@@ -241,10 +241,10 @@ export function BookCollectionMenu({
       ref={panelRef}
       role="dialog"
       aria-label={t('collections.menuLabel', { title: book.title })}
-      className="absolute right-0 top-8 z-30 w-44 rounded-2xl border border-black/[0.08] bg-white/97 p-1.5 shadow-[0_18px_40px_rgba(0,0,0,0.18)] backdrop-blur-2xl vr-animate-pop dark:border-white/[0.08] dark:bg-[#1C1C1E]/97"
+      className="absolute right-0 top-8 z-30 w-44 rounded-2xl border border-black/[0.12] bg-white/97 p-1.5 shadow-[0_18px_40px_rgba(0,0,0,0.18)] backdrop-blur-2xl vr-animate-pop dark:border-white/[0.08] dark:bg-[#1C1C1E]/97"
     >
       {collections.length === 0 ? (
-        <p className="px-2.5 py-3 text-center text-[11px] leading-relaxed text-neutral-400">
+        <p className="px-2.5 py-3 text-center text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
           {t('collections.menuEmpty')}
           <br />
           {t('collections.menuEmptyHint')}
@@ -255,7 +255,7 @@ export function BookCollectionMenu({
             const checked = selected.includes(collection.id)
             return (
               <li key={collection.id}>
-                <label className="flex cursor-pointer items-center gap-2 rounded-xl px-2.5 py-1.5 text-[11px] transition hover:bg-black/[0.04] dark:hover:bg-white/[0.06]">
+                <label className="flex cursor-pointer items-center gap-2 rounded-xl px-2.5 py-1.5 text-[11px] transition hover:bg-black/[0.06] dark:hover:bg-white/[0.06]">
                   <input
                     type="checkbox"
                     checked={checked}

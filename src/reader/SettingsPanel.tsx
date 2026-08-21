@@ -73,17 +73,17 @@ export function SettingsPanel({
 
   return (
     <div
-      className="absolute right-6 top-16 z-50 w-88 rounded-3xl border border-black/[0.08] bg-white/95 p-5 shadow-[0_25px_60px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 vr-animate-pop"
+      className="absolute right-6 top-16 z-50 w-88 rounded-3xl border border-black/[0.12] bg-white/95 p-5 shadow-[0_25px_60px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 vr-animate-pop"
     >
       {/* Header */}
-      <div className="flex items-center justify-between pb-3.5 border-b border-black/[0.06] dark:border-white/[0.06]">
+      <div className="flex items-center justify-between pb-3.5 border-b border-black/[0.10] dark:border-white/[0.06]">
         <h3 className="text-[11px] font-semibold tracking-wider text-neutral-500 dark:text-neutral-400 uppercase">
           {t('typography.title')}
         </h3>
         <button
           type="button"
           onClick={onClose}
-          className="flex h-6 w-6 items-center justify-center rounded-full text-neutral-400 hover:bg-black/5 hover:text-neutral-700 dark:hover:bg-white/10 dark:hover:text-neutral-200 transition"
+          className="flex h-6 w-6 items-center justify-center rounded-full text-neutral-500 dark:text-neutral-400 hover:bg-black/5 hover:text-neutral-700 dark:hover:bg-white/10 dark:hover:text-neutral-200 transition"
           aria-label={t('common.close')}
         >
           ✕
@@ -93,10 +93,10 @@ export function SettingsPanel({
       <div className="mt-4 space-y-4 text-xs">
         {/* Columns / Spread Layout Toggle: Auto / Single / Double */}
         <div>
-          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
             {t('typography.spread')}
           </label>
-          <div className="flex rounded-xl bg-black/[0.04] p-1 dark:bg-white/[0.06]">
+          <div className="flex rounded-xl bg-black/[0.06] p-1 dark:bg-white/[0.06]">
             {[
               { id: 'auto' as const, label: t('typography.spread.auto'), icon: <IconColumnsAuto /> },
               { id: 'single' as const, label: t('typography.spread.single'), icon: <IconColumnSingle /> },
@@ -121,7 +121,7 @@ export function SettingsPanel({
 
         {/* 6 Preset theme swatches with theme-aware preview palette */}
         <div>
-          <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+          <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
             {t('typography.style')}
           </label>
           <div className="grid grid-cols-3 gap-2">
@@ -161,14 +161,14 @@ export function SettingsPanel({
 
         {/* Font Family selector */}
         <div>
-          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
             {t('typography.fontFamily')}
           </label>
           <div className="relative">
             <select
               value={currentFont}
               onChange={(e) => onOverridesChange({ ...overrides, fontStack: e.target.value })}
-              className="w-full cursor-pointer appearance-none rounded-xl border border-black/[0.08] bg-black/[0.03] px-3.5 py-2 pr-8 text-xs text-neutral-800 transition focus-visible:border-blue-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-neutral-200"
+              className="w-full cursor-pointer appearance-none rounded-xl border border-black/[0.12] bg-black/[0.05] px-3.5 py-2 pr-8 text-xs text-neutral-800 transition focus-visible:border-blue-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-neutral-200"
             >
               {FONT_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -176,7 +176,7 @@ export function SettingsPanel({
                 </option>
               ))}
             </select>
-            <span className="pointer-events-none absolute right-3 top-2.5 text-[9px] text-neutral-400">
+            <span className="pointer-events-none absolute right-3 top-2.5 text-[9px] text-neutral-500 dark:text-neutral-400">
               ▼
             </span>
           </div>
@@ -184,13 +184,13 @@ export function SettingsPanel({
 
         {/* Font Size Steps: A- / A+ */}
         <div>
-          <div className="mb-1.5 flex justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+          <div className="mb-1.5 flex justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
             <span>{t('typography.fontSize')}</span>
             <span className="flex items-baseline gap-1.5 font-normal">
               <span className="font-mono text-xs font-semibold normal-case text-neutral-800 dark:text-neutral-200">
                 {resolved.fontSizePx}px
               </span>
-              <span className="font-mono text-[10px] normal-case text-neutral-400">
+              <span className="font-mono text-[10px] normal-case text-neutral-500 dark:text-neutral-400">
                 {fontSizeStep > 0
                   ? `+${fontSizeStep}`
                   : fontSizeStep === 0
@@ -199,7 +199,7 @@ export function SettingsPanel({
               </span>
             </span>
           </div>
-          <div className="flex items-center rounded-xl bg-black/[0.04] p-1 dark:bg-white/[0.06]">
+          <div className="flex items-center rounded-xl bg-black/[0.06] p-1 dark:bg-white/[0.06]">
             <button
               type="button"
               disabled={fontSizeStep <= -3}
@@ -208,7 +208,7 @@ export function SettingsPanel({
             >
               A -
             </button>
-            <div className="h-4 w-px bg-black/[0.08] dark:bg-white/[0.08]" />
+            <div className="h-4 w-px bg-black/[0.10] dark:bg-white/[0.08]" />
             <button
               type="button"
               disabled={fontSizeStep >= 5}
@@ -223,13 +223,13 @@ export function SettingsPanel({
         {/* Line Height & Margin Segmented Controls */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1.5 flex items-baseline justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+            <label className="mb-1.5 flex items-baseline justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
               <span>{t('typography.lineHeight')}</span>
               <span className="font-mono text-neutral-600 normal-case dark:text-neutral-300">
                 {resolved.lineHeight.toFixed(2)}
               </span>
             </label>
-            <div className="flex rounded-xl bg-black/[0.04] p-1 dark:bg-white/[0.06]">
+            <div className="flex rounded-xl bg-black/[0.06] p-1 dark:bg-white/[0.06]">
               {[
                 { label: t('typography.lineHeight.tight'), step: -1 },
                 { label: t('typography.lineHeight.normal'), step: 0 },
@@ -252,13 +252,13 @@ export function SettingsPanel({
           </div>
 
           <div>
-            <label className="mb-1.5 flex items-baseline justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+            <label className="mb-1.5 flex items-baseline justify-between text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
               <span>{t('typography.margin')}</span>
               <span className="font-mono text-neutral-600 normal-case dark:text-neutral-300">
                 {t('typography.measure', { n: resolved.measureCh })}
               </span>
             </label>
-            <div className="flex rounded-xl bg-black/[0.04] p-1 dark:bg-white/[0.06]">
+            <div className="flex rounded-xl bg-black/[0.06] p-1 dark:bg-white/[0.06]">
               {[
                 { label: t('typography.margin.wide'), step: -1 },
                 { label: t('typography.margin.normal'), step: 0 },
@@ -282,7 +282,7 @@ export function SettingsPanel({
         </div>
 
         {/* Toggles */}
-        <div className="space-y-2.5 pt-3 border-t border-black/[0.06] dark:border-white/[0.06]">
+        <div className="space-y-2.5 pt-3 border-t border-black/[0.10] dark:border-white/[0.06]">
           <label className="flex items-center justify-between cursor-pointer py-0.5 group">
             <span className="text-neutral-700 dark:text-neutral-300 text-xs font-medium group-hover:text-neutral-900 dark:group-hover:text-white transition">
               {t('typography.justify')}

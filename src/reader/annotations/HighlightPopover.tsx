@@ -92,10 +92,10 @@ export function HighlightPopover({
       role="dialog"
       aria-label={t(existing ? 'highlight.editLabel' : 'highlight.newLabel')}
       style={{ left: `${Math.round(left)}px`, top: `${Math.round(top)}px`, width: `${POPOVER_WIDTH}px` }}
-      className="absolute z-40 rounded-2xl border border-black/[0.08] bg-white/97 p-3 shadow-[0_20px_50px_rgba(0,0,0,0.2),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/97 dark:text-neutral-100 vr-animate-pop"
+      className="absolute z-40 rounded-2xl border border-black/[0.12] bg-white/97 p-3 shadow-[0_20px_50px_rgba(0,0,0,0.2),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/97 dark:text-neutral-100 vr-animate-pop"
       onMouseDown={(event) => event.stopPropagation()}
     >
-      <p className="line-clamp-2 border-b border-black/[0.06] pb-2 text-[11px] leading-relaxed text-neutral-500 dark:border-white/[0.06] dark:text-neutral-400">
+      <p className="line-clamp-2 border-b border-black/[0.10] pb-2 text-[11px] leading-relaxed text-neutral-500 dark:border-white/[0.06] dark:text-neutral-400">
         {draft.text}
       </p>
 
@@ -139,7 +139,7 @@ export function HighlightPopover({
               type="button"
               onClick={onDelete}
               aria-label={t('highlight.delete')}
-              className="flex size-7 items-center justify-center rounded-lg text-neutral-400 transition hover:bg-red-500/10 hover:text-red-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 dark:hover:text-red-400"
+              className="flex size-7 items-center justify-center rounded-lg text-neutral-500 dark:text-neutral-400 transition hover:bg-red-500/10 hover:text-red-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 dark:hover:text-red-400"
             >
               <IconTrash />
             </button>
@@ -156,7 +156,7 @@ export function HighlightPopover({
             rows={3}
             placeholder={t('highlight.notePlaceholder')}
             aria-label={t('highlight.noteLabel')}
-            className="w-full resize-none rounded-xl border border-black/[0.08] bg-black/[0.02] px-2.5 py-2 text-[11px] leading-relaxed outline-none focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-500/20 dark:border-white/[0.08] dark:bg-white/[0.04]"
+            className="w-full resize-none rounded-xl border border-black/[0.12] bg-black/[0.035] px-2.5 py-2 text-[11px] leading-relaxed outline-none focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-500/20 dark:border-white/[0.08] dark:bg-white/[0.04]"
           />
           <div className="mt-2 flex justify-end gap-1.5">
             <button

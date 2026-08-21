@@ -86,13 +86,13 @@ export function Toc({
         role="dialog"
         aria-modal="true"
         tabIndex={-1}
-        className="fixed inset-y-0 left-0 z-50 flex w-92 flex-col border-r border-black/[0.08] bg-white/92 shadow-[0_25px_60px_rgba(0,0,0,0.18)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/92 dark:text-neutral-100 vr-animate-drawer"
+        className="fixed inset-y-0 left-0 z-50 flex w-92 flex-col border-r border-black/[0.12] bg-white/92 shadow-[0_25px_60px_rgba(0,0,0,0.18)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/92 dark:text-neutral-100 vr-animate-drawer"
         aria-label={t('toc.drawerLabel')}
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-black/[0.06] px-5 py-4 dark:border-white/[0.06]">
+        <div className="flex items-center justify-between border-b border-black/[0.10] px-5 py-4 dark:border-white/[0.06]">
           {/* iOS Segmented Pill Switcher */}
-          <div className="flex rounded-xl bg-black/[0.05] p-1 dark:bg-white/[0.08]" role="tablist">
+          <div className="flex rounded-xl bg-black/[0.07] p-1 dark:bg-white/[0.08]" role="tablist">
             {([
               { id: 'toc', label: t('toc.tab.toc'), count: toc.length, icon: <IconToc className="opacity-75" /> },
               { id: 'bookmarks', label: t('toc.tab.bookmarks'), count: bookmarks.length, icon: <IconBookmark className="opacity-75" /> },
@@ -121,7 +121,7 @@ export function Toc({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-neutral-400 hover:bg-black/5 hover:text-neutral-700 dark:hover:bg-white/10 dark:hover:text-neutral-200 transition"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-neutral-500 dark:text-neutral-400 hover:bg-black/5 hover:text-neutral-700 dark:hover:bg-white/10 dark:hover:text-neutral-200 transition"
             aria-label={t('toc.close')}
           >
             <IconClose />
@@ -146,7 +146,7 @@ export function Toc({
             </div>
           ) : tab === 'bookmarks' ? (
             <div className="space-y-3">
-              <div className="flex items-center justify-between border-b border-black/[0.05] pb-2.5 dark:border-white/[0.05]">
+              <div className="flex items-center justify-between border-b border-black/[0.08] pb-2.5 dark:border-white/[0.05]">
                 <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
                   {bookmarks.length > 0
                     ? t.plural('toc.bookmarkCount', bookmarks.length)
@@ -188,14 +188,14 @@ export function Toc({
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="flex items-center justify-between border-b border-black/[0.05] pb-2.5 dark:border-white/[0.05]">
+              <div className="flex items-center justify-between border-b border-black/[0.08] pb-2.5 dark:border-white/[0.05]">
                 <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
                   {annotations.length > 0
                     ? t.plural('toc.annotationCount', annotations.length)
                     : t('toc.noAnnotations')}
                 </span>
                 {noteCount > 0 && (
-                  <span className="text-[10px] text-neutral-400">
+                  <span className="text-[10px] text-neutral-500 dark:text-neutral-400">
                     {t.plural('toc.noteCount', noteCount)}
                   </span>
                 )}
@@ -242,7 +242,7 @@ export function Toc({
                             {annotation.text}
                           </p>
                           {annotation.note && (
-                            <p className="mt-2 line-clamp-3 rounded-lg bg-black/[0.03] px-2 py-1.5 text-[11px] leading-relaxed text-neutral-600 dark:bg-white/[0.05] dark:text-neutral-300">
+                            <p className="mt-2 line-clamp-3 rounded-lg bg-black/[0.05] px-2 py-1.5 text-[11px] leading-relaxed text-neutral-600 dark:bg-white/[0.05] dark:text-neutral-300">
                               {annotation.note}
                             </p>
                           )}
@@ -278,7 +278,7 @@ function TocList({
   return (
     <ul
       className={`space-y-0.5 ${
-        depth > 0 ? 'ml-3.5 border-l border-black/[0.08] pl-3 dark:border-white/[0.08]' : ''
+        depth > 0 ? 'ml-3.5 border-l border-black/[0.12] pl-3 dark:border-white/[0.08]' : ''
       }`}
     >
       {items.map((item) => {
@@ -291,7 +291,7 @@ function TocList({
               className={`group flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs transition ${
                 isCurrent
                   ? 'bg-blue-500/10 font-semibold text-blue-600 dark:bg-blue-400/15 dark:text-blue-400 shadow-2xs'
-                  : 'text-neutral-700 hover:bg-black/[0.04] dark:text-neutral-300 dark:hover:bg-white/[0.06]'
+                  : 'text-neutral-700 hover:bg-black/[0.06] dark:text-neutral-300 dark:hover:bg-white/[0.06]'
               }`}
             >
               <span className="line-clamp-1">
@@ -320,8 +320,8 @@ function TocList({
 function EmptyPanel({ title, hint }: { title: string; hint?: string }) {
   return (
     <div className="space-y-2 py-20 text-center">
-      <p className="text-xs text-neutral-400 dark:text-neutral-500">{title}</p>
-      {hint && <p className="mx-auto max-w-[200px] text-[11px] text-neutral-400/80">{hint}</p>}
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">{title}</p>
+      {hint && <p className="mx-auto max-w-[200px] text-[11px] text-neutral-500/90 dark:text-neutral-400/80">{hint}</p>}
     </div>
   )
 }
@@ -345,7 +345,7 @@ function ListCard({
   const { locale } = useLanguage()
 
   return (
-    <div className="group relative rounded-2xl border border-black/[0.06] bg-black/[0.02] p-3.5 transition hover:border-blue-500/40 hover:bg-black/[0.04] dark:border-white/[0.06] dark:bg-white/[0.03] dark:hover:border-blue-400/40 dark:hover:bg-white/[0.05]">
+    <div className="group relative rounded-2xl border border-black/[0.10] bg-black/[0.035] p-3.5 transition hover:border-blue-500/40 hover:bg-black/[0.06] dark:border-white/[0.06] dark:bg-white/[0.03] dark:hover:border-blue-400/40 dark:hover:bg-white/[0.05]">
       {onOpen ? (
         <button
           type="button"
@@ -357,7 +357,7 @@ function ListCard({
       ) : (
         <div>{children}</div>
       )}
-      <div className="mt-3 flex items-center justify-between gap-2 text-[10px] text-neutral-400 dark:text-neutral-500">
+      <div className="mt-3 flex items-center justify-between gap-2 text-[10px] text-neutral-500 dark:text-neutral-400">
         <span className="flex min-w-0 items-center gap-2">
           <span>{new Date(createdAt).toLocaleDateString(locale)}</span>
           {meta}
@@ -366,7 +366,7 @@ function ListCard({
           type="button"
           onClick={onDelete}
           aria-label={deleteLabel}
-          className="flex size-6 items-center justify-center rounded-lg text-neutral-400 opacity-0 transition hover:bg-red-500/10 hover:text-red-600 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 group-focus-within:opacity-100 group-hover:opacity-100 dark:hover:text-red-400"
+          className="flex size-6 items-center justify-center rounded-lg text-neutral-500 dark:text-neutral-400 opacity-0 transition hover:bg-red-500/10 hover:text-red-600 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 group-focus-within:opacity-100 group-hover:opacity-100 dark:hover:text-red-400"
         >
           <IconTrash />
         </button>

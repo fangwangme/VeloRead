@@ -43,7 +43,7 @@ export function ConfirmDialog({
         aria-labelledby="confirm-dialog-title"
         aria-describedby={request.body ? 'confirm-dialog-body' : undefined}
         tabIndex={-1}
-        className="relative z-10 w-full max-w-sm rounded-3xl border border-black/[0.08] bg-white/96 p-5 shadow-[0_30px_70px_rgba(0,0,0,0.22)] backdrop-blur-3xl vr-animate-pop dark:border-white/[0.08] dark:bg-[#1C1C1E]/96 dark:text-neutral-100"
+        className="relative z-10 w-full max-w-sm rounded-3xl border border-black/[0.12] bg-white/96 p-5 shadow-[0_30px_70px_rgba(0,0,0,0.22)] backdrop-blur-3xl vr-animate-pop dark:border-white/[0.08] dark:bg-[#1C1C1E]/96 dark:text-neutral-100"
       >
         <h2 id="confirm-dialog-title" className="text-sm font-semibold tracking-tight">
           {request.title}
@@ -62,7 +62,7 @@ export function ConfirmDialog({
           <button
             type="button"
             onClick={cancel}
-            className="rounded-xl border border-black/[0.08] px-3.5 py-1.5 text-xs font-medium text-neutral-700 transition hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-white/[0.08] dark:text-neutral-300 dark:hover:bg-white/10"
+            className="rounded-xl border border-black/[0.12] px-3.5 py-1.5 text-xs font-medium text-neutral-700 transition hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-white/[0.08] dark:text-neutral-300 dark:hover:bg-white/10"
           >
             {request.cancelLabel}
           </button>

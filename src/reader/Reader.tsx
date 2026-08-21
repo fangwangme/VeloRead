@@ -1407,15 +1407,15 @@ export function Reader({
           ref={pacerPopoverRef}
           role="dialog"
           aria-labelledby="pacer-settings-title"
-          className="absolute right-6 top-16 z-50 w-88 rounded-3xl border border-black/[0.08] bg-white/95 p-5 shadow-[0_25px_60px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 vr-animate-pop"
+          className="absolute right-6 top-16 z-50 w-88 rounded-3xl border border-black/[0.12] bg-white/95 p-5 shadow-[0_25px_60px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 vr-animate-pop"
         >
           {/* Popover Header with Title and Explicit Close Button */}
-          <div className="flex items-start justify-between gap-3 pb-3.5 border-b border-black/[0.06] dark:border-white/[0.06]">
+          <div className="flex items-start justify-between gap-3 pb-3.5 border-b border-black/[0.10] dark:border-white/[0.06]">
             <div>
               <h3 id="pacer-settings-title" className="text-[11px] font-semibold tracking-wider text-neutral-500 dark:text-neutral-400 uppercase">
                 {t('pacer.title')}
               </h3>
-              <p className="mt-1 text-[10px] text-neutral-400">
+              <p className="mt-1 text-[10px] text-neutral-500 dark:text-neutral-400">
                 {t(pacerUsesCjkUnits ? 'pacer.unitNoteCjk' : 'pacer.unitNoteLatin')}
               </p>
             </div>
@@ -1432,7 +1432,7 @@ export function Reader({
               <button
                 type="button"
                 onClick={() => setShowPacerControls(false)}
-                className="flex h-6 w-6 items-center justify-center rounded-full text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-white/10 dark:hover:text-neutral-200"
+                className="flex h-6 w-6 items-center justify-center rounded-full text-neutral-500 dark:text-neutral-400 transition hover:bg-black/5 hover:text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-white/10 dark:hover:text-neutral-200"
                 aria-label={t('pacer.closeSettings')}
               >
                 ✕
@@ -1444,7 +1444,7 @@ export function Reader({
             {/* Speed Tier Presets */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
                   {t('pacer.tiers')}
                 </span>
                 {pacer.speedWarning && (
@@ -1467,7 +1467,7 @@ export function Reader({
                       className={`flex flex-col items-center justify-center py-2 px-1.5 rounded-2xl border transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
                         isSelected
                           ? 'border-blue-500/80 bg-blue-500/10 text-blue-600 dark:text-blue-400 font-semibold shadow-2xs'
-                          : 'border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.03] text-neutral-700 dark:text-neutral-300 hover:bg-black/[0.05] dark:hover:bg-white/[0.06]'
+                          : 'border-black/[0.10] dark:border-white/[0.06] bg-black/[0.035] dark:bg-white/[0.03] text-neutral-700 dark:text-neutral-300 hover:bg-black/[0.07] dark:hover:bg-white/[0.06]'
                       }`}
                       aria-pressed={isSelected}
                     >
@@ -1482,7 +1482,7 @@ export function Reader({
             {/* Slider & Direct Numeric Input */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
                   {t('pacer.fineTune')}
                 </span>
                 <div className="flex items-center gap-1">
@@ -1503,9 +1503,9 @@ export function Reader({
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') event.currentTarget.blur()
                     }}
-                    className="w-14 rounded-lg border border-black/10 bg-black/[0.03] px-1.5 py-0.5 text-center font-mono text-xs font-bold text-neutral-900 focus-visible:border-blue-500 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 dark:border-white/10 dark:bg-white/[0.04] dark:text-white"
+                    className="w-14 rounded-lg border border-black/10 bg-black/[0.05] px-1.5 py-0.5 text-center font-mono text-xs font-bold text-neutral-900 focus-visible:border-blue-500 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 dark:border-white/10 dark:bg-white/[0.04] dark:text-white"
                   />
-                  <span className="text-[10px] text-neutral-400 font-mono">{pacerUnit}</span>
+                  <span className="text-[10px] text-neutral-500 dark:text-neutral-400 font-mono">{pacerUnit}</span>
                 </div>
               </div>
 
@@ -1548,11 +1548,11 @@ export function Reader({
             </div>
 
             {/* Chunk Size Selector */}
-            <div className="pt-3 border-t border-black/[0.06] dark:border-white/[0.06] flex items-center justify-between">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+            <div className="pt-3 border-t border-black/[0.10] dark:border-white/[0.06] flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
                 {t(pacerUsesCjkUnits ? 'pacer.chunkCjk' : 'pacer.chunkLatin')}
               </span>
-              <div className="flex rounded-xl bg-black/[0.04] p-1 dark:bg-white/[0.06]">
+              <div className="flex rounded-xl bg-black/[0.06] p-1 dark:bg-white/[0.06]">
                 {pacerChunkOptions.map((size) => (
                   <button
                     key={size}
@@ -1661,7 +1661,7 @@ function PageTurnZone({
       } ${
         disabled
           ? 'pointer-events-none'
-          : 'hover:bg-black/[0.025] dark:hover:bg-white/[0.03]'
+          : 'hover:bg-black/[0.04] dark:hover:bg-white/[0.03]'
       }`}
     />
   )
