@@ -1,3 +1,4 @@
+mod exports;
 mod library;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -30,6 +31,8 @@ pub fn run() {
             library::library_delete_annotation,
             library::library_record_reading_session,
             library::library_get_reading_stats,
+            exports::export_text_files,
+            exports::reveal_path,
         ])
         // Restores size, position and maximized state, and saves them on exit.
         // A reader is a window you size once for your eyes and expect to find

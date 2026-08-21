@@ -31,6 +31,10 @@ and nothing exports yet.
   set where it starts.
 - **Highlights** — five colours with optional notes, painted through epub.js
   marks so they survive page turns, listed in the drawer.
+- **Highlight export** — every highlight as one document, or one document per
+  book, in Kindle's `My Clippings.txt` format. Sorted by reading position rather
+  than by when it was made, and a note becomes its own record after the
+  highlight it belongs to.
 - **Whole-book search** — no index exists in EPUB, so each chapter is loaded,
   searched and unloaded in turn: memory stays flat, the pass is visible, and it
   can be stopped without losing what it found.
@@ -48,9 +52,8 @@ and nothing exports yet.
 
 ### Known gaps
 
-- **No export.** Highlights and notes are stored but cannot yet leave the app in
-  Kindle's `My Clippings.txt` format, which is one of the reasons this project
-  exists. The data model is in place; the file layer is not.
+- **No import.** Highlights export, but a Kindle `My Clippings.txt` cannot yet
+  be read back in, so a migration from Kindle still leaves its history behind.
 - **No vocabulary list**, no dictionary lookup.
 - **TXT and PDF** unimplemented; `Locator` has not landed, so bookmarks and
   highlights still store EPUB CFIs directly.

@@ -22,7 +22,8 @@ started, and nothing exports yet. Start at
   reading speed past subvocalization. One engine, separate profiles for Latin (words/min) and
   CJK (graphemes/min), applied per chunk so mixed text paces correctly. Its colour, strength
   and shape are yours to set
-- **Highlights** — five colours with optional notes, listed alongside the TOC and bookmarks
+- **Highlights** — five colours with optional notes, listed alongside the TOC and bookmarks,
+  and exportable as Kindle-format plain text: one file for everything, or one per book
 - **Full-text search** — across the whole book, loading each chapter on demand
 - **Library** — collections, with a book able to sit on several shelves
 - **Reading activity** — honest active-reading time, words and CJK characters counted
@@ -33,8 +34,8 @@ started, and nothing exports yet. Start at
 
 - **TXT and PDF** — TXT will share the EPUB engine; PDF is a separate track with unequal
   capabilities by nature. See [`docs/specs/reading-formats.md`](docs/specs/reading-formats.md)
-- **Export and import** — highlights as Kindle's `My Clippings.txt`, both directions.
-  The data model is in place; the file layer is not
+- **Import** — reading a Kindle `My Clippings.txt` back in, so a migration brings its
+  history along. Export already works
 - **Vocabulary** — look up a word, keep the sentence it came from, export it as plain text.
   Kindle records this too, but won't let you take it with you. This will
 

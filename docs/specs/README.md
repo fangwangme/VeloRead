@@ -17,6 +17,7 @@
 | [pacer.md](pacer.md) | 自动阅读 / 速读训练 | ✅ |
 | [reading-activity.md](reading-activity.md) | 有效阅读计时、字数、连续天数与四档自动打卡 | ✅ |
 | [annotations.md](annotations.md) | 划线笔记、摘抄导出、Kindle 格式导入导出 | 🚧 |
+
 | [vocabulary.md](vocabulary.md) | 划词、词典、生词本、导出 | 📋 |
 | [platform-and-storage.md](platform-and-storage.md) | 平台适配层、SQLite / IndexedDB 数据模型 | ✅ |
 | [i18n.md](i18n.md) | 界面语言：字典结构、复数、语言解析 | ✅ |

@@ -179,6 +179,42 @@ export interface OverallReadingStats {
   dailyStats: Record<string, DailyReadingStats>
 }
 
+/** One text file to hand to the user. `name` is a bare filename, never a path. */
+export interface ExportFile {
+  name: string
+  text: string
+}
+
+export interface ExportResult {
+  /**
+   * Where the files ended up, phrased for a person. A path on the desktop; the
+   * browser can only say that a download started.
+   */
+  location: string
+  /** True when the location is a real path the platform can reveal. */
+  revealable: boolean
+}
+
+/**
+ * Getting user data out of the app.
+ *
+ * Second of the three capability ports named in AGENTS.md. Deliberately narrow:
+ * the app writes what the user asked for, where the platform puts downloads,
+ * and does not otherwise touch the filesystem.
+ */
+export interface FsPort {
+  /**
+   * Write text files somewhere the user can find them.
+   *
+   * The desktop puts a single file straight into Downloads and several into a
+   * folder named `bundleName`. The browser cannot write a folder, so several
+   * files arrive as one zip of that name.
+   */
+  exportTextFiles(files: ExportFile[], bundleName: string): Promise<ExportResult>
+  /** Show the export in the file manager. No-op where that is not possible. */
+  reveal(location: string): Promise<void>
+}
+
 /**
  * Library persistence: book metadata, book bytes, cover bytes, reading position,
  * settings, bookmarks, reading statistics.
