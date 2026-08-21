@@ -70,6 +70,19 @@ export function countReadingUnits(words: WordItem[]): ReadingUnitCounts {
   return { latinWords, cjkCharacters }
 }
 
+/**
+ * Characters of body text in a measured page, punctuation included.
+ *
+ * Separate from `countReadingUnits` because that shape is what the statistics
+ * persist; this is the bridge the time estimate needs between one page and
+ * epub.js's character-based location index.
+ */
+export function countCharacters(words: WordItem[]): number {
+  let characters = 0
+  for (const word of words) characters += word.text.length
+  return characters
+}
+
 export function dominantPacerUnit(
   words: WordItem[],
   fallback: PacerUnitKind = 'latin',

@@ -83,6 +83,13 @@ export const zh = {
 
   'position.pagesLeft.one': '本章还剩 {n} 页',
   'position.pagesLeft.other': '本章还剩 {n} 页',
+  'position.chapterTimeLeft': '本章还需 {duration}',
+  'position.bookTimeLeft': '读完还需 {duration}',
+  'position.minutes': '{n} 分钟',
+  'position.hours': '{n} 小时',
+  'position.hoursMinutes': '{hours} 小时 {minutes} 分',
+  'position.rateLearned': '按你的实际阅读速度估算',
+  'position.rateAssumed': '按当前自动阅读速度估算；读满 10 分钟后改用你的实际速度',
   'position.wholeBook': '全书 {percent}%',
   'position.locating': '定位中…',
 

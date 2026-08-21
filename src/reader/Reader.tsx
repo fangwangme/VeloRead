@@ -24,10 +24,13 @@ import { Overlay } from './pacer/Overlay'
 import { usePacer } from './pacer/usePacer'
 import { readHighlightStyle } from './pacer/overlayStyle'
 import {
+  countCharacters,
   countReadingUnits,
   type PacerUnitKind,
   type ReadingUnitCounts,
 } from './pacer/chunker'
+import { estimateTimeLeft } from './timeLeft'
+import { learnReadingRate } from '../stats/readingRate'
 import {
   localDateKey,
   shouldAccumulateReading,
@@ -130,6 +133,19 @@ export function Reader({
   const pageDwellSecondsRef = useRef(0)
   const errorRef = useRef<string | null>(null)
   const currentPageCountsRef = useRef<ReadingUnitCounts>({ latinWords: 0, cjkCharacters: 0 })
+  // The same measurement as `currentPageCountsRef`, but as state: the footer's
+  // time estimate has to re-render when the page changes, and the ref exists to
+  // survive the crediting logic without triggering renders.
+  const [pageUnits, setPageUnits] = useState<ReadingUnitCounts>({
+    latinWords: 0,
+    cjkCharacters: 0,
+  })
+  const [pageCharacters, setPageCharacters] = useState(0)
+  const [readingRate, setReadingRate] = useState<{
+    totalDurationMinutes: number
+    totalLatinWordsRead: number
+    totalCjkCharactersRead: number
+  } | null>(null)
   const currentPageCfiRef = useRef<string | null>(null)
   const pagePacerConsumedRef = useRef(false)
   const layoutChangeSuppressedRef = useRef(false)
@@ -254,6 +270,26 @@ export function Reader({
       !showPacerControlsRef.current &&
       !highlightDraftOpenRef.current,
   })
+  // The Pacer's speed is the speed you asked to be pushed at; this is the one
+  // the statistics say you sustained. An estimate built on the setting would
+  // only restate the setting.
+  const learnedRate = useMemo(
+    () => learnReadingRate(readingRate, { latinWpm: pacerWpm, cjkCpm: pacerCpm }),
+    [readingRate, pacerWpm, pacerCpm],
+  )
+
+  const timeLeft = useMemo(
+    () =>
+      estimateTimeLeft({
+        pageUnits,
+        pageCharacters,
+        pagesLeftInChapter: location?.pagesLeftInChapter ?? null,
+        charactersLeftInBook: location?.charactersLeftInBook ?? null,
+        rate: learnedRate,
+      }),
+    [pageUnits, pageCharacters, location, learnedRate],
+  )
+
   const pacerUsesCjkUnits = pacer.dominantUnit === 'cjk'
   const pacerSpeed = pacerUsesCjkUnits ? pacerCpm : pacerWpm
   const activePacerChunkSize = pacerUsesCjkUnits ? pacerCjkChunkSize : pacerChunkSize
@@ -781,7 +817,10 @@ export function Reader({
             // Measure visible words on the newly rendered page
             setTimeout(() => {
               if (reader && locationChanged) {
-                currentPageCountsRef.current = countReadingUnits(reader.getViewportWords())
+                const words = reader.getViewportWords()
+                currentPageCountsRef.current = countReadingUnits(words)
+                setPageCharacters(countCharacters(words))
+                setPageUnits(countReadingUnits(words))
               }
               if (!pacerRef.current.isPlaying) {
                 pacerRef.current.recalculateGeometry(false)
@@ -1423,6 +1462,9 @@ export function Reader({
             chapterTitle={location?.chapterTitle}
             pagesLeftInChapter={location?.pagesLeftInChapter}
             percentage={percentage}
+            chapterMinutesLeft={timeLeft.chapterMinutes}
+            bookMinutesLeft={timeLeft.bookMinutes}
+            rateIsLearned={learnedRate.learned}
           />
         </div>
 

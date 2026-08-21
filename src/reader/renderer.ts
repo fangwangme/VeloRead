@@ -19,6 +19,13 @@ export interface ReaderLocation {
    * background. Null means "not known yet", never "at the beginning".
    */
   percentage: number | null
+  /**
+   * Characters of body text between here and the end of the book, or null
+   * before the location index exists. epub.js indexes the spine in fixed-size
+   * chunks, so this is the only whole-book measure available without
+   * paginating everything up front — coarse, but real.
+   */
+  charactersLeftInBook: number | null
   atStart: boolean
   atEnd: boolean
 }
@@ -322,6 +329,7 @@ export async function createReader(
       tocId: currentTocItem?.id ?? null,
       pagesLeftInChapter,
       percentage: locationsReady ? percentageOf(book, cfi) : null,
+      charactersLeftInBook: locationsReady ? charactersLeftFrom(book, cfi) : null,
       atStart: Boolean(location.atStart),
       atEnd: Boolean(location.atEnd),
     }
@@ -371,7 +379,7 @@ export async function createReader(
 
   let destroyed = false
   void book.locations
-    .generate(1000)
+    .generate(LOCATION_CHARS)
     .then(() => {
       if (destroyed) return
       locationsReady = true
@@ -822,6 +830,20 @@ function pointHitsRange(range: Range, x: number, y: number): boolean {
     y >= rect.top - slackY &&
     y <= rect.bottom + slackY
   )
+}
+
+/** Must match the argument given to `book.locations.generate()` below. */
+const LOCATION_CHARS = 1000
+
+function charactersLeftFrom(book: Book, cfi: string): number | null {
+  const locations = book.locations as unknown as {
+    total?: number
+    locationFromCfi?: (cfi: string) => number
+  }
+  const total = locations.total
+  const current = locations.locationFromCfi?.(cfi)
+  if (typeof total !== 'number' || typeof current !== 'number' || current < 0) return null
+  return Math.max(0, total - current) * LOCATION_CHARS
 }
 
 function percentageOf(book: Book, cfi: string): number | null {

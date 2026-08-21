@@ -84,6 +84,14 @@ export const en: Messages = {
 
   'position.pagesLeft.one': '{n} page left in chapter',
   'position.pagesLeft.other': '{n} pages left in chapter',
+  'position.chapterTimeLeft': '{duration} left in chapter',
+  'position.bookTimeLeft': '{duration} to finish',
+  'position.minutes': '{n} min',
+  'position.hours': '{n} h',
+  'position.hoursMinutes': '{hours} h {minutes} min',
+  'position.rateLearned': 'Estimated from how fast you actually read',
+  'position.rateAssumed':
+    'Estimated from the current auto-reading speed; switches to your own once you have read for 10 minutes',
   'position.wholeBook': '{percent}% of book',
   'position.locating': 'Locating…',
 
