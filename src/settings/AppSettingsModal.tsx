@@ -145,7 +145,7 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
                   onClick={() => void save({ themeMode: option.id })}
                   className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-[11px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
                     themeMode === option.id
-                      ? 'bg-white text-neutral-900 shadow-[0_1px_4px_rgba(0,0,0,0.1)] dark:bg-[#303033] dark:text-white'
+                      ? 'bg-blue-500/12 text-blue-700 ring-1 ring-inset ring-blue-500/35 dark:bg-[#303033] dark:text-white dark:ring-0'
                       : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
                   }`}
                   aria-pressed={themeMode === option.id}
@@ -170,7 +170,7 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
                   onClick={() => void save({ language: option })}
                   className={`rounded-xl py-2 text-[11px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
                     languagePreference === option
-                      ? 'bg-white text-neutral-900 shadow-[0_1px_4px_rgba(0,0,0,0.1)] dark:bg-[#303033] dark:text-white'
+                      ? 'bg-blue-500/12 text-blue-700 ring-1 ring-inset ring-blue-500/35 dark:bg-[#303033] dark:text-white dark:ring-0'
                       : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
                   }`}
                   aria-pressed={languagePreference === option}
@@ -465,7 +465,7 @@ function PacerProfileEditor({
               onClick={() => onChunkChange(option)}
               className={`rounded-md px-1.5 py-1 text-[9px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 ${
                 chunkSize === option
-                  ? 'bg-white text-neutral-900 shadow-2xs dark:bg-[#303033] dark:text-white'
+                  ? 'bg-blue-500/12 text-blue-700 ring-1 ring-inset ring-blue-500/35 dark:bg-[#303033] dark:text-white dark:ring-0'
                   : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
               }`}
               aria-pressed={chunkSize === option}
@@ -595,7 +595,7 @@ function HighlightStyleEditor({
               aria-pressed={style.shape === shape.id}
               className={`rounded-lg px-2.5 py-1 text-[10px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 ${
                 style.shape === shape.id
-                  ? 'bg-white text-neutral-900 shadow-2xs dark:bg-[#303033] dark:text-white'
+                  ? 'bg-blue-500/12 text-blue-700 ring-1 ring-inset ring-blue-500/35 dark:bg-[#303033] dark:text-white dark:ring-0'
                   : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
               }`}
             >

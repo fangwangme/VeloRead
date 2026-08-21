@@ -73,7 +73,7 @@ export function SettingsPanel({
 
   return (
     <div
-      className="absolute right-6 top-16 z-50 w-88 rounded-3xl border border-black/[0.12] bg-white/95 p-5 shadow-[0_25px_60px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 vr-animate-pop"
+      className="absolute right-6 top-16 z-50 w-88 rounded-3xl border border-black/[0.12] bg-white/[0.97] p-5 shadow-[0_25px_60px_rgba(0,0,0,0.26),0_2px_10px_rgba(0,0,0,0.10)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 vr-animate-pop"
     >
       {/* Header */}
       <div className="flex items-center justify-between pb-3.5 border-b border-black/[0.10] dark:border-white/[0.06]">
@@ -108,7 +108,7 @@ export function SettingsPanel({
                 onClick={() => onOverridesChange({ ...overrides, spreadMode: item.id })}
                 className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-center transition text-[11px] font-medium ${
                   currentSpread === item.id
-                    ? 'bg-white text-neutral-900 shadow-[0_1px_3px_rgba(0,0,0,0.1)] dark:bg-[#2C2C2E] dark:text-white font-semibold'
+                    ? 'bg-blue-500/12 text-blue-700 ring-1 ring-inset ring-blue-500/35 dark:bg-[#2C2C2E] dark:text-white dark:ring-0 font-semibold'
                     : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
                 }`}
               >
@@ -141,7 +141,7 @@ export function SettingsPanel({
                   }}
                   className={`relative flex flex-col items-center justify-center rounded-2xl border p-2.5 transition transform active:scale-95 ${
                     isSelected
-                      ? 'ring-2 ring-blue-500/60 shadow-xs font-semibold'
+                      ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-white shadow-xs font-semibold dark:ring-offset-[#1C1C1E]'
                       : 'opacity-85 hover:opacity-100 hover:shadow-2xs'
                   }`}
                 >
@@ -241,7 +241,7 @@ export function SettingsPanel({
                   onClick={() => onOverridesChange({ ...overrides, lineHeightStep: item.step })}
                   className={`flex-1 rounded-lg py-1 text-center transition text-[11px] font-medium ${
                     lineHeightStep === item.step
-                      ? 'bg-white text-neutral-900 shadow-[0_1px_3px_rgba(0,0,0,0.08)] dark:bg-[#2C2C2E] dark:text-white font-semibold'
+                      ? 'bg-blue-500/12 text-blue-700 ring-1 ring-inset ring-blue-500/35 dark:bg-[#2C2C2E] dark:text-white dark:ring-0 font-semibold'
                       : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
                   }`}
                 >
@@ -270,7 +270,7 @@ export function SettingsPanel({
                   onClick={() => onOverridesChange({ ...overrides, marginStep: item.step })}
                   className={`flex-1 rounded-lg py-1 text-center transition text-[11px] font-medium ${
                     marginStep === item.step
-                      ? 'bg-white text-neutral-900 shadow-[0_1px_3px_rgba(0,0,0,0.08)] dark:bg-[#2C2C2E] dark:text-white font-semibold'
+                      ? 'bg-blue-500/12 text-blue-700 ring-1 ring-inset ring-blue-500/35 dark:bg-[#2C2C2E] dark:text-white dark:ring-0 font-semibold'
                       : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
                   }`}
                 >

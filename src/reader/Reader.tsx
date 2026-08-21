@@ -1536,7 +1536,7 @@ export function Reader({
           ref={pacerPopoverRef}
           role="dialog"
           aria-labelledby="pacer-settings-title"
-          className="absolute right-6 top-16 z-50 w-88 rounded-3xl border border-black/[0.12] bg-white/95 p-5 shadow-[0_25px_60px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 vr-animate-pop"
+          className="absolute right-6 top-16 z-50 w-88 rounded-3xl border border-black/[0.12] bg-white/[0.97] p-5 shadow-[0_25px_60px_rgba(0,0,0,0.26),0_2px_10px_rgba(0,0,0,0.10)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/95 dark:text-neutral-100 vr-animate-pop"
         >
           {/* Popover Header with Title and Explicit Close Button */}
           <div className="flex items-start justify-between gap-3 pb-3.5 border-b border-black/[0.10] dark:border-white/[0.06]">
@@ -1691,7 +1691,7 @@ export function Reader({
                     }}
                     className={`px-2.5 py-1 rounded-lg transition text-[11px] font-medium focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-500 ${
                       activePacerChunkSize === size
-                        ? 'bg-white text-neutral-900 shadow-[0_1px_3px_rgba(0,0,0,0.08)] dark:bg-[#2C2C2E] dark:text-white font-semibold'
+                        ? 'bg-blue-500/12 text-blue-700 ring-1 ring-inset ring-blue-500/35 dark:bg-[#2C2C2E] dark:text-white dark:ring-0 font-semibold'
                         : 'text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
                     }`}
                     aria-pressed={activePacerChunkSize === size}
