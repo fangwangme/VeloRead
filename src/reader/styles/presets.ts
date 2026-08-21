@@ -50,7 +50,7 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
   },
   sepia: {
     id: 'sepia',
-    nameKey: 'styles.parchment',
+    nameKey: 'styles.sepia',
     lightPalette: {
       background: '#F4ECD8',
       text: '#36291C',
@@ -89,7 +89,7 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
   },
   modern: {
     id: 'modern',
-    nameKey: 'styles.prose',
+    nameKey: 'styles.modern',
     lightPalette: {
       background: '#FFFFFF',
       text: '#1A1A1A',
@@ -128,7 +128,7 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
   },
   journal: {
     id: 'journal',
-    nameKey: 'styles.academic',
+    nameKey: 'styles.journal',
     lightPalette: {
       background: '#FBFBFA',
       text: '#181A1C',
@@ -167,7 +167,7 @@ export const PRESETS: Record<StyleId, ReadingStyle> = {
   },
   news: {
     id: 'news',
-    nameKey: 'styles.editorial',
+    nameKey: 'styles.news',
     lightPalette: {
       background: '#F6F6F5',
       text: '#111111',

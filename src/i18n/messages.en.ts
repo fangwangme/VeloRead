@@ -203,10 +203,10 @@ export const en: Messages = {
   'typography.scrolled': 'Continuous vertical scrolling',
 
   'styles.book': 'Classic Book',
-  'styles.parchment': 'Parchment',
-  'styles.prose': 'Modern Prose',
-  'styles.academic': 'Academic',
-  'styles.editorial': 'Editorial',
+  'styles.sepia': 'Parchment',
+  'styles.modern': 'Modern Prose',
+  'styles.journal': 'Academic',
+  'styles.news': 'Editorial',
   'styles.song': 'Chinese Song',
 
   'fonts.original': 'Book’s own font (Original)',

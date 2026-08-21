@@ -201,10 +201,10 @@ export const zh = {
   'typography.scrolled': '连续垂直滚动模式',
 
   'styles.book': '经典书籍',
-  'styles.parchment': '复古羊皮纸',
-  'styles.prose': '现代散文',
-  'styles.academic': '学术论著',
-  'styles.editorial': '报刊社论',
+  'styles.sepia': '复古羊皮纸',
+  'styles.modern': '现代散文',
+  'styles.journal': '学术论著',
+  'styles.news': '报刊社论',
   'styles.song': '中文宋体',
 
   'fonts.original': '书籍原字体（Original）',

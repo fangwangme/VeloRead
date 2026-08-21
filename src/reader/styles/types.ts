@@ -34,7 +34,7 @@ export interface ElementsTypography {
 export interface ReadingStyle {
   id: StyleId
   /** Message key for the preset's display name, resolved where it is shown. */
-  nameKey: 'styles.book' | 'styles.parchment' | 'styles.prose' | 'styles.academic' | 'styles.editorial' | 'styles.song'
+  nameKey: 'styles.book' | 'styles.sepia' | 'styles.modern' | 'styles.journal' | 'styles.news' | 'styles.song'
   lightPalette: Palette
   darkPalette: Palette
   body: BodyTypography
