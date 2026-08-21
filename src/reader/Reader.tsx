@@ -15,6 +15,7 @@ import { useLibrary } from '../library/store'
 import { newId } from '../platform/ids'
 import { createReader, type ReaderHandle, type ReaderLocation } from './renderer'
 import { HighlightPopover, type HighlightDraft } from './annotations/HighlightPopover'
+import { AnnotationCard } from './annotations/AnnotationCard'
 import { PRESETS } from './styles/presets'
 import type { StyleId, StyleOverride } from './styles/types'
 import { resolveStyle } from './styles/resolve'
@@ -155,6 +156,13 @@ export function Reader({
 
   // Jump History (1-level)
   const [jumpOrigin, setJumpOrigin] = useState<string | null>(null)
+  /**
+   * Read by the auto-hide scheduler, which must not take the way back with it.
+   * The chrome hides itself after a few still seconds; a reader who has just
+   * jumped to a highlight and is reading it is exactly that still, and the only
+   * route back was going with it.
+   */
+  const jumpOriginRef = useRef<string | null>(null)
   const highlightFlashRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /**
    * Which drawer tab was last open. Held here rather than in the drawer so it
@@ -165,6 +173,12 @@ export function Reader({
 
   // Highlights & notes
   const [annotations, setAnnotations] = useState<Annotation[]>([])
+  /**
+   * The highlight being read from the drawer. Reading one is not going to it:
+   * the card shows the passage and the note where you are, and the jump is a
+   * button inside it.
+   */
+  const [openedAnnotation, setOpenedAnnotation] = useState<Annotation | null>(null)
   const [highlightDraft, setHighlightDraft] = useState<
     (HighlightDraft & { bounds: { width: number; height: number } }) | null
   >(null)
@@ -439,11 +453,12 @@ export function Reader({
     showSearchRef.current = showSearch
     showPacerControlsRef.current = showPacerControls
     clickToPositionRef.current = appSettings.clickToPositionPacer ?? true
+    jumpOriginRef.current = jumpOrigin
     errorRef.current = error
   })
 
   const blockingReaderPanelOpen =
-    showSettings || showToc || showSearch || highlightDraft !== null
+    showSettings || showToc || showSearch || highlightDraft !== null || openedAnnotation !== null
 
   /**
    * The margin taps stay live while the highlight popover is open, because a
@@ -556,7 +571,8 @@ export function Reader({
       showSettingsRef.current ||
       showTocRef.current ||
       showSearchRef.current ||
-      showPacerControlsRef.current
+      showPacerControlsRef.current ||
+      jumpOriginRef.current
     ) {
       return
     }
@@ -565,7 +581,8 @@ export function Reader({
         !showSettingsRef.current &&
         !showTocRef.current &&
         !showSearchRef.current &&
-        !showPacerControlsRef.current
+        !showPacerControlsRef.current &&
+        !jumpOriginRef.current
       ) {
         setChromeVisible(false)
       }
@@ -1318,6 +1335,7 @@ export function Reader({
   const handleDeleteAnnotationById = async (id: string) => {
     const annotation = annotations.find((item) => item.id === id)
     if (!annotation) return
+    setOpenedAnnotation((current) => (current?.id === id ? null : current))
     handleRef.current?.removeHighlight(annotation.cfiRange)
     setAnnotations((previous) => previous.filter((item) => item.id !== id))
     try {
@@ -1328,6 +1346,7 @@ export function Reader({
   }
 
   const handleNavigateToAnnotation = (annotation: Annotation) => {
+    setOpenedAnnotation(null)
     // Jumping to a highlight records where you came from, exactly as jumping
     // from the contents or a bookmark does. Without it there was no way back —
     // the one place in the drawer you cannot return from was the one you are
@@ -2006,9 +2025,19 @@ export function Reader({
           onNavigate={handleNavigate}
           onAddBookmark={handleAddBookmark}
           onDeleteBookmark={handleDeleteBookmark}
-          onNavigateToAnnotation={handleNavigateToAnnotation}
+          onOpenAnnotation={setOpenedAnnotation}
           onDeleteAnnotation={handleDeleteAnnotationById}
           onClose={() => setShowToc(false)}
+        />
+      )}
+
+      {openedAnnotation && (
+        <AnnotationCard
+          annotation={openedAnnotation}
+          canJump={openedAnnotation.source === 'local'}
+          onJump={() => handleNavigateToAnnotation(openedAnnotation)}
+          onDelete={() => void handleDeleteAnnotationById(openedAnnotation.id)}
+          onClose={() => setOpenedAnnotation(null)}
         />
       )}
     </div>

@@ -165,7 +165,7 @@ export function StatsModal({ dailyGoalMinutes, onClose }: StatsModalProps) {
                   <div className="flex items-center gap-1.5 text-[10px] text-neutral-500 dark:text-neutral-400">
                     <span>{t('stats.heatmapLess')}</span>
                     <span
-                      className="h-2.5 w-2.5 rounded-xs bg-neutral-200/70 ring-1 ring-inset ring-black/[0.07] dark:bg-neutral-800 dark:ring-0"
+                      className="h-2.5 w-2.5 rounded-xs bg-neutral-300/60 ring-1 ring-inset ring-black/[0.06] dark:bg-neutral-800 dark:ring-0"
                       title={t('stats.heatmap.none')}
                     />
                     {[...HEATMAP_LEVELS].reverse().map((level) => (
@@ -505,21 +505,33 @@ function ReadingVolumeCard({
   t: Translate
   language: Language
 }) {
+  const leadingIsCjk = cjkCharacters > latinWords
+  const leading = leadingIsCjk ? cjkCharacters : latinWords
+  const trailing = leadingIsCjk ? latinWords : cjkCharacters
+
   return (
     <div className="flex flex-col justify-between rounded-2xl border border-black/[0.10] bg-black/[0.035] p-4 transition hover:bg-black/[0.05] dark:border-white/[0.06] dark:bg-white/[0.03] dark:hover:bg-white/[0.05]">
       <div className="mb-2 flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
         <span className="text-[11px] font-medium">{t('stats.volume')}</span>
         <span className="opacity-70"><IconBook /></span>
       </div>
-      <div className="space-y-0.5 font-mono text-[11px] font-semibold text-neutral-800 dark:text-neutral-200">
-        <p>
-          {formatReadingCount(latinWords, t, language)}{' '}
-          <span className="font-sans font-medium text-neutral-500 dark:text-neutral-400">{t('stats.latinWords')}</span>
-        </p>
-        <p>
-          {formatReadingCount(cjkCharacters, t, language)}{' '}
-          <span className="font-sans font-medium text-neutral-500 dark:text-neutral-400">{t('stats.cjkCharacters')}</span>
-        </p>
+      {/* Both numbers matter, but two small lines next to three big ones broke
+          the row: the one you read more of leads, the other follows quietly. */}
+      <div>
+        <div className="flex items-baseline gap-1">
+          <span className="font-mono text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
+            {formatReadingCount(leading, t, language)}
+          </span>
+          <span className="text-xs font-medium text-neutral-500">
+            {t(leadingIsCjk ? 'stats.cjkCharacters' : 'stats.latinWords')}
+          </span>
+        </div>
+        {trailing > 0 && (
+          <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+            <span className="font-mono font-semibold">{formatReadingCount(trailing, t, language)}</span>{' '}
+            {t(leadingIsCjk ? 'stats.latinWords' : 'stats.cjkCharacters')}
+          </p>
+        )}
       </div>
     </div>
   )
@@ -622,7 +634,7 @@ function HeatmapGrid({
               }
 
               const bg = HEATMAP_LEVELS.find((level) => day.minutes > level.min)?.swatch
-                ?? 'bg-neutral-200/70 ring-1 ring-inset ring-black/[0.07] dark:bg-neutral-800 dark:ring-0'
+                ?? 'bg-neutral-300/60 ring-1 ring-inset ring-black/[0.06] dark:bg-neutral-800 dark:ring-0'
 
               return (
                 <div
