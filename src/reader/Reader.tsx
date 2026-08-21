@@ -70,9 +70,11 @@ const MAX_PAGE_DWELL_SECONDS = 300 // Max 5 minutes per page to prevent idle tra
 export function Reader({
   bookId,
   appSettings,
+  onAppSettingsChange,
 }: {
   bookId: string
   appSettings: AppSettings
+  onAppSettingsChange: (changes: Partial<AppSettings>) => Promise<void>
 }) {
   const t = useT()
   const closeBook = useLibrary((s) => s.closeBook)
@@ -568,10 +570,19 @@ export function Reader({
         if (rawStyleId === 'night') {
           rawStyleId = 'book'
         }
-        const initialStyleId: StyleId = (rawStyleId && PRESETS[rawStyleId as StyleId] ? rawStyleId as StyleId : undefined) ?? (isChinese ? 'song' : 'book')
-        const initialOverrides: StyleOverride = savedSettings?.overrides ?? {}
-        const initialFlow = savedSettings?.flow ?? 'paginated'
         const initialAppSettings = initialAppSettingsRef.current
+        // A book opened for the first time inherits the typography you last
+        // chose. Resetting to the factory preset every time means a setting
+        // like single-column has to be re-applied for every book on the shelf.
+        const initialStyleId: StyleId =
+          (rawStyleId && PRESETS[rawStyleId as StyleId] ? (rawStyleId as StyleId) : undefined) ??
+          (initialAppSettings.defaultStyleId && PRESETS[initialAppSettings.defaultStyleId]
+            ? initialAppSettings.defaultStyleId
+            : undefined) ??
+          (isChinese ? 'song' : 'book')
+        const initialOverrides: StyleOverride =
+          savedSettings?.overrides ?? initialAppSettings.defaultOverrides ?? {}
+        const initialFlow = savedSettings?.flow ?? initialAppSettings.flow ?? 'paginated'
         const initialPacerWpm = savedSettings?.pacerWpm ?? initialAppSettings.pacerWpm ?? 250
         const initialPacerCpm = savedSettings?.pacerCpm ?? initialAppSettings.pacerCpm ?? 300
         const initialPacerChunkSize =
@@ -825,9 +836,20 @@ export function Reader({
     void write.catch(() => undefined)
   }
 
+  /**
+   * Typography changes are saved on the book *and* remembered as the default
+   * for books that have none of their own. Rolling back a failed write is not
+   * worth it here: the value is a default for the next book, and it will be
+   * rewritten by the next adjustment.
+   */
+  const rememberTypographyDefault = (changes: Partial<AppSettings>) => {
+    void onAppSettingsChange(changes).catch(() => undefined)
+  }
+
   const handleStyleSelect = (id: StyleId) => {
     setStyleId(id)
     saveCurrentSettings({ styleId: id })
+    rememberTypographyDefault({ defaultStyleId: id })
   }
 
   const handleOverridesChange = (newOverrides: StyleOverride) => {
@@ -843,6 +865,7 @@ export function Reader({
       })
     }
     saveCurrentSettings({ overrides: newOverrides })
+    rememberTypographyDefault({ defaultOverrides: newOverrides })
   }
 
   const handleFlowChange = async (newFlow: 'paginated' | 'scrolled-doc') => {
@@ -853,6 +876,7 @@ export function Reader({
       pacer.recalculateGeometry()
     }
     saveCurrentSettings({ flow: newFlow })
+    rememberTypographyDefault({ flow: newFlow })
   }
 
   const turnPage = (direction: 'prev' | 'next') => {
@@ -1110,6 +1134,7 @@ export function Reader({
     >
       {/* Top Header Bar with Apple Books floating glass aesthetic & Auto-hide */}
       <header
+        data-tauri-drag-region
         className={`fixed top-0 inset-x-0 z-30 flex items-center justify-between gap-4 px-6 pt-5 pb-3 transition-[opacity,transform] duration-300 motion-reduce:transition-none ${
           chromeVisible
             ? 'opacity-100 translate-y-0 pointer-events-auto'
@@ -1164,8 +1189,8 @@ export function Reader({
           </button>
         </div>
 
-        <div className="min-w-0 flex-1 text-center px-4">
-          <p className="truncate text-xs font-semibold tracking-tight opacity-90">
+        <div data-tauri-drag-region className="min-w-0 flex-1 px-4 text-center">
+          <p data-tauri-drag-region className="truncate text-xs font-semibold tracking-tight opacity-90">
             {book?.title ?? t('reader.reading')}
           </p>
           {location?.chapterTitle && (

@@ -75,10 +75,19 @@ export function Library({
       }}
       onDrop={onDrop}
     >
-      {/* Top Navbar */}
-      <header className="sticky top-0 z-30 flex items-center justify-between gap-4 px-8 pt-8 pb-5 backdrop-blur-md bg-[#FBFBFA]/80 dark:bg-[#121214]/80 border-b border-black/[0.04] dark:border-white/[0.04]">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">{t('library.title')}</h1>
+      {/* Top Navbar. `data-tauri-drag-region` makes the bar itself behave like a
+          title bar — the window has none, since it is drawn with an overlay
+          title bar and a hidden title. Tauri only starts a drag when the
+          mousedown lands on the element carrying the attribute, so the buttons
+          and the file input below stay clickable. */}
+      <header
+        data-tauri-drag-region
+        className="sticky top-0 z-30 flex items-center justify-between gap-4 px-8 pt-8 pb-5 backdrop-blur-md bg-[#FBFBFA]/80 dark:bg-[#121214]/80 border-b border-black/[0.07] dark:border-white/[0.04]"
+      >
+        <div data-tauri-drag-region>
+          <h1 data-tauri-drag-region className="text-xl font-bold tracking-tight">
+            {t('library.title')}
+          </h1>
           {books.length > 0 && (
             <p className="mt-0.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
               {t.plural('library.bookCount', books.length)}

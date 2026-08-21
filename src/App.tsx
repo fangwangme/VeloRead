@@ -110,7 +110,12 @@ export default function App() {
       {!settingsHydrated ? (
         <BootScreen />
       ) : view.name === 'reader' ? (
-        <Reader key={view.bookId} bookId={view.bookId} appSettings={appSettings} />
+        <Reader
+          key={view.bookId}
+          bookId={view.bookId}
+          appSettings={appSettings}
+          onAppSettingsChange={updateAppSettings}
+        />
       ) : (
         <Library appSettings={appSettings} onAppSettingsChange={updateAppSettings} />
       )}

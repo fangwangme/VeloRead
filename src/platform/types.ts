@@ -58,9 +58,18 @@ export interface BookSettings {
   updatedAt: string
 }
 
-/** Global application settings. */
+/**
+ * Global application settings.
+ *
+ * The typography entries are *defaults for books that have no setting of their
+ * own*, not a global override: changing typography inside a book saves it on
+ * that book and updates these, so the next book you open starts where you left
+ * off instead of resetting to the factory preset.
+ */
 export interface AppSettings {
   defaultStyleId?: StyleId
+  /** Seeds `BookSettings.overrides` for a book opened for the first time. */
+  defaultOverrides?: StyleOverride
   themeMode?: 'auto' | 'light' | 'dark'
   /** UI language. `auto` follows the system. */
   language?: LanguagePreference

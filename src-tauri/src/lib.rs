@@ -31,6 +31,10 @@ pub fn run() {
             library::library_record_reading_session,
             library::library_get_reading_stats,
         ])
+        // Restores size, position and maximized state, and saves them on exit.
+        // A reader is a window you size once for your eyes and expect to find
+        // that way tomorrow.
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
