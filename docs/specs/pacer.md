@@ -100,7 +100,10 @@ usePacer.ts   薄封装，把 engine 接到 React
 文本与几何统一由 `ReaderHandle.getVisibleWords()` 提供（未来格式统一接口见
 [reading-formats](reading-formats.md)），Pacer hook 不直接遍历书页 DOM。
 
-`getVisibleWords()` 先按整个文本节点做一次视口裁剪，再对留下的节点逐 token 取矩形。
+`getVisibleWords()` 先按整个文本节点做一次视口裁剪，再对留下的节点逐 token 取矩形；
+**裁剪一无所获时回退到不裁剪的整轮测量**——裁剪建立在「整个文本节点的 `getBoundingClientRect()`」
+之上，而各引擎对 CSS 多栏里的这个矩形并不总是一致，引擎分歧的代价应该是几帧，而不是让 Pacer
+拿不到任何可推进的东西。
 分页模式下一页只占章节的一小部分，**逐 token 建 Range 会把整章的布局全算一遍**，
 单文件长章节每翻一页就是上万次强制重排。节点级矩形是各行盒的并集，只会多留不会漏。
 
@@ -138,6 +141,16 @@ dwell = (块内计数单位 / 当前块速率) * 60000 + 标点停顿
 这是一套**独立逻辑**，是本模块最容易被低估的部分。
 当前实现会收集当前 spine section 的正文块，并在高亮接近视口边缘时平滑滚动；章节结束后再进入
 下一 spine section。不能只收集当前可见片段后直接 `next()`，否则会跳过本章尚未滚入视口的正文。
+
+### 8.1 翻页必须等 `relocated`
+
+`rendition.next()` 的 promise **早于 `relocated` 事件** resolve：epub.js 的 `reportLocation()`
+只是把一个 `requestAnimationFrame` 排进队列，入队函数本身立刻返回，队列不等这一帧跑完。
+所以在 `await rendition.next()` 之后直接读位置，读到的仍是**翻页前**那一页——判定「没翻成」，
+引擎随即暂停。
+
+Blink 常常赢下这个竞态，WebKit 不会，于是症状是「浏览器里好好的，打包成 app 之后每翻一页
+就停」。**翻页必须显式等 `relocated`（带超时兜底，否则一次空翻会把 Pacer 永远挂住）。**
 
 ## 9. 必须重算几何的时机
 

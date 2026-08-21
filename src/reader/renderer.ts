@@ -103,6 +103,9 @@ export interface ReaderHandle {
   destroy(): void
 }
 
+/** How long a page turn may take to report its new location before we give up. */
+const RELOCATION_TIMEOUT_MS = 800
+
 interface RawNavItem {
   id?: string
   label?: string
@@ -324,9 +327,40 @@ export async function createReader(
     }
   }
 
+  /**
+   * Callers waiting for the *next* `relocated` event.
+   *
+   * `rendition.next()` resolves as soon as epub.js's `reportLocation()` has
+   * scheduled its `requestAnimationFrame` — the enqueued function returns
+   * before the frame runs, so the queue does not wait for it. Sampling the
+   * location right after awaiting `next()` therefore still reads the page we
+   * just left. Blink happens to win that race often enough to hide it; WebKit
+   * does not, which is why the Pacer stopped after every page turn in the
+   * packaged app but not in the browser.
+   */
+  let relocationWaiters: (() => void)[] = []
+
+  function whenRelocated(timeoutMs: number): Promise<void> {
+    return new Promise((resolve) => {
+      let settled = false
+      const finish = () => {
+        if (settled) return
+        settled = true
+        resolve()
+      }
+      relocationWaiters.push(finish)
+      // A `next()` that turns out to be a no-op never relocates; the Pacer must
+      // not hang waiting for an event that is not coming.
+      setTimeout(finish, timeoutMs)
+    })
+  }
+
   rendition.on('relocated', (location: RelocatedEvent) => {
     lastLocation = makeLocationPayload(location)
     options.onLocation?.(lastLocation)
+    const waiters = relocationWaiters
+    relocationWaiters = []
+    for (const resolve of waiters) resolve()
   })
 
   // Display initial position
@@ -356,7 +390,26 @@ export async function createReader(
     return container.querySelector<HTMLElement>('.epub-container')
   }
 
+  /**
+   * Words on the page, measured.
+   *
+   * Two passes exist because the fast one is built on
+   * `Range.getBoundingClientRect()` over a whole text node, and engines do not
+   * always agree about that rect inside a CSS multi-column layout. If the cull
+   * yields nothing, measuring every token is slower but is the behaviour that
+   * predates the optimisation — and it means an engine disagreement costs
+   * frames rather than leaving the Pacer with nothing to pace.
+   */
   function collectWords(includeWholeScrolledSection: boolean): WordItem[] {
+    const culled = measureWords(includeWholeScrolledSection, true)
+    if (culled.length > 0) return culled
+    return measureWords(includeWholeScrolledSection, false)
+  }
+
+  function measureWords(
+    includeWholeScrolledSection: boolean,
+    cull: boolean,
+  ): WordItem[] {
     const iframe = getIframe()
     if (!iframe || !iframe.contentDocument || !iframe.contentWindow) return []
 
@@ -389,7 +442,8 @@ export async function createReader(
 
     // In scrolled flow the Pacer owns the whole spine section, so every token is
     // wanted and there is nothing to cull.
-    const cullToViewport = !(includeWholeScrolledSection && currentFlow === 'scrolled-doc')
+    const cullToViewport =
+      cull && !(includeWholeScrolledSection && currentFlow === 'scrolled-doc')
     // One reusable range for the per-node test: measuring a whole text node once
     // decides whether any of its tokens can be on this page. Without it every
     // token in the section cost a `createRange()` plus a forced layout, so a
@@ -652,7 +706,11 @@ export async function createReader(
     advancePacerPage: async () => {
       if (lastLocation?.atEnd) return false
       const before = lastLocation?.cfi ?? null
+      // Subscribe before turning: the event can land while `next()` is still
+      // settling, and missing it would look exactly like a failed page turn.
+      const relocated = whenRelocated(RELOCATION_TIMEOUT_MS)
       await rendition.next()
+      await relocated
       return Boolean(lastLocation?.cfi && lastLocation.cfi !== before)
     },
     ensurePacerRectVisible,
