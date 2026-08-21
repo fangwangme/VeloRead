@@ -1,4 +1,22 @@
-# 构建与打包
+# 构建与运行
+
+**VeloRead 不发布二进制包，请自己构建。**
+
+不是因为麻烦，是因为没有 Apple Developer ID 证书。未签名的 `.app` 一旦经过下载
+（浏览器、AirDrop、网盘都算）就会带上 quarantine 标记，Gatekeeper 直接拒绝，
+用户看到的是「已损坏，应移到废纸篓」——**不是**「此开发者未验证，是否打开」。
+后者还能右键绕过，前者会让人以为文件坏了。
+
+把这样的包挂出去，等于把一个看起来像故障的东西交给别人。
+自己 `bun run app:build` 出来的 `.app` 没有 quarantine 标记，双击即开。
+
+签名需要 99 美元/年的 Apple Developer Program。等这个项目值得那笔钱的时候再说。
+
+## 前置
+
+- [bun](https://bun.sh)
+- Rust 工具链（[rustup](https://rustup.rs)）
+- Xcode Command Line Tools：`xcode-select --install`
 
 ## 日常
 
@@ -55,16 +73,20 @@ bun run app:build:universal    # Intel + Apple silicon 合一
 **改 `src-tauri/tauri.conf.json` 的 `version`，那是唯一来源。** `package.json` 跟着它写，
 打包脚本也从它读——产物文件名、`.local/release/` 的目录名都由它决定。
 
-## 分发前还差什么
+## 关于架构
 
-目前的产物**能自己用，不能给别人**：
+默认只出本机架构。Intel 机器上打出来的是 x86_64，拿到 Apple silicon 上要装 Rosetta 才能跑。
+自己构建不会遇到这个问题——你就在目标机器上。`app:build:universal` 是给「一台机器打包、
+另一台机器用」准备的，代价是编译两遍。
 
-- **未签名、未公证。** 别人下载得到的 `.dmg` 带 quarantine 标记，Gatekeeper 会直接拒绝，
-  提示「已损坏」。需要 Developer ID 证书 + `notarytool`。
-- **默认只出本机架构。** Intel 机器上打出来的是 x86_64，Apple silicon 上要装 Rosetta 才能跑，
-  没装就打不开。面向他人分发应当用 `app:build:universal`。
+## 如果将来要分发
 
-自己用不受影响：本地构建的 `.app` 没有 quarantine 标记，双击即开。
+需要两样东西，缺一不可：
+
+1. **Developer ID 证书**签名，加 `notarytool` 公证。仅签名不公证，Gatekeeper 一样拦。
+2. **universal binary**，否则一半的 Mac 用户打不开。
+
+在那之前，README 里给的就是这份文档的链接，不是下载链接。
 
 ## 产物目录
 

@@ -38,7 +38,14 @@ started, and nothing exports yet. Start at
 - **Vocabulary** — look up a word, keep the sentence it came from, export it as plain text.
   Kindle records this too, but won't let you take it with you. This will
 
-## Development
+## Running it
+
+There are no downloads. VeloRead is not code-signed, and an unsigned app that
+arrives over the network is quarantined by Gatekeeper as *damaged* — not as
+*unverified*, which you could right-click past. Handing someone a build that
+looks broken is worse than handing them a build command, so: build it yourself.
+It takes one command and the result opens by double-clicking, because a locally
+built app is never quarantined.
 
 ```bash
 bun install
@@ -51,6 +58,7 @@ bun run build      # tsc -b && vite build
 ```
 
 Requires [bun](https://bun.sh), a Rust toolchain, and Xcode Command Line Tools.
+The bundle lands in `.local/release/<version>/`.
 
 CI runs lint, tests and the type-checked build on Linux, and `cargo fmt --check`,
 `cargo clippy -D warnings` and `cargo test` on macOS, for every pull request.
