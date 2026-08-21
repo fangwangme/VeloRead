@@ -44,6 +44,7 @@ src/platform/
 | `readCover(id)` | 封面字节，无封面返回 `null` |
 | `getProgress(bookId)` | 阅读位置，从未读过返回 `null` |
 | `saveProgress(progress)` | upsert 进度，并把 `books.lastReadAt` 更新为同一时间戳 |
+| `listProgress()` | 一次取回全部书籍的阅读位置，供书架画进度条，避免逐本查询 |
 | `listCollections()` / `saveCollection(c)` / `deleteCollection(id)` | 合集的增删改；删除合集不动书籍 |
 | `setBookCollections(bookId, ids)` / `listCollectionMembership()` | 整体替换一本书的归属；一次取回全部归属供书架筛选 |
 | `listAnnotations(bookId)` / `saveAnnotation(a)` / `deleteAnnotation(id)` | 划线与笔记的增删改，`saveAnnotation` 是 upsert |

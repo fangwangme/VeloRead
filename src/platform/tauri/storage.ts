@@ -61,6 +61,10 @@ export function createTauriStorage(): StoragePort {
       return invoke<ReadingProgress | null>('library_get_progress', { bookId })
     },
 
+    listProgress() {
+      return invoke<Record<string, ReadingProgress>>('library_list_progress')
+    },
+
     saveProgress(progress: ReadingProgress) {
       return invoke<void>('library_save_progress', { progress })
     },

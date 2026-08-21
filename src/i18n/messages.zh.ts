@@ -27,6 +27,8 @@ export const zh = {
   'library.statsHint': '查看阅读数据与热力图',
   'library.settings': '应用设置',
   'library.settingsHint': '调整应用外观与阅读目标',
+  'library.percentRead': '已读 {n}%',
+  'library.finished': '已读完',
   'library.dismissError': '忽略',
   'library.loading': '正在载入书库…',
   'library.emptyCollection': '这个合集里还没有书籍',

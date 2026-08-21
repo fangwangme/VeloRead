@@ -19,11 +19,13 @@ and nothing exports yet.
 ### Added
 
 - **Library** — import EPUB by drag or file picker, cover-grid shelf ordered by
-  last read, and collections a book can belong to several of at once.
+  last read with reading progress on each cover, and collections a book can
+  belong to several of at once.
 - **Reader** — six typography presets, relative steps for size, leading and
   measure, typeface choice, single/double/adaptive columns, paginated and
   scrolling flow. Contents, bookmarks and highlights share one drawer.
-  Typography saves per book and seeds the next book you open.
+  Typography is kept per script — one Chinese setup, one English one — so
+  tuning it once covers every book in that language.
 - **Pacer** — a highlight that advances through the text at a set pace, to
   train reading past subvocalization. One engine with separate profiles for
   Latin (words/min) and CJK (graphemes/min), applied per chunk so mixed text

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { getStorage } from '../platform'
-import type { BookRecord, Collection } from '../platform/types'
+import type { BookRecord, Collection, ReadingProgress } from '../platform/types'
 import { parseEpubMetadata } from '../epub/metadata'
 import { compareCollections } from '../platform/sort'
 import { newId } from '../platform/ids'
@@ -23,6 +23,8 @@ interface LibraryState {
   collections: Collection[]
   /** bookId -> collectionIds. */
   membership: Record<string, string[]>
+  /** bookId -> where you left off, for the shelf's progress bars. */
+  progress: Record<string, ReadingProgress>
   /** True until the first `load()` settles. */
   loading: boolean
   /** Filename currently being imported, or null. */
@@ -46,6 +48,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   books: [],
   collections: [],
   membership: {},
+  progress: {},
   loading: true,
   importing: null,
   error: null,
@@ -54,12 +57,13 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   async load() {
     try {
       const storage = await getStorage()
-      const [books, collections, membership] = await Promise.all([
+      const [books, collections, membership, progress] = await Promise.all([
         storage.listBooks(),
         storage.listCollections(),
         storage.listCollectionMembership(),
+        storage.listProgress(),
       ])
-      set({ books, collections, membership, loading: false })
+      set({ books, collections, membership, progress, loading: false })
     } catch (cause) {
       set({ loading: false, error: { key: 'library.error.open', values: { message: message(cause) } } })
     }
@@ -112,7 +116,9 @@ export const useLibrary = create<LibraryState>((set, get) => ({
       await storage.deleteBook(id)
       const membership = { ...get().membership }
       delete membership[id]
-      set({ books: get().books.filter((book) => book.id !== id), membership })
+      const progress = { ...get().progress }
+      delete progress[id]
+      set({ books: get().books.filter((book) => book.id !== id), membership, progress })
     } catch (cause) {
       set({ error: { key: 'library.error.delete', values: { message: message(cause) } } })
     }

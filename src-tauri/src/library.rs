@@ -401,6 +401,28 @@ mod store {
             .optional()
     }
 
+    /// Every book's position in one query, so the shelf does not ask per book.
+    pub fn list_progress(
+        connection: &Connection,
+    ) -> rusqlite::Result<std::collections::HashMap<String, ReadingProgress>> {
+        let mut statement = connection
+            .prepare("SELECT book_id, cfi, percentage, updated_at FROM reading_progress")?;
+        let rows = statement.query_map([], |row| {
+            Ok(ReadingProgress {
+                book_id: row.get(0)?,
+                cfi: row.get(1)?,
+                percentage: row.get(2)?,
+                updated_at: row.get(3)?,
+            })
+        })?;
+        let mut all = std::collections::HashMap::new();
+        for row in rows {
+            let progress = row?;
+            all.insert(progress.book_id.clone(), progress);
+        }
+        Ok(all)
+    }
+
     /// Upserts the position and stamps the book's `last_read_at` with the same
     /// timestamp, which is what moves it to the front of the shelf.
     pub fn save_progress(
@@ -970,6 +992,14 @@ pub fn library_get_progress(
     book_id: String,
 ) -> Result<Option<ReadingProgress>, String> {
     state.with_db(&app, |connection| store::get_progress(connection, &book_id))
+}
+
+#[tauri::command]
+pub fn library_list_progress(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+) -> Result<std::collections::HashMap<String, ReadingProgress>, String> {
+    state.with_db(&app, store::list_progress)
 }
 
 #[tauri::command]

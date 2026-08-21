@@ -27,6 +27,8 @@ export const en: Messages = {
   'library.statsHint': 'Reading numbers and the activity heatmap',
   'library.settings': 'Settings',
   'library.settingsHint': 'Appearance and daily reading goal',
+  'library.percentRead': '{n}%',
+  'library.finished': 'Finished',
   'library.dismissError': 'Dismiss',
   'library.loading': 'Loading library…',
   'library.emptyCollection': 'No books in this collection yet',

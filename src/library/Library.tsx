@@ -241,12 +241,22 @@ function BookTile({ book }: { book: BookRecord }) {
   const collections = useLibrary((s) => s.collections)
   const membership = useLibrary((s) => s.membership)
   const setBookCollections = useLibrary((s) => s.setBookCollections)
+  const progress = useLibrary((s) => s.progress[book.id])
   const [menuOpen, setMenuOpen] = useState(false)
   const selected = membership[book.id] ?? []
   const openBook = useLibrary((s) => s.openBook)
   const removeBook = useLibrary((s) => s.removeBook)
   const { confirm, confirmDialog } = useConfirm()
   const t = useT()
+  // Null below one percent, which covers both a book never opened and one
+  // whose progress was written before epub.js had generated its locations —
+  // that writes a zero, and "0%" under a cover says nothing a blank space does
+  // not say better.
+  const percent = (() => {
+    if (!progress || progress.cfi === null) return null
+    const value = Math.round((progress.percentage ?? 0) * 100)
+    return value >= 1 ? value : null
+  })()
 
   return (
     <li className="group relative">
@@ -255,17 +265,33 @@ function BookTile({ book }: { book: BookRecord }) {
         className="block w-full cursor-pointer rounded-lg text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-500"
         onClick={() => openBook(book.id)}
       >
-        <div className="aspect-2/3 w-full rounded-lg shadow-[0_6px_18px_rgba(0,0,0,0.12),0_1px_3px_rgba(0,0,0,0.06)] transition-[transform,box-shadow] duration-200 group-hover:-translate-y-1.5 group-hover:shadow-[0_16px_32px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.08)] motion-reduce:transition-none">
+        <div className="relative aspect-2/3 w-full overflow-hidden rounded-lg shadow-[0_6px_18px_rgba(0,0,0,0.12),0_1px_3px_rgba(0,0,0,0.06)] transition-[transform,box-shadow] duration-200 group-hover:-translate-y-1.5 group-hover:shadow-[0_16px_32px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.08)] motion-reduce:transition-none">
           <BookCover book={book} />
+          {/* Only for books actually started. A bar at zero on every unread
+              cover is noise, and a bar at 100% is the one worth seeing. */}
+          {percent !== null && (
+            <span
+              aria-hidden="true"
+              className="absolute inset-x-0 bottom-0 h-1 bg-black/25 backdrop-blur-sm"
+            >
+              <span
+                className="block h-full bg-blue-500"
+                style={{ width: `${Math.max(2, percent)}%` }}
+              />
+            </span>
+          )}
         </div>
         <p className="mt-2.5 line-clamp-2 text-xs font-semibold leading-snug tracking-tight text-neutral-800 dark:text-neutral-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition">
           {book.title}
         </p>
-        {book.author && (
-          <p className="mt-0.5 line-clamp-1 text-[11px] text-neutral-500 dark:text-neutral-400">
-            {book.author}
-          </p>
-        )}
+        <p className="mt-0.5 flex items-baseline gap-1.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+          {book.author && <span className="line-clamp-1">{book.author}</span>}
+          {percent !== null && (
+            <span className="ml-auto shrink-0 font-mono text-[10px] tabular-nums">
+              {percent >= 99 ? t('library.finished') : t('library.percentRead', { n: percent })}
+            </span>
+          )}
+        </p>
       </button>
 
       {/* Hover actions: file into collections, or remove from the library */}

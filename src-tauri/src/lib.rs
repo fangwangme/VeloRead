@@ -13,6 +13,7 @@ pub fn run() {
             library::library_read_book_file,
             library::library_read_cover,
             library::library_get_progress,
+            library::library_list_progress,
             library::library_save_progress,
             library::library_get_book_settings,
             library::library_save_book_settings,

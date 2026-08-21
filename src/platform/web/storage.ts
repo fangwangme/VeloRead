@@ -222,6 +222,14 @@ export function createWebStorage(databaseName = DB_NAME): StoragePort {
       return progress ?? null
     },
 
+    async listProgress() {
+      const tx = handle().transaction(PROGRESS, 'readonly')
+      const rows = await request<ReadingProgress[]>(tx.objectStore(PROGRESS).getAll())
+      const byBook: Record<string, ReadingProgress> = {}
+      for (const row of rows) byBook[row.bookId] = row
+      return byBook
+    },
+
     async saveProgress(progress: ReadingProgress) {
       const tx = handle().transaction([PROGRESS, BOOKS], 'readwrite')
       tx.objectStore(PROGRESS).put(progress)

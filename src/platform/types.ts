@@ -230,6 +230,8 @@ export interface StoragePort {
   readBookFile(id: string): Promise<Uint8Array>
   readCover(id: string): Promise<Uint8Array | null>
   getProgress(bookId: string): Promise<ReadingProgress | null>
+  /** bookId -> progress, so the shelf does not query once per book. */
+  listProgress(): Promise<Record<string, ReadingProgress>>
   /** Upserts progress and stamps the book's `lastReadAt`. */
   saveProgress(progress: ReadingProgress): Promise<void>
   getBookSettings(bookId: string): Promise<BookSettings | null>
