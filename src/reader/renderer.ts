@@ -71,6 +71,15 @@ export interface ReaderOptions {
   onHighlightClick?: (annotationId: string) => void
   flow?: 'paginated' | 'scrolled-doc'
   spreadMode?: 'auto' | 'single' | 'double'
+  /**
+   * Container width at which `auto` may split into two columns.
+   *
+   * Not a constant: two columns are only an improvement while each one still
+   * holds a readable measure. Below that they are the same text in shorter
+   * lines, which is worse, so the threshold has to come from the measure the
+   * typography is actually set to.
+   */
+  minSpreadWidth?: number
   style?: ResolvedStyle
 }
 
@@ -81,7 +90,7 @@ export interface ReaderHandle {
   resize(width: number, height: number): void
   applyStyle(style: ResolvedStyle): void
   setFlow(flow: 'paginated' | 'scrolled-doc'): Promise<void>
-  setSpread(mode: 'auto' | 'single' | 'double'): Promise<void>
+  setSpread(mode: 'auto' | 'single' | 'double', minSpreadWidth?: number): Promise<void>
   getToc(): Promise<TocItem[]>
   getVisibleWords(): WordItem[]
   getViewportWords(): WordItem[]
@@ -110,6 +119,9 @@ export interface ReaderHandle {
   destroy(): void
 }
 
+/** Fallback threshold when the caller has not measured its typography yet. */
+const DEFAULT_MIN_SPREAD_WIDTH = 1500
+
 /** How long a page turn may take to report its new location before we give up. */
 const RELOCATION_TIMEOUT_MS = 800
 
@@ -137,6 +149,7 @@ export async function createReader(
   const book: Book = ePub(detach(data))
   let currentFlow = options.flow ?? 'paginated'
   let currentSpreadMode = options.spreadMode ?? 'auto'
+  let currentMinSpreadWidth = options.minSpreadWidth ?? DEFAULT_MIN_SPREAD_WIDTH
 
   const initialSpread = currentSpreadMode === 'single' ? 'none' : currentSpreadMode === 'double' ? 'always' : 'auto'
 
@@ -145,7 +158,7 @@ export async function createReader(
     height: '100%',
     flow: currentFlow,
     spread: initialSpread,
-    minSpreadWidth: 860,
+    minSpreadWidth: currentMinSpreadWidth,
     allowScriptedContent: false,
   })
 
@@ -585,12 +598,14 @@ export async function createReader(
       }
       await rendition.display(currentLoc ?? undefined)
     },
-    setSpread: async (mode: 'auto' | 'single' | 'double') => {
-      if (mode === currentSpreadMode) return
+    setSpread: async (mode: 'auto' | 'single' | 'double', minSpreadWidth?: number) => {
+      const nextMin = minSpreadWidth ?? currentMinSpreadWidth
+      if (mode === currentSpreadMode && nextMin === currentMinSpreadWidth) return
       currentSpreadMode = mode
+      currentMinSpreadWidth = nextMin
       const currentLoc = rendition.location?.start?.cfi
       const spreadValue = mode === 'single' ? 'none' : mode === 'double' ? 'always' : 'auto'
-      rendition.spread(spreadValue, 860)
+      rendition.spread(spreadValue, currentMinSpreadWidth)
       if (currentStyle) {
         registerAndApplyStyle(currentStyle)
       }

@@ -199,6 +199,17 @@ export function Reader({
     }, 750)
   }, [])
 
+  // The adaptive column count depends on how wide the window is, so it has to
+  // be state rather than something read once.
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window === 'undefined' ? 1280 : window.innerWidth,
+  )
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
   // System dark detection
   const [systemDark, setSystemDark] = useState(() =>
     typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)')?.matches
@@ -381,22 +392,47 @@ export function Reader({
   }, [showPacerControls])
 
   // Measure-based maxWidth calculation that adapts to single vs double columns
-  const measureMaxWidthPx = useMemo(() => {
+  /**
+   * How wide the reading column may get, and when two columns are allowed.
+   *
+   * Both come from one number: the width of a line at the measure the
+   * typography is set to. Two columns are only an improvement while each of
+   * them still holds that measure — below it they are the same text in shorter
+   * lines, which is worse, not denser. `minSpreadWidth` was a constant 860,
+   * so a 1280px window split into two columns of 49 characters, well under the
+   * 55–75 this style system exists to hold.
+   */
+  const { measureMaxWidthPx, minSpreadWidthPx } = useMemo(() => {
+    // How much room the book column actually has: the window less the two
+    // page-turn margins beside it.
+    const available = Math.max(320, viewportWidth - 96)
     const isCjk = Boolean(resolvedStyle.body.isCjk)
     const ch = resolvedStyle.body.measureCh
     const fontSize = resolvedStyle.body.fontSizePx
     const singleMeasure = isCjk ? ch * fontSize : Math.round(ch * fontSize * 0.58)
     const spreadMode = overrides.spreadMode ?? 'auto'
+    const twoColumns = singleMeasure * 2 + 160
 
-    if (spreadMode === 'single') {
-      return Math.max(600, singleMeasure + 80)
-    }
-    if (spreadMode === 'double') {
-      return Math.max(1000, singleMeasure * 2 + 160)
-    }
-    // Auto mode: allow container to expand up to double column width for responsive 1-or-2 column adaptation
-    return Math.max(680, Math.min(1480, singleMeasure * 2 + 160))
-  }, [resolvedStyle, overrides.spreadMode])
+    const oneColumn = Math.max(600, singleMeasure + 80)
+    const maxWidth =
+      spreadMode === 'single'
+        ? oneColumn
+        : spreadMode === 'double'
+          ? Math.max(1000, twoColumns)
+          : // Adaptive: two columns only when both of them fit the measure.
+            // Letting the container stay wide while epub.js drops to one column
+            // is the worst of both — one column stretched to 111 characters.
+            available >= twoColumns
+            ? twoColumns
+            : oneColumn
+
+    return { measureMaxWidthPx: maxWidth, minSpreadWidthPx: twoColumns }
+  }, [resolvedStyle, overrides.spreadMode, viewportWidth])
+
+  // Read through a ref inside the reader lifecycle, which must not restart when
+  // the typography changes.
+  const minSpreadWidthRef = useRef(minSpreadWidthPx)
+  minSpreadWidthRef.current = minSpreadWidthPx
 
   // Auto-hide chrome scheduler
   const pingActivity = () => {
@@ -711,6 +747,7 @@ export function Reader({
         reader = await createReader(containerRef.current, data, savedProgress?.cfi ?? null, {
           flow: initialFlow,
           spreadMode: initialOverrides.spreadMode ?? 'auto',
+          minSpreadWidth: minSpreadWidthRef.current,
           style: initialResolved,
           onKeyDown,
           onClickText({ range, blankSide }) {
@@ -883,6 +920,25 @@ export function Reader({
     }
   }, [bookId, bookLanguage, closeBook, creditReadingUnits, flushReadingSession, measureContainerBounds])
 
+  /**
+   * Push the column decision to epub.js.
+   *
+   * Both inputs move: the mode when the user picks one, and the threshold
+   * whenever the type scale or the measure changes. Driving it from an effect
+   * rather than from the click handler is what keeps them in step — changing
+   * the font size used to leave epub.js holding the threshold computed when the
+   * book was opened, so it kept two columns of 160 characters.
+   */
+  useEffect(() => {
+    if (!handleRef.current || !ready) return
+    suppressLayoutTracking()
+    void handleRef.current
+      .setSpread(overrides.spreadMode ?? 'auto', minSpreadWidthPx)
+      .then(() => {
+        setTimeout(() => pacerRef.current.recalculateGeometry(false), 80)
+      })
+  }, [minSpreadWidthPx, overrides.spreadMode, ready, suppressLayoutTracking])
+
   // Apply style updates
   useEffect(() => {
     if (handleRef.current && ready) {
@@ -933,17 +989,7 @@ export function Reader({
   }
 
   const handleOverridesChange = (newOverrides: StyleOverride) => {
-    const prevSpread = overrides.spreadMode ?? 'auto'
-    const nextSpread = newOverrides.spreadMode ?? 'auto'
     setOverrides(newOverrides)
-    if (prevSpread !== nextSpread && handleRef.current) {
-      suppressLayoutTracking()
-      void handleRef.current.setSpread(nextSpread).then(() => {
-        setTimeout(() => {
-          pacerRef.current.recalculateGeometry(false)
-        }, 80)
-      })
-    }
     saveCurrentSettings({ overrides: newOverrides })
     rememberTypographyDefault({ defaultOverrides: newOverrides })
   }
