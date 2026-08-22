@@ -8,6 +8,7 @@ import type { WordItem } from './pacer/chunker'
 import { tokenizeText } from './pacer/tokenizer'
 import { columnPitchFromLayout } from './pacer/geometry'
 import { createSwipeTracker, isHorizontalWheel } from './swipe'
+import { sentenceAt } from './sentence'
 
 export interface ReaderLocation {
   /** CFI of the first visible position on the current page. */
@@ -53,6 +54,12 @@ export interface SelectionInfo {
   cfiRange: string
   text: string
   rect: { left: number; top: number; width: number; height: number }
+  /**
+   * The sentence the selection sits in, for the vocabulary list. Empty when the
+   * paragraph cannot be read — a word without its sentence is still worth
+   * recording, so this never blocks a lookup.
+   */
+  sentence: string
 }
 
 export interface ReaderOptions {
@@ -89,6 +96,21 @@ export interface ReaderOptions {
    */
   minSpreadWidth?: number
   style?: ResolvedStyle
+}
+
+/** Elements that hold a paragraph of prose rather than a run of inline text. */
+const BLOCK_TAGS = new Set([
+  'P', 'DIV', 'LI', 'BLOCKQUOTE', 'TD', 'TH', 'DD', 'DT', 'FIGCAPTION', 'SECTION',
+  'ARTICLE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BODY',
+])
+
+function closestBlock(node: Node): Element | null {
+  let current: Node | null = node.nodeType === Node.ELEMENT_NODE ? node : node.parentNode
+  while (current && current.nodeType === Node.ELEMENT_NODE) {
+    if (BLOCK_TAGS.has((current as Element).tagName)) return current as Element
+    current = current.parentNode
+  }
+  return null
 }
 
 export interface ReaderHandle {
@@ -141,6 +163,14 @@ export interface ReaderHandle {
   removeHighlight(cfiRange: string): void
   /** Where a stored highlight sits right now, in container coordinates. */
   rectForCfiRange(cfiRange: string): SelectionInfo['rect'] | null
+  /**
+   * The sentence a stored range sits in, read off the live page.
+   *
+   * Reopening a highlight has to get the sentence from the book, not from the
+   * highlight: a one-word highlight's own text *is* the word, and recording
+   * that as its own context would be worthless.
+   */
+  sentenceForCfiRange(cfiRange: string): string
   /** True while text inside the book is selected, so a margin tap can defer. */
   hasTextSelection(): boolean
   clearSelection(): void
@@ -221,6 +251,22 @@ export async function createReader(
   const onSelection = options.onSelection
   const onHighlightClick = options.onHighlightClick
 
+  /**
+   * The sentence a selection sits in, read out of its own paragraph.
+   *
+   * The block element is the unit: a sentence never spans two paragraphs, and
+   * taking the whole document's text would make finding the offset a walk over
+   * the entire chapter.
+   */
+  function sentenceAroundRange(range: Range): string {
+    const block = closestBlock(range.startContainer)
+    if (!block) return ''
+    const upToWord = range.startContainer.ownerDocument!.createRange()
+    upToWord.setStart(block, 0)
+    upToWord.setEnd(range.startContainer, range.startOffset)
+    return sentenceAt(block.textContent ?? '', upToWord.toString().length)
+  }
+
   /** Translate an iframe-relative rect into the parent container's box. */
   function toContainerRect(rect: DOMRect): SelectionInfo['rect'] | null {
     const iframe = getIframe()
@@ -239,16 +285,18 @@ export async function createReader(
     rendition.on('selected', (cfiRange: string, contents: Contents) => {
       let text = ''
       let rect: SelectionInfo['rect'] | null = null
+      let sentence = ''
       try {
         const range = contents.range(cfiRange)
         text = range?.toString().trim() ?? ''
         const bounds = range?.getBoundingClientRect()
         if (bounds) rect = toContainerRect(bounds)
+        if (range) sentence = sentenceAroundRange(range)
       } catch {
         // A malformed CFI must not break selecting text.
       }
       if (!text || !rect) return
-      onSelection({ cfiRange, text, rect })
+      onSelection({ cfiRange, text, rect, sentence })
     })
   }
 
@@ -795,6 +843,14 @@ export async function createReader(
         rendition.annotations.remove(cfiRange, 'highlight')
       } catch {
         // Already gone.
+      }
+    },
+    sentenceForCfiRange: (cfiRange) => {
+      try {
+        const range = rendition.getRange(cfiRange)
+        return range ? sentenceAroundRange(range) : ''
+      } catch {
+        return ''
       }
     },
     rectForCfiRange: (cfiRange) => {

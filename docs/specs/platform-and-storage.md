@@ -1,6 +1,6 @@
 # 平台适配层与存储
 
-> 状态：✅ `storage` 已实现（Tauri + web 两份）。`fs` / `dict` 待各自功能落地时定义。
+> 状态：✅ `storage` / `fs` / `dict` 三份能力均已实现（Tauri + web 两份实现）。
 > 相关：[overview](overview.md)、[reading-formats](reading-formats.md)
 
 ## 1. 适配层
@@ -15,6 +15,8 @@ src/platform/
   index.ts          运行时选择实现 + 一次性 init
   tauri/storage.ts  Tauri 实现（IPC → Rust）
   web/storage.ts    浏览器实现（IndexedDB）
+  tauri/dict.ts     词典 + 生词本（IPC → Rust）
+  web/dict.ts       浏览器实现（无词典，生词本走 IndexedDB）
 ```
 
 - `getStorage()` 返回单例 Promise，内部已调用过 `init()`；init 失败不缓存，下次调用重试
@@ -26,8 +28,8 @@ src/platform/
 | 能力 | 用途 | 状态 |
 | --- | --- | --- |
 | `storage` | 书库、进度、按书/应用设置、书签、阅读统计 | ✅ 已实现 |
-| `fs` | 摘抄/生词导出，Kindle 文件导入 | 📋 待 [annotations](annotations.md) 落地时定义 |
-| `dict` | 词典查询 | 📋 待 [vocabulary](vocabulary.md) 落地时定义 |
+| `fs` | 摘抄/生词导出，Kindle 文件导入 | ✅ 已实现（`getFs()`） |
+| `dict` | 词典查询与生词本 | ✅ 已实现（`getDict()`） |
 
 另有一个不属于这三类、但遵守同一条规矩的能力：
 
@@ -61,8 +63,35 @@ interface LifecyclePort {
   而且没有任何订阅者时也必须回执——否则从书库退出会白等一个宽限期。
   `App.tsx` 因此在启动时就 `getLifecycle()`。
 
-`fs` / `dict` **刻意还没定义接口** —— 先写一份必然被推翻的契约没有价值。
-新增时按 `storage` 的同构方式组织。
+### DictPort
+
+```ts
+interface DictPort {
+  init(): Promise<DictStatus>
+  status(): Promise<DictStatus>
+  lookup(candidates: string[]): Promise<DictLookup>
+  listVocabulary(): Promise<VocabularyEntry[]>
+  recordLookup(input: VocabularyLookupInput): Promise<VocabularyWord>
+  setWordStatus(id: string, status: VocabularyStatus): Promise<void>
+  deleteWord(id: string): Promise<void>
+}
+```
+
+- **查词与生词本在同一个 port**，因为它们是同一件事：一次查询才会产生一条生词。
+  若拆成两个 port，组件就得知道自己在哪个平台上才能做那件显而易见的事。
+- **`lookup()` 收的是候选列表**，不是单个词。词形还原在前端（`src/vocabulary/lemma.ts`，
+  两端共用一份），一次调用把「原形 + 各级还原形」全部发下去，答复里带回**所有命中的候选** ——
+  释义取第一个，`stem` 取第一个还原形。见 [vocabulary §5](vocabulary.md#5-词形还原)。
+- **导出不是 `DictPort` 的方法**：数据由 `listVocabulary()` 供，格式在
+  `src/vocabulary/export.ts`，落盘走 `FsPort.exportTextFiles()` —— 与划线导出同构。
+- **`init()` 在这里而不是首次查词时**：桌面端第一次启动要把等待中的 `dictionary.json`
+  折进 SQLite，这件事该发生一次，而不是挡在某个人选中的第一个单词前面。
+- **Tauri 实现横跨两个数据库**（只读的 `dictionary.db` 与用户自己的 `veloread.db`）。
+  那是存储层的划分，不是接口的划分。
+- **web 实现是降级版**：`status().ready` 为 false，`lookup()` 明说自己什么都不知道
+  （而不是假装这个词不存在），生词本部分行为与桌面端完全一致。
+  22 MB 词典是唯一一件真的搬不进浏览器的能力 —— 页面里没法建磁盘索引，
+  整包进内存正是桌面版存在的理由所要避免的。
 
 ## 2. StoragePort（当前）
 
@@ -159,12 +188,19 @@ IndexedDB（库名 `veloread`），字节单独放 store，列书架时不会反
 | `app_settings` | `key = global`（keyPath） | `AppSettings` |
 | `bookmarks` | `id`（keyPath），`by_bookId` 索引 | `Bookmark` |
 | `annotations` | `id`（keyPath），`by_bookId` 索引 | `Annotation` |
+| `vocabulary` | `id`（keyPath），`by_stem` 唯一索引 `[stem, lang]` | `VocabularyWord` |
+| `vocabulary_lookups` | `id`（keyPath），`by_vocabularyId` / `by_bookId` 索引 | `VocabularyLookup` |
 | `collections` | `id`（keyPath） | `Collection` |
 | `collection_books` | 复合 keyPath `[collectionId, bookId]`，`by_bookId` / `by_collectionId` 索引 | 关联行 |
 | `reading_sessions` | `id`（keyPath），`by_date` / `by_bookId` 索引 | `ReadingSession` |
 
 `collection_books` 用复合主键而不是自增 id：同一对「合集 × 书」重复写入只会覆盖同一行，
 归类操作因此天然幂等。
+
+`vocabulary` 的 `by_stem` 是**唯一**索引，对应 Tauri 侧的 `UNIQUE(stem, lang)`：
+第二次查同一个词只会往已有的词上追加一条例句，不会另起一行。
+`deleteBook()` 把该书的 `vocabulary_lookups.bookId` **置空**而不是删行，
+与 SQLite 的 `ON DELETE SET NULL` 同义 —— 删书不该删掉学过的词。
 
 ## 5. SQLite schema
 
@@ -261,7 +297,7 @@ CREATE TABLE reading_sessions (
 CREATE INDEX idx_sessions_date ON reading_sessions(date);
 ```
 
-### v4 / v5（当前，已实现）
+### v4 / v5（已实现）
 
 划线笔记与书库合集各自新增表，都只是 `CREATE TABLE IF NOT EXISTS`，不触碰已有数据：
 
@@ -295,6 +331,39 @@ CREATE TABLE collection_books (
 );
 CREATE INDEX idx_collection_books_book ON collection_books(book_id);
 ```
+
+### v6（当前，已实现）
+
+划词生词本。两张表，字段与取舍见
+[vocabulary §4](vocabulary.md#4-数据模型借鉴-kindle-vocabdb)：
+
+```sql
+CREATE TABLE vocabulary (
+    id         TEXT PRIMARY KEY,
+    word       TEXT NOT NULL,      -- 第一次遇到时的形态
+    stem       TEXT NOT NULL,
+    lang       TEXT NOT NULL,
+    status     TEXT NOT NULL,      -- 'learning' | 'known'
+    created_at TEXT NOT NULL,
+    UNIQUE(stem, lang)
+);
+CREATE TABLE vocabulary_lookups (
+    id            TEXT PRIMARY KEY,
+    vocabulary_id TEXT NOT NULL REFERENCES vocabulary(id) ON DELETE CASCADE,
+    book_id       TEXT REFERENCES books(id) ON DELETE SET NULL,
+    locator       TEXT,
+    sentence      TEXT NOT NULL,
+    created_at    TEXT NOT NULL
+);
+CREATE INDEX vocab_lookups_word ON vocabulary_lookups(vocabulary_id, created_at DESC);
+```
+
+只是 `CREATE TABLE IF NOT EXISTS`，不触碰已有数据；`delete_book()` 不需要为此改动，
+`ON DELETE SET NULL` 会在删 `books` 行时自己生效（`PRAGMA foreign_keys = ON` 已开）。
+生词本列表顺序两端都是 `created_at DESC, id DESC`。
+
+**词典不在这个 schema 里**，它是 `dictionary.db` 里的只读资产，有自己的版本号 ——
+理由见 [vocabulary §6.1](vocabulary.md#61-独立文件不是-veloreaddb-里的一张表本次谈定)。
 
 `collections` 的列表顺序是 `ORDER BY name`（码点序），**web 端必须给出同样的顺序** ——
 两端对同一份数据返回不同排序是真实的实现分歧，排序规则因此收在 `platform/sort.ts`。

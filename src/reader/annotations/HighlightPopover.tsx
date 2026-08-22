@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
-import type { Annotation, HighlightColor } from '../../platform/types'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import type { Annotation, HighlightColor, VocabularyStatus } from '../../platform/types'
 import { HIGHLIGHT_COLORS } from './colors'
-import { IconTrash } from '../../ui/icons'
+import { IconCheck, IconCopy, IconNote, IconSearch, IconTrash, IconVocabulary } from '../../ui/icons'
 import { useT } from '../../i18n/useT'
+import type { MessageKey } from '../../i18n/types'
 
 export interface HighlightDraft {
   /** Present when editing a stored highlight, absent for a fresh selection. */
@@ -12,30 +13,88 @@ export interface HighlightDraft {
   rect: { left: number; top: number; width: number; height: number }
 }
 
+/**
+ * What the dictionary had to say about the selected word.
+ *
+ * `unavailable` is not an error: the browser build has no dictionary at all,
+ * and the popover says so plainly instead of pretending the word is unknown.
+ */
+export type DefinitionState =
+  | { status: 'loading' }
+  | { status: 'found'; word: string; definition: string }
+  | { status: 'missing'; word: string }
+  | { status: 'unavailable' }
+
 interface HighlightPopoverProps {
   draft: HighlightDraft
   /** Container box, so the popover can be kept inside the reading area. */
   bounds: { width: number; height: number }
+  /**
+   * The definition area's content, or null when the selection is not a single
+   * word. Null means the area is not rendered — never that it is rendered
+   * empty. See the note on structure below.
+   */
+  definition: DefinitionState | null
+  /** Whether the word is already in the vocabulary list, and how. */
+  vocabulary: VocabularyStatus | 'none'
   onApply: (color: HighlightColor, note: string) => void
   onDelete: () => void
   onClose: () => void
+  /** Cycles none → learning → known → none. */
+  onVocabularyChange: (next: VocabularyStatus | 'none') => void
+  /** Search the whole book for this selection. */
+  onSearch: () => void
+  onCopy: () => void
 }
 
 const POPOVER_WIDTH = 288
 const GAP = 10
 
+/**
+ * Heights the anchoring maths assumes. They hold because the definition area
+ * scrolls inside a fixed maximum rather than growing with the entry — a
+ * dictionary paragraph can run for hundreds of words.
+ */
+const BASE_HEIGHT = 132
+const DEFINITION_HEIGHT = 104
+const NOTE_HEIGHT = 108
+
+/**
+ * The reader's selection popover: what the word means, and what to do next.
+ *
+ * **Fixed structure, optional content.** The definition area is always at the
+ * top, and for a selection that is not a single word it is *not rendered at
+ * all* — a sentence has no dictionary entry, and an empty box saying so is
+ * furniture. What must not change is the action row: the same buttons in the
+ * same order, whatever was selected. A button that moves depending on how much
+ * text you happened to select is a button you can never learn the position of,
+ * so the ones that do not apply are disabled in place rather than removed. That
+ * is why deleting a highlight is a permanently present, sometimes-disabled
+ * button, where it used to appear and disappear.
+ *
+ * **The popover is a hub, not a destination.** Everything here can be done
+ * without reselecting: save the word, highlight the passage, write a note,
+ * search the book, copy. The rule was already in this file — picking a colour
+ * saves but keeps the popover open — and the new actions follow it.
+ */
 export function HighlightPopover({
   draft,
   bounds,
+  definition,
+  vocabulary,
   onApply,
   onDelete,
   onClose,
+  onVocabularyChange,
+  onSearch,
+  onCopy,
 }: HighlightPopoverProps) {
   const t = useT()
   const existing = draft.annotation
   const [color, setColor] = useState<HighlightColor>(existing?.color ?? 'yellow')
   const [note, setNote] = useState(existing?.note ?? '')
   const [noteOpen, setNoteOpen] = useState(Boolean(existing?.note))
+  const [copied, setCopied] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const noteRef = useRef<HTMLTextAreaElement>(null)
 
@@ -58,7 +117,8 @@ export function HighlightPopover({
 
   // Anchor above the selection when there is room, otherwise below it, and keep
   // the panel inside the reading area on both axes.
-  const estimatedHeight = noteOpen ? 240 : 132
+  const estimatedHeight =
+    BASE_HEIGHT + (definition ? DEFINITION_HEIGHT : 0) + (noteOpen ? NOTE_HEIGHT : 0)
   const preferAbove = draft.rect.top > estimatedHeight + GAP
   const top = preferAbove
     ? draft.rect.top - estimatedHeight - GAP
@@ -86,6 +146,22 @@ export function HighlightPopover({
     onClose()
   }
 
+  const nextVocabularyStatus: VocabularyStatus | 'none' =
+    vocabulary === 'none' ? 'learning' : vocabulary === 'learning' ? 'known' : 'none'
+
+  const vocabularyLabel: MessageKey =
+    vocabulary === 'learning'
+      ? 'vocab.markKnown'
+      : vocabulary === 'known'
+        ? 'vocab.remove'
+        : 'vocab.add'
+
+  const copy = () => {
+    onCopy()
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1200)
+  }
+
   return (
     <div
       ref={panelRef}
@@ -95,56 +171,79 @@ export function HighlightPopover({
       className="absolute z-40 rounded-2xl border border-black/[0.12] bg-white/97 p-3 shadow-[0_20px_50px_rgba(0,0,0,0.2),0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#1C1C1E]/97 dark:text-neutral-100 vr-animate-pop"
       onMouseDown={(event) => event.stopPropagation()}
     >
-      <p className="line-clamp-2 border-b border-black/[0.10] pb-2 text-[11px] leading-relaxed text-neutral-500 dark:border-white/[0.06] dark:text-neutral-400">
-        {draft.text}
-      </p>
+      {definition ? (
+        <Definition state={definition} />
+      ) : (
+        <p className="line-clamp-2 border-b border-black/[0.10] pb-2 text-[11px] leading-relaxed text-neutral-500 dark:border-white/[0.06] dark:text-neutral-400">
+          {draft.text}
+        </p>
+      )}
 
-      <div className="mt-2.5 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5">
-          {HIGHLIGHT_COLORS.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              onClick={() => {
-                setColor(option.id)
-                apply(option.id, note)
-              }}
-              aria-label={t('highlight.colorLabel', { color: t(option.labelKey) })}
-              aria-pressed={color === option.id}
-              style={{ backgroundColor: option.swatch }}
-              className={`size-6 rounded-full transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
-                color === option.id
-                  ? 'ring-2 ring-neutral-900/70 ring-offset-2 ring-offset-white dark:ring-white/80 dark:ring-offset-[#1C1C1E]'
-                  : 'hover:scale-110'
-              }`}
-            />
-          ))}
-        </div>
-
-        <div className="flex items-center gap-1">
+      <div className="mt-2.5 flex items-center gap-1.5">
+        {HIGHLIGHT_COLORS.map((option) => (
           <button
+            key={option.id}
             type="button"
-            onClick={() => setNoteOpen((open) => !open)}
-            className={`rounded-lg px-2 py-1 text-[11px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
-              noteOpen || note
-                ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
-                : 'text-neutral-500 hover:bg-black/5 dark:text-neutral-400 dark:hover:bg-white/10'
+            onClick={() => {
+              setColor(option.id)
+              apply(option.id, note)
+            }}
+            aria-label={t('highlight.colorLabel', { color: t(option.labelKey) })}
+            aria-pressed={color === option.id}
+            style={{ backgroundColor: option.swatch }}
+            className={`size-6 rounded-full transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
+              color === option.id
+                ? 'ring-2 ring-neutral-900/70 ring-offset-2 ring-offset-white dark:ring-white/80 dark:ring-offset-[#1C1C1E]'
+                : 'hover:scale-110'
             }`}
-            aria-expanded={noteOpen}
-          >
-            {t('highlight.note')}
-          </button>
-          {existing && (
-            <button
-              type="button"
-              onClick={onDelete}
-              aria-label={t('highlight.delete')}
-              className="flex size-7 items-center justify-center rounded-lg text-neutral-500 dark:text-neutral-400 transition hover:bg-red-500/10 hover:text-red-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 dark:hover:text-red-400"
-            >
-              <IconTrash />
-            </button>
-          )}
-        </div>
+          />
+        ))}
+      </div>
+
+      {/*
+        The action row. Same buttons, same order, whatever was selected — the
+        component test in this folder asserts exactly that.
+      */}
+      <div
+        data-testid="popover-actions"
+        className="mt-2.5 flex items-center justify-between gap-1 border-t border-black/[0.10] pt-2.5 dark:border-white/[0.06]"
+      >
+        <Action
+          name="vocabulary"
+          label={vocabularyLabel}
+          // A sentence cannot go in a vocabulary list, so this is off for one —
+          // in place, not missing.
+          disabled={definition === null}
+          active={vocabulary !== 'none'}
+          onClick={() => onVocabularyChange(nextVocabularyStatus)}
+          icon={vocabulary === 'known' ? <IconCheck /> : <IconVocabulary />}
+        />
+        <Action
+          name="note"
+          label="highlight.note"
+          active={noteOpen || note.length > 0}
+          expanded={noteOpen}
+          onClick={() => setNoteOpen((open) => !open)}
+          icon={<IconNote />}
+        />
+        <Action name="search" label="highlight.search" onClick={onSearch} icon={<IconSearch />} />
+        <Action
+          name="copy"
+          label={copied ? 'highlight.copied' : 'highlight.copy'}
+          active={copied}
+          onClick={copy}
+          icon={copied ? <IconCheck /> : <IconCopy />}
+        />
+        <Action
+          name="delete"
+          label="highlight.delete"
+          // Present even with nothing to delete, so the four buttons beside it
+          // never shift.
+          disabled={!existing}
+          destructive
+          onClick={onDelete}
+          icon={<IconTrash />}
+        />
       </div>
 
       {noteOpen && (
@@ -177,5 +276,78 @@ export function HighlightPopover({
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * The definition area. Always the top of the popover when it is rendered at
+ * all, and it scrolls rather than grows: a GCIDE entry can run for a page, and
+ * a popover that changes height with the word would move the actions under it.
+ */
+function Definition({ state }: { state: DefinitionState }) {
+  const t = useT()
+  return (
+    <div
+      data-testid="popover-definition"
+      className="max-h-24 overflow-y-auto border-b border-black/[0.10] pb-2 dark:border-white/[0.06]"
+    >
+      {state.status === 'found' ? (
+        <>
+          <p className="text-[13px] font-semibold tracking-tight">{state.word}</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-neutral-600 dark:text-neutral-300">
+            {state.definition}
+          </p>
+        </>
+      ) : (
+        <p className="text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
+          {state.status === 'loading'
+            ? t('vocab.looking')
+            : state.status === 'missing'
+              ? t('vocab.notFound', { word: state.word })
+              : t('vocab.noDictionary')}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function Action({
+  name,
+  label,
+  icon,
+  active = false,
+  disabled = false,
+  destructive = false,
+  expanded,
+  onClick,
+}: {
+  name: string
+  label: MessageKey
+  icon?: ReactNode
+  active?: boolean
+  disabled?: boolean
+  destructive?: boolean
+  expanded?: boolean
+  onClick: () => void
+}) {
+  const t = useT()
+  const tone = destructive
+    ? 'text-neutral-500 hover:bg-red-500/10 hover:text-red-600 dark:text-neutral-400 dark:hover:text-red-400'
+    : active
+      ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+      : 'text-neutral-500 hover:bg-black/5 dark:text-neutral-400 dark:hover:bg-white/10'
+  return (
+    <button
+      type="button"
+      data-action={name}
+      onClick={onClick}
+      disabled={disabled}
+      title={t(label)}
+      aria-label={t(label)}
+      aria-expanded={expanded}
+      className={`flex h-7 flex-1 items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:pointer-events-none disabled:opacity-35 ${tone}`}
+    >
+      {icon ?? <span aria-hidden="true">{t(label)}</span>}
+    </button>
   )
 }

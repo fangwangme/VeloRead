@@ -1,10 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SearchHit, SearchOptions } from './renderer'
 import { IconClose, IconSearch } from '../ui/icons'
 import { useModalDialog } from '../ui/useModalDialog'
 import { useT } from '../i18n/useT'
 
 interface SearchPanelProps {
+  /**
+   * A term to open with and run straight away, put here by "search the book" in
+   * the selection popover. Empty when the panel was opened from the toolbar.
+   */
+  initialQuery?: string
   onSearch: (query: string, options: SearchOptions) => Promise<SearchHit[]>
   onNavigate: (cfi: string) => void
   onClose: () => void
@@ -14,8 +19,13 @@ type Status = 'idle' | 'searching' | 'done' | 'cancelled'
 
 const MAX_HITS = 300
 
-export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps) {
-  const [query, setQuery] = useState('')
+export function SearchPanel({
+  initialQuery = '',
+  onSearch,
+  onNavigate,
+  onClose,
+}: SearchPanelProps) {
+  const [query, setQuery] = useState(initialQuery)
   const [submitted, setSubmitted] = useState('')
   const [hits, setHits] = useState<SearchHit[]>([])
   const [status, setStatus] = useState<Status>('idle')
@@ -31,11 +41,12 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
     inputRef.current?.focus()
   }, [])
 
+
   // Abandon an in-flight scan when the panel closes, so a large book does not
   // keep loading spine sections after the user has moved on.
   useEffect(() => () => abortRef.current?.abort(), [])
 
-  const run = async () => {
+  const run = useCallback(async () => {
     const trimmed = query.trim()
     if (trimmed.length === 0) return
 
@@ -66,7 +77,18 @@ export function SearchPanel({ onSearch, onNavigate, onClose }: SearchPanelProps)
       if (controller !== abortRef.current) return
       setStatus(controller.signal.aborted ? 'cancelled' : 'done')
     }
-  }
+  }, [onSearch, query])
+
+  // Arriving from the selection popover means the term is already chosen, so
+  // the results are what the panel opens on — not an input waiting for Enter.
+  // Guarded rather than depended on: `run` is a fresh closure every render, and
+  // this must happen once for the term the panel was opened with.
+  const seededRef = useRef(false)
+  useEffect(() => {
+    if (seededRef.current || initialQuery.trim().length === 0) return
+    seededRef.current = true
+    void run()
+  }, [initialQuery, run])
 
   const cancel = () => {
     // Status flips now so the button responds; the hits collected so far land

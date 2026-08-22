@@ -1,4 +1,4 @@
-import type { FsPort, LifecyclePort, StoragePort } from './types'
+import type { DictPort, FsPort, LifecyclePort, StoragePort } from './types'
 
 /**
  * True inside the Tauri webview. Tauri v2 injects `__TAURI_INTERNALS__` before
@@ -48,6 +48,34 @@ export function getFs(): Promise<FsPort> {
   return fs
 }
 
+let dict: Promise<DictPort> | null = null
+
+/**
+ * The dictionary and vocabulary implementation for the current runtime,
+ * initialised once.
+ *
+ * `init()` is where the desktop folds a waiting `dictionary.json` into its
+ * SQLite file, which can take a moment the first time and never again — so it
+ * happens here, once, rather than on the first word anybody selects. A failure
+ * is not cached: the browser has no dictionary to begin with, and the reader
+ * must not lose the vocabulary list because one import went wrong.
+ */
+export function getDict(): Promise<DictPort> {
+  if (!dict) {
+    dict = (isTauri()
+      ? import('./tauri/dict').then((m) => m.createTauriDict())
+      : import('./web/dict').then((m) => m.createWebDict())
+    ).then(async (port) => {
+      await port.init()
+      return port
+    })
+    dict.catch(() => {
+      dict = null
+    })
+  }
+  return dict
+}
+
 let lifecycle: Promise<LifecyclePort> | null = null
 
 /**
@@ -72,10 +100,19 @@ export function getLifecycle(): Promise<LifecyclePort> {
 export type {
   BookRecord,
   BookImport,
+  DictEntry,
+  DictLookup,
+  DictPort,
+  DictStatus,
   ExportFile,
   ExportResult,
   FsPort,
   LifecyclePort,
   ReadingProgress,
   StoragePort,
+  VocabularyEntry,
+  VocabularyLookup,
+  VocabularyLookupInput,
+  VocabularyStatus,
+  VocabularyWord,
 } from './types'

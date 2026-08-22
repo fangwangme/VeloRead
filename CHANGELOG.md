@@ -7,6 +7,46 @@ and [semantic versioning](https://semver.org/spec/v2.0.0.html).
 follows it. There are no published binaries — see
 [`docs/usage/build.md`](docs/usage/build.md) for why and how to build.
 
+## [Unreleased]
+
+### Added
+
+- **Select a word and see what it means.** One word, no second click — a
+  definition from a local English dictionary, right where you selected it. The
+  popover it appears in is a hub rather than a dead end: save the word, mark it
+  known, highlight the passage, write a note, search the whole book for it, or
+  copy it, all without reselecting.
+- **A vocabulary list, in the library beside reading stats.** Every word you
+  looked up with the sentence it was in, one row per word and one sentence per
+  time you met it — so the same word found in three books keeps all three.
+  Filter by book, remove what you have learned, and **export the lot as plain
+  text**: a Kindle records exactly this and will not give it back, which is the
+  whole reason the feature exists.
+- **The dictionary is 102,217 entries in its own indexed SQLite file**, next to
+  the library database and never inside it. It is imported once, streaming, and
+  never loaded into memory: a lookup measures 0.009 ms at the median against
+  the full dictionary, where the target was 50 ms. Installing it is one file
+  copy — see [`docs/usage/dictionary.md`](docs/usage/dictionary.md).
+- **`bun run dict:import`**, to build that file from the command line.
+
+### Changed
+
+- **The selection popover has a fixed structure.** The definition area is
+  always at the top and is simply absent for a selection that is not a single
+  word; the actions below it are the same buttons in the same order either way,
+  disabled in place rather than removed. Deleting a highlight is therefore a
+  permanent button that is sometimes disabled, where it used to appear and
+  disappear — a control that moves with the length of your selection is one you
+  can never learn the position of.
+- **Looking a word up on the desktop does not automatically file it.** Kindle
+  records every lookup because a long press is deliberate; a double-click is
+  how you put the caret somewhere. A definition is free, and the row costs
+  either a moment's attention or any further action on the word — otherwise the
+  list fills with words nobody asked about, and its whole value is its
+  signal-to-noise ratio.
+- Searching in a book can be opened with a term already in it, and runs it
+  straight away.
+
 ## [0.2.0] — 2026-08-22
 
 ### Added

@@ -40,8 +40,8 @@
 | 自动阅读（Pacer） | [pacer.md](pacer.md) | ✅ EPUB 已实现 |
 | 阅读统计与打卡 | [reading-activity.md](reading-activity.md) | ✅ 已实现 |
 | 划线摘抄 | [annotations.md](annotations.md) | 🚧 划线、笔记与导出已实现，Kindle 导入规划中 |
-| 划词与生词本 | [vocabulary.md](vocabulary.md) | 📋 规划中 |
-| 平台适配层与存储 | [platform-and-storage.md](platform-and-storage.md) | 🚧 `storage` 已实现，`fs` / `dict` 未定义 |
+| 划词与生词本 | [vocabulary.md](vocabulary.md) | 🚧 划词释义、生词本与导出已实现，Kindle 导入规划中 |
+| 平台适配层与存储 | [platform-and-storage.md](platform-and-storage.md) | ✅ `storage` / `fs` / `dict` 均已实现 |
 | 界面语言 | [i18n.md](i18n.md) | ✅ 简体中文 / English 已实现 |
 
 状态图例：✅ 已实现 · 🚧 部分实现 · 📋 规划中
@@ -89,7 +89,7 @@ PDF 是**独立的一条轨**，功能对等性天然打折。详见 [reading-fo
 3. **自动阅读与统计**（✅ 已完成）：Pacer 引擎、可信计时、趋势总览与每日打卡
 4. **格式扩展**：TXT（与 EPUB 共用引擎），之后 PDF（独立轨）
 5. **沉淀**（🚧 进行中）：划线笔记与书内列表已完成；摘抄导出与 Kindle 格式导入待做
-6. **词汇**：词典入 SQLite、划词、生词本、导出
+6. **词汇**（🚧 进行中）：词典入 SQLite、划词、生词本、导出已完成；从 Kindle `vocab.db` 导入待做
 
 ## 7. 候选功能（尚未纳入任何里程碑）
 

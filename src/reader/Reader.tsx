@@ -15,6 +15,7 @@ import { useLibrary } from '../library/store'
 import { newId } from '../platform/ids'
 import { createReader, type ReaderHandle, type ReaderLocation } from './renderer'
 import { HighlightPopover, type HighlightDraft } from './annotations/HighlightPopover'
+import { useWordLookup } from '../vocabulary/useWordLookup'
 import { AnnotationCard } from './annotations/AnnotationCard'
 import { PRESETS } from './styles/presets'
 import type { StyleId, StyleOverride } from './styles/types'
@@ -163,6 +164,12 @@ export function Reader({
   const [showSettings, setShowSettings] = useState(false)
   const [showToc, setShowToc] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
+  /**
+   * A term the search panel opens with, put there by "search the book" in the
+   * selection popover. Cleared when the panel closes, so opening it from the
+   * toolbar is still a blank box.
+   */
+  const [searchSeed, setSearchSeed] = useState('')
   const [toc, setToc] = useState<TocItem[]>([])
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
 
@@ -194,6 +201,17 @@ export function Reader({
   const [highlightDraft, setHighlightDraft] = useState<
     (HighlightDraft & { bounds: { width: number; height: number } }) | null
   >(null)
+
+  /**
+   * Looking the selected word up, and the vocabulary row that may come of it.
+   * Everything about that lives in the hook; this view only says when a
+   * selection started and when it went away.
+   */
+  const lookup = useWordLookup(bookId)
+  const lookupRef = useRef(lookup)
+  useEffect(() => {
+    lookupRef.current = lookup
+  }, [lookup])
 
   // Pacer state
   const [pacerWpm, setPacerWpm] = useState(appSettings.pacerWpm ?? 250)
@@ -946,6 +964,7 @@ export function Reader({
               showTocRef.current ||
               highlightDraftOpenRef.current
             setHighlightDraft(null)
+            lookupRef.current.end()
             setShowPacerControls(false)
             setShowSettings(false)
             setShowToc(false)
@@ -973,8 +992,9 @@ export function Reader({
             setShowSettings(false)
             setShowToc(false)
             setHighlightDraft(null)
+            lookupRef.current.end()
           },
-          onSelection({ cfiRange, text, rect }) {
+          onSelection({ cfiRange, text, rect, sentence }) {
             pingActivity()
             pacerRef.current.pause()
             setShowPacerControls(false)
@@ -993,6 +1013,15 @@ export function Reader({
               rect,
               bounds: measureContainerBounds(),
             })
+            // Selecting a single word shows what it means, with no second
+            // click: on a Kindle that is what a long press does, and putting it
+            // behind a "look up" button would bury the most frequent action of
+            // the lot one level down.
+            lookupRef.current.begin({
+              text,
+              sentence,
+              locator: JSON.stringify({ format: 'epub', cfi: cfiRange }),
+            })
           },
           onHighlightClick(annotationId) {
             pingActivity()
@@ -1007,6 +1036,13 @@ export function Reader({
               text: annotation.text,
               rect,
               bounds: measureContainerBounds(),
+            })
+            lookupRef.current.begin({
+              text: annotation.text,
+              // From the page, not from the highlight: a one-word highlight's
+              // own text is the word, which is no context at all.
+              sentence: handleRef.current?.sentenceForCfiRange(annotation.cfiRange) ?? '',
+              locator: JSON.stringify({ format: 'epub', cfi: annotation.cfiRange }),
             })
           },
           onLocation(loc) {
@@ -1294,7 +1330,32 @@ export function Reader({
 
   function closeHighlightDraft() {
     setHighlightDraft(null)
+    lookupRef.current.end()
     handleRef.current?.clearSelection()
+  }
+
+  /**
+   * Search the whole book for what is selected, without reselecting it.
+   *
+   * The panel is already there and already good at this; the popover's job is
+   * to get you into it with the word already typed.
+   */
+  const searchSelection = () => {
+    const draft = highlightDraft
+    if (!draft) return
+    lookup.act()
+    setSearchSeed(draft.text)
+    setShowSearch(true)
+    closeHighlightDraft()
+  }
+
+  const copySelection = () => {
+    const draft = highlightDraft
+    if (!draft) return
+    lookup.act()
+    // Best effort: the clipboard is permissioned, and failing to copy must not
+    // take the popover down with it.
+    void navigator.clipboard?.writeText(draft.text).catch(() => undefined)
   }
 
   const applyHighlight = async (color: HighlightColor, note: string) => {
@@ -1315,6 +1376,10 @@ export function Reader({
           createdAt: now,
           updatedAt: now,
         }
+
+    // Highlighting the word you just looked up is exactly the "further action"
+    // that turns a glance at a definition into a lookup worth keeping.
+    lookup.act()
 
     // Paint first so the highlight appears immediately; a storage failure
     // surfaces below rather than leaving the user staring at nothing.
@@ -1724,9 +1789,14 @@ export function Reader({
                 key={highlightDraft.annotation?.id ?? highlightDraft.cfiRange}
                 draft={highlightDraft}
                 bounds={highlightDraft.bounds}
+                definition={lookup.definition}
+                vocabulary={lookup.vocabulary}
                 onApply={(color, note) => void applyHighlight(color, note)}
                 onDelete={() => void deleteHighlight()}
                 onClose={closeHighlightDraft}
+                onVocabularyChange={lookup.setStatus}
+                onSearch={searchSelection}
+                onCopy={copySelection}
               />
             )}
           </div>
@@ -2004,6 +2074,7 @@ export function Reader({
 
       {showSearch && (
         <SearchPanel
+          initialQuery={searchSeed}
           onSearch={(query, options) =>
             handleRef.current?.searchBook(query, options) ?? Promise.resolve([])
           }
@@ -2011,8 +2082,12 @@ export function Reader({
             if (location?.cfi) setJumpOrigin(location.cfi)
             void handleRef.current?.display(cfi)
             setShowSearch(false)
+            setSearchSeed('')
           }}
-          onClose={() => setShowSearch(false)}
+          onClose={() => {
+            setShowSearch(false)
+            setSearchSeed('')
+          }}
         />
       )}
 
