@@ -7,7 +7,7 @@ and [semantic versioning](https://semver.org/spec/v2.0.0.html).
 follows it. There are no published binaries — see
 [`docs/usage/build.md`](docs/usage/build.md) for why and how to build.
 
-## [Unreleased]
+## [0.2.1] — 2026-08-22
 
 ### Added
 
@@ -46,6 +46,14 @@ follows it. There are no published binaries — see
   signal-to-noise ratio.
 - Searching in a book can be opened with a term already in it, and runs it
   straight away.
+
+### Fixed
+
+- **A note being written no longer disappears when you pick a colour.** The
+  popover was rebuilt from scratch the moment a selection became a saved
+  highlight, which threw away whatever was in the note editor and replayed the
+  entrance animation — undoing the one thing the popover promises, that a colour
+  tap can be followed by a note without reselecting.
 
 ## [0.2.0] — 2026-08-22
 
@@ -157,5 +165,6 @@ and nothing exports yet.
 - **Unsigned and un-notarized**, and built for the host architecture only.
 - The main JS chunk is ~813 kB (~250 kB gzipped); no code splitting yet.
 
+[0.2.1]: https://github.com/fangwangme/VeloRead/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/fangwangme/VeloRead/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/fangwangme/VeloRead/releases/tag/v0.1.0
