@@ -281,22 +281,72 @@ export async function createReader(
     }
   }
 
+  /**
+   * A selection epub.js has told us about but that is not finished yet.
+   *
+   * epub.js reports a selection 250 ms after it last changed, which during a
+   * drag means *mid-drag*: pause for a quarter second while sweeping across a
+   * sentence and the popover appears over the words still being selected, then
+   * jumps as the selection grows. Dragging is one gesture and it ends on mouse
+   * up; until then there is no selection to act on.
+   */
+  let selectionInProgress = false
+  let pendingSelection: { cfiRange: string; contents: Contents } | null = null
+  let flushTimer: ReturnType<typeof setTimeout> | null = null
+
+  function emitSelection(cfiRange: string, contents: Contents) {
+    if (!onSelection) return
+    pendingSelection = null
+    if (flushTimer !== null) {
+      clearTimeout(flushTimer)
+      flushTimer = null
+    }
+    let text = ''
+    let rect: SelectionInfo['rect'] | null = null
+    let sentence = ''
+    try {
+      const range = contents.range(cfiRange)
+      text = range?.toString().trim() ?? ''
+      const bounds = range?.getBoundingClientRect()
+      if (bounds) rect = toContainerRect(bounds)
+      if (range) sentence = sentenceAroundRange(range)
+    } catch {
+      // A malformed CFI must not break selecting text.
+    }
+    if (!text || !rect) return
+    onSelection({ cfiRange, text, rect, sentence })
+  }
+
+  /** The drag is over: show whatever was held back, if anything still stands. */
+  function endSelectionGesture() {
+    selectionInProgress = false
+    if (!pendingSelection) return
+    if (flushTimer !== null) clearTimeout(flushTimer)
+    // A short beat, in case epub.js is about to report the final selection
+    // itself — that path emits directly and cancels this one.
+    flushTimer = setTimeout(() => {
+      flushTimer = null
+      const held = pendingSelection
+      if (held) emitSelection(held.cfiRange, held.contents)
+    }, 60)
+  }
+
+  // A sweep that runs off the edge of the page is released over the app, not
+  // over the book, so the book document never sees the mouse come up.
+  const onWindowMouseUp = () => {
+    if (selectionInProgress) endSelectionGesture()
+  }
+  if (onSelection) document.addEventListener('mouseup', onWindowMouseUp)
+
   if (onSelection) {
     rendition.on('selected', (cfiRange: string, contents: Contents) => {
-      let text = ''
-      let rect: SelectionInfo['rect'] | null = null
-      let sentence = ''
-      try {
-        const range = contents.range(cfiRange)
-        text = range?.toString().trim() ?? ''
-        const bounds = range?.getBoundingClientRect()
-        if (bounds) rect = toContainerRect(bounds)
-        if (range) sentence = sentenceAroundRange(range)
-      } catch {
-        // A malformed CFI must not break selecting text.
+      // Still dragging: remember it, but do not put a panel over the text the
+      // reader is in the middle of sweeping across.
+      if (selectionInProgress) {
+        pendingSelection = { cfiRange, contents }
+        return
       }
-      if (!text || !rect) return
-      onSelection({ cfiRange, text, rect, sentence })
+      emitSelection(cfiRange, contents)
     })
   }
 
@@ -309,6 +359,14 @@ export async function createReader(
   rendition.hooks.content.register((contents: Contents) => {
     const doc = contents.document
     if (doc.defaultView) neutraliseOffscreenText(doc, doc.defaultView)
+    if (onSelection) {
+      doc.addEventListener('mousedown', () => {
+        selectionInProgress = true
+        // Whatever was held back belonged to the selection being replaced.
+        pendingSelection = null
+      })
+      doc.addEventListener('mouseup', endSelectionGesture)
+    }
     if (onKeyDown) {
       doc.addEventListener('keydown', onKeyDown as EventListener)
     }
@@ -944,6 +1002,8 @@ export async function createReader(
     },
     destroy() {
       destroyed = true
+      document.removeEventListener('mouseup', onWindowMouseUp)
+      if (flushTimer !== null) clearTimeout(flushTimer)
       rendition.destroy()
       book.destroy()
     },
