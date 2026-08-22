@@ -293,6 +293,7 @@ export async function createReader(
   let selectionInProgress = false
   /** When a gesture last produced a selection, so its own click can be ignored. */
   let lastSelectionAt = 0
+  let lastCfiRange = ''
   let pendingSelection: { cfiRange: string; contents: Contents } | null = null
   let flushTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -316,19 +317,52 @@ export async function createReader(
       // A malformed CFI must not break selecting text.
     }
     if (!text || !rect) return
-    lastSelectionAt = Date.now()
+    const now = Date.now()
+    // Both paths below can report the same selection; whichever gets there
+    // first wins and the other is a no-op.
+    if (cfiRange === lastCfiRange && now - lastSelectionAt < SELECTION_REPEAT_MS) return
+    lastCfiRange = cfiRange
+    lastSelectionAt = now
     onSelection({ cfiRange, text, rect, sentence })
   }
 
-  /** The drag is over: show whatever was held back, if anything still stands. */
-  function endSelectionGesture() {
+  /**
+   * Read the selection out of the book ourselves.
+   *
+   * epub.js detects selection purely by listening for `selectionchange` on the
+   * book document — and **WebKitGTK never fires it**. Measured in the packaged
+   * app: set a range programmatically and the selection is really there
+   * (`rangeCount: 1`, not collapsed), while a listener on that very same
+   * document is called zero times. Chromium fires it, which is why this only
+   * ever went wrong on the desktop, where selecting a word did nothing at all —
+   * no definition, no highlight, on a feature that worked in the browser.
+   *
+   * So the gesture is what we listen to, and the selection is read at the end
+   * of it. `getSelection()` itself works everywhere; only the notification is
+   * missing.
+   */
+  function readSelectionFrom(contents: Contents) {
+    try {
+      const win = contents.document?.defaultView
+      const selection = win?.getSelection()
+      if (!selection || selection.rangeCount === 0) return
+      const range = selection.getRangeAt(0)
+      if (!range || range.collapsed) return
+      if (range.toString().trim().length === 0) return
+      emitSelection(contents.cfiFromRange(range), contents)
+    } catch {
+      // A range epub.js cannot express as a CFI is not a selection we can keep.
+    }
+  }
+
+  /** The drag is over: read what was selected, or show whatever was held back. */
+  function endSelectionGesture(contents: Contents | null) {
     selectionInProgress = false
-    if (!pendingSelection) return
     if (flushTimer !== null) clearTimeout(flushTimer)
-    // A short beat, in case epub.js is about to report the final selection
-    // itself — that path emits directly and cancels this one.
+    // A short beat, so the engine has settled on the final selection.
     flushTimer = setTimeout(() => {
       flushTimer = null
+      if (contents) readSelectionFrom(contents)
       const held = pendingSelection
       if (held) emitSelection(held.cfiRange, held.contents)
     }, 60)
@@ -337,7 +371,9 @@ export async function createReader(
   // A sweep that runs off the edge of the page is released over the app, not
   // over the book, so the book document never sees the mouse come up.
   const onWindowMouseUp = () => {
-    if (selectionInProgress) endSelectionGesture()
+    if (!selectionInProgress) return
+    const live = rendition.getContents() as unknown as Contents[]
+    endSelectionGesture(live?.length ? live[live.length - 1] : null)
   }
   if (onSelection) document.addEventListener('mouseup', onWindowMouseUp)
 
@@ -368,7 +404,12 @@ export async function createReader(
         // Whatever was held back belonged to the selection being replaced.
         pendingSelection = null
       })
-      doc.addEventListener('mouseup', endSelectionGesture)
+      doc.addEventListener('mouseup', () => endSelectionGesture(contents))
+      // Keyboard selection (shift + arrows) ends on key up, and needs the same
+      // treatment for the same reason.
+      doc.addEventListener('keyup', (event: KeyboardEvent) => {
+        if (event.shiftKey || event.key === 'Shift') readSelectionFrom(contents)
+      })
     }
     if (onKeyDown) {
       doc.addEventListener('keydown', onKeyDown as EventListener)
@@ -1035,6 +1076,9 @@ export async function createReader(
  * deliberate tap right after reading a definition still moves the cursor.
  */
 const SELECTION_CLICK_GRACE_MS = 300
+
+/** How long the same selection is treated as already reported. */
+const SELECTION_REPEAT_MS = 700
 
 const OFFSCREEN_THRESHOLD_PX = -2000
 
