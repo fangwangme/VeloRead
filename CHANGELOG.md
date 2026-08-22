@@ -7,6 +7,25 @@ and [semantic versioning](https://semver.org/spec/v2.0.0.html).
 follows it. There are no published binaries — see
 [`docs/usage/build.md`](docs/usage/build.md) for why and how to build.
 
+## [Unreleased]
+
+### Fixed
+
+- **Selecting a word works on Linux.** WebKitGTK never fires `selectionchange`,
+  which is the only thing epub.js listens to, so on the desktop selecting text
+  did nothing at all — no definition, no highlight — while the same code worked
+  in the browser. The reader now reads the selection itself when the gesture
+  ends, which is also why the popover no longer appears mid-drag.
+
+### Changed
+
+- **`bun run app:build` builds for whatever machine you are on.** It was macOS
+  only, which meant anyone developing on Linux could not build or launch what
+  they had just changed. It now produces a `.app`/`.dmg`, a `.deb`/`.rpm`/
+  `.AppImage`, or an `.msi`, and takes `--no-bundle` for just the executable and
+  `--bundles <format>` for one format. On Linux a single failing bundle format
+  no longer throws away the whole run.
+
 ## [0.2.1] — 2026-08-22
 
 ### Added
