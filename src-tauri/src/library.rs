@@ -19,7 +19,7 @@ use tauri::{ipc::Response, AppHandle, Manager, State};
 
 use store::{
     book_file, Annotation, BookRecord, BookSettings, Bookmark, Collection, OverallReadingStats,
-    ReadingProgress, ReadingSession,
+    ReadingProgress, ReadingSession, VocabularyEntry, VocabularyLookupInput, VocabularyWord,
 };
 
 /// Storage primitives, free of any Tauri types.
@@ -29,7 +29,7 @@ mod store {
     use rusqlite::{params, Connection, OptionalExtension};
     use serde::{Deserialize, Serialize};
 
-    pub const SCHEMA_VERSION: i32 = 5;
+    pub const SCHEMA_VERSION: i32 = 6;
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -126,6 +126,59 @@ mod store {
         pub latin_words_read: i64,
         pub cjk_characters_read: i64,
         pub updated_at: String,
+    }
+
+    /// One word the reader looked up, deduplicated by its stem.
+    ///
+    /// `word` keeps the form it was first met in; `stem` is what makes it one
+    /// row, so `running` and `run` do not become two entries.
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct VocabularyWord {
+        pub id: String,
+        pub word: String,
+        pub stem: String,
+        pub lang: String,
+        pub status: String,
+        pub created_at: String,
+    }
+
+    /// One occasion the word was looked up, with the sentence it was in.
+    ///
+    /// Its own table, as on a Kindle: the same word met in three books is three
+    /// sentences worth keeping, and folding them into the word would lose two.
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct VocabularyLookup {
+        pub id: String,
+        pub vocabulary_id: String,
+        pub book_id: Option<String>,
+        pub locator: Option<String>,
+        pub sentence: String,
+        pub created_at: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct VocabularyEntry {
+        pub word: VocabularyWord,
+        pub lookups: Vec<VocabularyLookup>,
+    }
+
+    /// Everything one lookup needs. Both ids come from the frontend, as every
+    /// other row's does; `word_id` is only used when the word is new.
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct VocabularyLookupInput {
+        pub word_id: String,
+        pub lookup_id: String,
+        pub word: String,
+        pub stem: String,
+        pub lang: String,
+        pub book_id: Option<String>,
+        pub locator: Option<String>,
+        pub sentence: String,
+        pub created_at: String,
     }
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -314,6 +367,34 @@ mod store {
              );
              CREATE INDEX IF NOT EXISTS idx_collection_books_book
                  ON collection_books(book_id);",
+        )?;
+
+        // v6: the vocabulary builder. Two tables, per docs/specs/vocabulary.md:
+        // one row per word, one row per time it was looked up.
+        //
+        // `book_id` is ON DELETE SET NULL, not CASCADE: removing a book from the
+        // shelf must not remove what you learned from it. The sentence stays
+        // even once its source is gone, because the sentence is the value.
+        connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS vocabulary (
+                 id         TEXT PRIMARY KEY,
+                 word       TEXT NOT NULL,
+                 stem       TEXT NOT NULL,
+                 lang       TEXT NOT NULL,
+                 status     TEXT NOT NULL,
+                 created_at TEXT NOT NULL,
+                 UNIQUE(stem, lang)
+             );
+             CREATE TABLE IF NOT EXISTS vocabulary_lookups (
+                 id            TEXT PRIMARY KEY,
+                 vocabulary_id TEXT NOT NULL REFERENCES vocabulary(id) ON DELETE CASCADE,
+                 book_id       TEXT REFERENCES books(id) ON DELETE SET NULL,
+                 locator       TEXT,
+                 sentence      TEXT NOT NULL,
+                 created_at    TEXT NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS vocab_lookups_word
+                 ON vocabulary_lookups(vocabulary_id, created_at DESC);",
         )?;
 
         connection.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
@@ -744,6 +825,133 @@ mod store {
         Ok(())
     }
 
+    /// Record one lookup, creating the word the first time it is met.
+    ///
+    /// Deduplication is on `(stem, lang)` rather than on the word as written,
+    /// so meeting `ran` after `running` adds a sentence to the entry that is
+    /// already there instead of starting a third one. The stored `word` keeps
+    /// the form it was first seen in — later encounters do not rewrite it,
+    /// because the first sighting is the one the sentences belong to.
+    pub fn record_vocabulary_lookup(
+        connection: &Connection,
+        input: &VocabularyLookupInput,
+    ) -> rusqlite::Result<VocabularyWord> {
+        let word = connection.query_row(
+            "INSERT INTO vocabulary (id, word, stem, lang, status, created_at)
+             VALUES (?1, ?2, ?3, ?4, 'learning', ?5)
+             ON CONFLICT(stem, lang) DO UPDATE SET word = vocabulary.word
+             RETURNING id, word, stem, lang, status, created_at",
+            params![
+                input.word_id,
+                input.word,
+                input.stem,
+                input.lang,
+                input.created_at,
+            ],
+            |row| {
+                Ok(VocabularyWord {
+                    id: row.get(0)?,
+                    word: row.get(1)?,
+                    stem: row.get(2)?,
+                    lang: row.get(3)?,
+                    status: row.get(4)?,
+                    created_at: row.get(5)?,
+                })
+            },
+        )?;
+
+        connection.execute(
+            "INSERT INTO vocabulary_lookups (
+                 id, vocabulary_id, book_id, locator, sentence, created_at
+             )
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(id) DO NOTHING",
+            params![
+                input.lookup_id,
+                word.id,
+                input.book_id,
+                input.locator,
+                input.sentence,
+                input.created_at,
+            ],
+        )?;
+
+        Ok(word)
+    }
+
+    /// Newest word first. Mirrored by `compareVocabulary()` in
+    /// `src/vocabulary/sort.ts`, which the browser implementation uses — the two
+    /// must return the same order for the same data.
+    pub fn list_vocabulary(connection: &Connection) -> rusqlite::Result<Vec<VocabularyEntry>> {
+        let mut statement = connection.prepare(
+            "SELECT id, word, stem, lang, status, created_at
+             FROM vocabulary
+             ORDER BY created_at DESC, id DESC",
+        )?;
+        let words: Vec<VocabularyWord> = statement
+            .query_map([], |row| {
+                Ok(VocabularyWord {
+                    id: row.get(0)?,
+                    word: row.get(1)?,
+                    stem: row.get(2)?,
+                    lang: row.get(3)?,
+                    status: row.get(4)?,
+                    created_at: row.get(5)?,
+                })
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+
+        let mut statement = connection.prepare(
+            "SELECT id, vocabulary_id, book_id, locator, sentence, created_at
+             FROM vocabulary_lookups
+             ORDER BY created_at ASC, id ASC",
+        )?;
+        let mut by_word: std::collections::HashMap<String, Vec<VocabularyLookup>> =
+            std::collections::HashMap::new();
+        for row in statement.query_map([], |row| {
+            Ok(VocabularyLookup {
+                id: row.get(0)?,
+                vocabulary_id: row.get(1)?,
+                book_id: row.get(2)?,
+                locator: row.get(3)?,
+                sentence: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })? {
+            let lookup = row?;
+            by_word
+                .entry(lookup.vocabulary_id.clone())
+                .or_default()
+                .push(lookup);
+        }
+
+        Ok(words
+            .into_iter()
+            .map(|word| VocabularyEntry {
+                lookups: by_word.remove(&word.id).unwrap_or_default(),
+                word,
+            })
+            .collect())
+    }
+
+    pub fn set_vocabulary_status(
+        connection: &Connection,
+        id: &str,
+        status: &str,
+    ) -> rusqlite::Result<()> {
+        connection.execute(
+            "UPDATE vocabulary SET status = ?2 WHERE id = ?1",
+            params![id, status],
+        )?;
+        Ok(())
+    }
+
+    /// Removes the word and, by cascade, every sentence recorded for it.
+    pub fn delete_vocabulary(connection: &Connection, id: &str) -> rusqlite::Result<()> {
+        connection.execute("DELETE FROM vocabulary WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
     pub fn record_reading_session(
         connection: &Connection,
         session: &ReadingSession,
@@ -1164,6 +1372,46 @@ pub fn library_delete_annotation(
     id: String,
 ) -> Result<(), String> {
     state.with_db(&app, |connection| store::delete_annotation(connection, &id))
+}
+
+#[tauri::command]
+pub fn library_list_vocabulary(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+) -> Result<Vec<VocabularyEntry>, String> {
+    state.with_db(&app, store::list_vocabulary)
+}
+
+#[tauri::command]
+pub fn library_record_vocabulary_lookup(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+    input: VocabularyLookupInput,
+) -> Result<VocabularyWord, String> {
+    state.with_db(&app, |connection| {
+        store::record_vocabulary_lookup(connection, &input)
+    })
+}
+
+#[tauri::command]
+pub fn library_set_vocabulary_status(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+    id: String,
+    status: String,
+) -> Result<(), String> {
+    state.with_db(&app, |connection| {
+        store::set_vocabulary_status(connection, &id, &status)
+    })
+}
+
+#[tauri::command]
+pub fn library_delete_vocabulary(
+    app: AppHandle,
+    state: State<'_, LibraryState>,
+    id: String,
+) -> Result<(), String> {
+    state.with_db(&app, |connection| store::delete_vocabulary(connection, &id))
 }
 
 #[tauri::command]
@@ -1852,5 +2100,323 @@ mod tests {
         let daily = stats.daily_stats.get("2026-08-16").unwrap();
         assert_eq!(daily.latin_words_read, 750);
         assert_eq!(daily.cjk_characters_read, 200);
+    }
+
+    fn lookup_input(
+        word_id: &str,
+        lookup_id: &str,
+        word: &str,
+        stem: &str,
+        book_id: Option<&str>,
+        sentence: &str,
+        created_at: &str,
+    ) -> VocabularyLookupInput {
+        VocabularyLookupInput {
+            word_id: word_id.to_string(),
+            lookup_id: lookup_id.to_string(),
+            word: word.to_string(),
+            stem: stem.to_string(),
+            lang: "en".to_string(),
+            book_id: book_id.map(str::to_string),
+            locator: Some("{\"format\":\"epub\",\"cfi\":\"epubcfi(/6/2!/4/2)\"}".to_string()),
+            sentence: sentence.to_string(),
+            created_at: created_at.to_string(),
+        }
+    }
+
+    /// The migration the vocabulary tables arrived in: a database already at
+    /// version 5 must gain them without losing a row of what was there.
+    #[test]
+    fn migration_v5_to_current_adds_vocabulary_and_keeps_every_row() {
+        let connection = db();
+        assert_eq!(SCHEMA_VERSION, 6, "this test is about the step from 5 to 6");
+
+        // Fill a v5-shaped database and stamp it back to 5.
+        let record = book("v5_book", "Older Book", "2026-08-20T10:00:00.000Z");
+        insert_book(&connection, &record).unwrap();
+        save_progress(
+            &connection,
+            &ReadingProgress {
+                book_id: "v5_book".to_string(),
+                cfi: Some("epubcfi(/6/4!/4/2)".to_string()),
+                percentage: 0.31,
+                updated_at: "2026-08-20T11:00:00.000Z".to_string(),
+            },
+        )
+        .unwrap();
+        save_annotation(
+            &connection,
+            &Annotation {
+                id: "v5_note".to_string(),
+                book_id: "v5_book".to_string(),
+                cfi_range: "epubcfi(/6/4!/4/2,/1:0,/1:9)".to_string(),
+                text: "kept text".to_string(),
+                note: "kept note".to_string(),
+                color: "yellow".to_string(),
+                chapter_title: Some("One".to_string()),
+                source: "local".to_string(),
+                created_at: "2026-08-20T11:05:00.000Z".to_string(),
+                updated_at: "2026-08-20T11:05:00.000Z".to_string(),
+            },
+        )
+        .unwrap();
+        save_collection(
+            &connection,
+            &Collection {
+                id: "v5_shelf".to_string(),
+                name: "Shelf".to_string(),
+                created_at: "2026-08-20T11:06:00.000Z".to_string(),
+                updated_at: "2026-08-20T11:06:00.000Z".to_string(),
+            },
+        )
+        .unwrap();
+        set_book_collections(&connection, "v5_book", &["v5_shelf".to_string()]).unwrap();
+        connection
+            .execute_batch(
+                "DROP TABLE IF EXISTS vocabulary_lookups;
+                 DROP TABLE IF EXISTS vocabulary;
+                 PRAGMA user_version = 5;",
+            )
+            .unwrap();
+
+        migrate(&connection).expect("migrate from v5 to current");
+
+        let version: i32 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+
+        // Nothing that was there before was touched.
+        assert_eq!(list_books(&connection).unwrap().len(), 1);
+        assert_eq!(
+            get_progress(&connection, "v5_book").unwrap().unwrap().cfi,
+            Some("epubcfi(/6/4!/4/2)".to_string())
+        );
+        assert_eq!(list_annotations(&connection, "v5_book").unwrap().len(), 1);
+        assert_eq!(list_collections(&connection).unwrap().len(), 1);
+        assert_eq!(
+            list_collection_membership(&connection)
+                .unwrap()
+                .get("v5_book")
+                .unwrap(),
+            &vec!["v5_shelf".to_string()]
+        );
+
+        // And both new tables are usable.
+        assert_eq!(list_vocabulary(&connection).unwrap(), vec![]);
+        record_vocabulary_lookup(
+            &connection,
+            &lookup_input(
+                "w1",
+                "l1",
+                "running",
+                "run",
+                Some("v5_book"),
+                "He kept running.",
+                "2026-08-20T12:00:00.000Z",
+            ),
+        )
+        .unwrap();
+        assert_eq!(list_vocabulary(&connection).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn one_word_in_two_books_is_one_entry_with_both_sentences() {
+        let connection = db();
+        insert_book(
+            &connection,
+            &book("book_a", "A", "2026-08-20T10:00:00.000Z"),
+        )
+        .unwrap();
+        insert_book(
+            &connection,
+            &book("book_b", "B", "2026-08-20T10:00:01.000Z"),
+        )
+        .unwrap();
+
+        // The same stem met as two different inflections, in two books.
+        record_vocabulary_lookup(
+            &connection,
+            &lookup_input(
+                "w1",
+                "l1",
+                "running",
+                "run",
+                Some("book_a"),
+                "He kept running.",
+                "2026-08-20T12:00:00.000Z",
+            ),
+        )
+        .unwrap();
+        let second = record_vocabulary_lookup(
+            &connection,
+            &lookup_input(
+                "w2",
+                "l2",
+                "ran",
+                "run",
+                Some("book_b"),
+                "She ran home.",
+                "2026-08-20T13:00:00.000Z",
+            ),
+        )
+        .unwrap();
+
+        // Deduplicated on the stem, so the second lookup joined the first entry
+        // rather than minting `w2`, and the first form met is the one kept.
+        assert_eq!(second.id, "w1");
+        assert_eq!(second.word, "running");
+
+        let entries = list_vocabulary(&connection).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].word.stem, "run");
+        assert_eq!(entries[0].lookups.len(), 2);
+        let sentences: Vec<&str> = entries[0]
+            .lookups
+            .iter()
+            .map(|lookup| lookup.sentence.as_str())
+            .collect();
+        assert_eq!(sentences, vec!["He kept running.", "She ran home."]);
+        let books: Vec<Option<&str>> = entries[0]
+            .lookups
+            .iter()
+            .map(|lookup| lookup.book_id.as_deref())
+            .collect();
+        assert_eq!(books, vec![Some("book_a"), Some("book_b")]);
+    }
+
+    #[test]
+    fn deleting_a_book_keeps_its_words_and_only_forgets_where_they_came_from() {
+        let connection = db();
+        insert_book(
+            &connection,
+            &book("book_a", "A", "2026-08-20T10:00:00.000Z"),
+        )
+        .unwrap();
+        insert_book(
+            &connection,
+            &book("book_b", "B", "2026-08-20T10:00:01.000Z"),
+        )
+        .unwrap();
+        record_vocabulary_lookup(
+            &connection,
+            &lookup_input(
+                "w1",
+                "l1",
+                "running",
+                "run",
+                Some("book_a"),
+                "He kept running.",
+                "2026-08-20T12:00:00.000Z",
+            ),
+        )
+        .unwrap();
+        record_vocabulary_lookup(
+            &connection,
+            &lookup_input(
+                "w2",
+                "l2",
+                "obviation",
+                "obviation",
+                Some("book_b"),
+                "The obviation of doubt.",
+                "2026-08-20T13:00:00.000Z",
+            ),
+        )
+        .unwrap();
+
+        delete_book(&connection, "book_a").unwrap();
+
+        let entries = list_vocabulary(&connection).unwrap();
+        assert_eq!(entries.len(), 2, "the words survive the book");
+        let orphaned = entries
+            .iter()
+            .find(|entry| entry.word.stem == "run")
+            .expect("run is still there");
+        assert_eq!(orphaned.lookups.len(), 1);
+        assert_eq!(orphaned.lookups[0].book_id, None, "ON DELETE SET NULL");
+        assert_eq!(orphaned.lookups[0].sentence, "He kept running.");
+
+        let untouched = entries
+            .iter()
+            .find(|entry| entry.word.stem == "obviation")
+            .expect("the other book is unaffected");
+        assert_eq!(untouched.lookups[0].book_id, Some("book_b".to_string()));
+    }
+
+    #[test]
+    fn a_word_can_be_marked_known_and_removed_with_its_sentences() {
+        let connection = db();
+        insert_book(
+            &connection,
+            &book("book_a", "A", "2026-08-20T10:00:00.000Z"),
+        )
+        .unwrap();
+        record_vocabulary_lookup(
+            &connection,
+            &lookup_input(
+                "w1",
+                "l1",
+                "running",
+                "run",
+                Some("book_a"),
+                "He kept running.",
+                "2026-08-20T12:00:00.000Z",
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(
+            list_vocabulary(&connection).unwrap()[0].word.status,
+            "learning"
+        );
+        set_vocabulary_status(&connection, "w1", "known").unwrap();
+        assert_eq!(
+            list_vocabulary(&connection).unwrap()[0].word.status,
+            "known"
+        );
+
+        delete_vocabulary(&connection, "w1").unwrap();
+        assert_eq!(list_vocabulary(&connection).unwrap(), vec![]);
+        let orphans: i64 = connection
+            .query_row("SELECT COUNT(*) FROM vocabulary_lookups", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(orphans, 0, "the sentences go with the word");
+    }
+
+    #[test]
+    fn vocabulary_lists_newest_first() {
+        let connection = db();
+        for (index, (word, at)) in [
+            ("alpha", "2026-08-20T10:00:00.000Z"),
+            ("beta", "2026-08-20T11:00:00.000Z"),
+            ("gamma", "2026-08-20T09:00:00.000Z"),
+        ]
+        .iter()
+        .enumerate()
+        {
+            record_vocabulary_lookup(
+                &connection,
+                &lookup_input(
+                    &format!("w{index}"),
+                    &format!("l{index}"),
+                    word,
+                    word,
+                    None,
+                    "A sentence.",
+                    at,
+                ),
+            )
+            .unwrap();
+        }
+
+        let order: Vec<String> = list_vocabulary(&connection)
+            .unwrap()
+            .into_iter()
+            .map(|entry| entry.word.word)
+            .collect();
+        assert_eq!(order, vec!["beta", "alpha", "gamma"]);
     }
 }

@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "fixture": "bun run scripts/make-fixture-epub.ts",
+    "dict:import": "cargo run --release --manifest-path src-tauri/Cargo.toml --example dict-import --",
     "tauri": "tauri",
     "app:dev": "tauri dev",
     "app:build": "bun run scripts/build-app.ts",

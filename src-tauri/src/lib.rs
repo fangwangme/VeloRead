@@ -1,3 +1,4 @@
+pub mod dictionary;
 mod exports;
 mod library;
 mod lifecycle;
@@ -8,6 +9,7 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .manage(library::LibraryState::default())
+        .manage(dictionary::DictionaryState::default())
         .invoke_handler(tauri::generate_handler![
             library::library_init,
             library::library_list_books,
@@ -35,6 +37,13 @@ pub fn run() {
             library::library_delete_annotation,
             library::library_record_reading_session,
             library::library_get_reading_stats,
+            library::library_list_vocabulary,
+            library::library_record_vocabulary_lookup,
+            library::library_set_vocabulary_status,
+            library::library_delete_vocabulary,
+            dictionary::dict_init,
+            dictionary::dict_status,
+            dictionary::dict_lookup,
             exports::export_text_files,
             exports::reveal_path,
             lifecycle::lifecycle_flush_complete,
