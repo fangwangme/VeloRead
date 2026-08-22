@@ -10,13 +10,22 @@ const recorded: VocabularyLookupInput[] = []
 const deleted: string[] = []
 const statuses: [string, string][] = []
 
+/** Held open by a test that needs to act while the lookup is still in flight. */
+let releaseLookup: (() => void) | null = null
+
 const dict: DictPort = {
-  init: async () => ({ ready: true, entries: 2 }),
-  status: async () => ({ ready: true, entries: 2 }),
-  // A two-word dictionary is enough: `running` has its own entry and `run` is
-  // the reduction, which is the case the stem rule turns on.
+  init: async () => ({ ready: true, entries: 3 }),
+  status: async () => ({ ready: true, entries: 3 }),
+  // Three words is enough for every case the stem rule turns on: `running` has
+  // its own entry *and* reduces to `run`, and `anopheles` is its own headword
+  // whose rule-guessed reduction `anophele` is not a word at all.
   lookup: async (candidates: string[]) => {
-    const known = candidates.filter((word) => ['running', 'run'].includes(word))
+    if (releaseLookup) {
+      await new Promise<void>((resolve) => {
+        releaseLookup = resolve
+      })
+    }
+    const known = candidates.filter((word) => ['running', 'run', 'anopheles'].includes(word))
     return {
       known,
       entry: known[0] ? { word: known[0], definition: 'To move swiftly.' } : null,
@@ -75,6 +84,7 @@ const selection = {
 }
 
 beforeEach(async () => {
+  releaseLookup = null
   recorded.length = 0
   deleted.length = 0
   statuses.length = 0
@@ -197,6 +207,51 @@ describe('useWordLookup', () => {
     await settle()
     expect(recorded).toHaveLength(2)
     expect(hook.vocabulary).toBe('learning')
+  })
+
+  /**
+   * The rules alone reduce `anopheles` to `anophele`; only the dictionary knows
+   * it is already the headword. Acting on the word before that answer arrives
+   * must not file it under the guess — on a first run the dictionary import can
+   * hold that answer for seconds.
+   */
+  it('files a word under the dictionary stem even when acted on mid-lookup', async () => {
+    releaseLookup = () => {}
+    act(() => hook.begin({ ...selection, text: 'anopheles', sentence: 'A genus of mosquitoes.' }))
+    await settle()
+
+    // The lookup has not answered yet.
+    expect(hook.definition).toEqual({ status: 'loading' })
+    act(() => hook.act())
+    await settle()
+    expect(recorded).toEqual([])
+
+    // Now let the dictionary answer.
+    act(() => releaseLookup?.())
+    await settle()
+
+    expect(recorded).toHaveLength(1)
+    expect(recorded[0].stem).toBe('anopheles')
+    expect(recorded[0].stem).not.toBe('anophele')
+    // And the popover shows the word as saved, not as unsaved under a stem
+    // nobody filed it under.
+    expect(hook.vocabulary).toBe('learning')
+  })
+
+  it('saves under the dictionary stem when saved mid-lookup', async () => {
+    releaseLookup = () => {}
+    act(() => hook.begin({ ...selection, text: 'anopheles', sentence: 'A genus of mosquitoes.' }))
+    await settle()
+
+    act(() => hook.setStatus('known'))
+    await settle()
+    act(() => releaseLookup?.())
+    await settle()
+
+    expect(recorded).toHaveLength(1)
+    expect(recorded[0].stem).toBe('anopheles')
+    expect(statuses).toEqual([[recorded[0].wordId, 'known']])
+    expect(hook.vocabulary).toBe('known')
   })
 
   it('starts a fresh write for the next word', async () => {

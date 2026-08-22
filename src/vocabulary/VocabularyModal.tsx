@@ -73,14 +73,25 @@ export function VocabularyModal({ onClose }: { onClose: () => void }) {
     return { ids: [...ids], orphans }
   }, [entries])
 
+  /**
+   * Deleting the last word from a book takes its option out of the picker.
+   * Falling back to "all books" keeps the list from stranding on a filter that
+   * no longer exists — the shelf does the same thing when a collection goes
+   * away (see `Library.tsx`).
+   */
+  const filterExists =
+    filter === ALL_BOOKS ||
+    (filter === NO_BOOK ? sources.orphans : sources.ids.includes(filter))
+  const effectiveFilter = filterExists ? filter : ALL_BOOKS
+
   const visible = useMemo(() => {
-    if (filter === ALL_BOOKS) return entries
+    if (effectiveFilter === ALL_BOOKS) return entries
     return entries.filter((entry) =>
       entry.lookups.some((lookup) =>
-        filter === NO_BOOK ? lookup.bookId === null : lookup.bookId === filter,
+        effectiveFilter === NO_BOOK ? lookup.bookId === null : lookup.bookId === effectiveFilter,
       ),
     )
-  }, [entries, filter])
+  }, [entries, effectiveFilter])
 
   const remove = async (entry: VocabularyEntry) => {
     const confirmed = await confirm({
@@ -111,7 +122,10 @@ export function VocabularyModal({ onClose }: { onClose: () => void }) {
       const withDefinitions: VocabularyExportEntry[] = await Promise.all(
         entries.map(async (entry) => ({
           ...entry,
-          definition: (await dict.lookup(lookupCandidates(entry.word.stem))).entry?.definition ?? null,
+          // The word as it was met, not the stem: `lookupCandidates` already
+          // falls back through the reductions, so this gives `running` its own
+          // entry — the one the reader saw — and still finds `run` for `runs`.
+          definition: (await dict.lookup(lookupCandidates(entry.word.word))).entry?.definition ?? null,
         })),
       )
       const text = formatVocabulary({
@@ -179,7 +193,7 @@ export function VocabularyModal({ onClose }: { onClose: () => void }) {
           <label className="flex items-center gap-2 text-[11px] text-neutral-500 dark:text-neutral-400">
             <span>{t('vocab.filterLabel')}</span>
             <select
-              value={filter}
+              value={effectiveFilter}
               onChange={(event) => setFilter(event.target.value)}
               className="rounded-lg border border-black/[0.12] bg-black/[0.03] px-2 py-1 text-[11px] text-neutral-700 outline-none focus-visible:border-blue-500 dark:border-white/[0.10] dark:bg-white/[0.05] dark:text-neutral-200"
             >

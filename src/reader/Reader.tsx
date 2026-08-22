@@ -1786,7 +1786,14 @@ export function Reader({
                 // seeded from the draft, and re-pointing the same instance at
                 // another passage kept the previous one's note — which the next
                 // colour tap would then save onto the new highlight.
-                key={highlightDraft.annotation?.id ?? highlightDraft.cfiRange}
+                //
+                // The passage, specifically, and not the saved row's id: those
+                // differ for the same passage the moment a colour is picked,
+                // and remounting there threw away the note being written and
+                // replayed the entrance animation — undoing the one thing this
+                // popover promises, that a colour tap can be followed by a note
+                // without reselecting.
+                key={highlightDraft.cfiRange}
                 draft={highlightDraft}
                 bounds={highlightDraft.bounds}
                 definition={lookup.definition}

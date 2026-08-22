@@ -13,7 +13,7 @@ let root: Root | null = null
 let host: HTMLDivElement | null = null
 
 function render(props: Partial<Parameters<typeof HighlightPopover>[0]> = {}) {
-  const draft: HighlightDraft = {
+  const draft: HighlightDraft = props.draft ?? {
     annotation: null,
     cfiRange: 'epubcfi(/6/2!/4/2,/1:0,/1:7)',
     text: 'running',
@@ -27,6 +27,8 @@ function render(props: Partial<Parameters<typeof HighlightPopover>[0]> = {}) {
     root = createRoot(container)
     root.render(
       <HighlightPopover
+        // Keyed by the passage, as `Reader.tsx` does.
+        key={draft.cfiRange}
         draft={draft}
         bounds={{ width: 900, height: 700 }}
         definition={{ status: 'found', word: 'running', definition: 'Act of running.' }}
@@ -52,6 +54,20 @@ function actions(container: HTMLElement): string[] {
 
 function action(container: HTMLElement, name: string): HTMLButtonElement {
   return container.querySelector<HTMLButtonElement>(`button[data-action="${name}"]`)!
+}
+
+/**
+ * Type into a controlled field.
+ *
+ * Through the prototype's setter, not `element.value =`: React tracks the last
+ * value it wrote, and a direct assignment updates the DOM while leaving that
+ * tracker untouched — so the change event is discarded as a no-op and the DOM
+ * silently reverts on the next render.
+ */
+function type(element: HTMLTextAreaElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
+  setter.call(element, value)
+  element.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
 afterEach(() => {
@@ -138,6 +154,43 @@ describe('HighlightPopover structure', () => {
   })
 })
 
+describe('HighlightPopover anchoring', () => {
+  const topOf = (container: HTMLElement) =>
+    Number.parseInt(container.querySelector<HTMLElement>('[role="dialog"]')!.style.top, 10)
+
+  it('never anchors above the top of the reading area, note open or shut', () => {
+    // Just enough room above for the collapsed popover and not for the note
+    // editor. `preferAbove` is decided from the same estimate that the note
+    // grows, so opening it flips the popover below rather than off the top.
+    const container = render({
+      draft: {
+        annotation: null,
+        cfiRange: 'epubcfi(/6/2!/4/2,/1:0,/1:7)',
+        text: 'running',
+        rect: { left: 200, top: 250, width: 60, height: 18 },
+      },
+    })
+    expect(topOf(container)).toBeGreaterThanOrEqual(0)
+
+    act(() => action(container, 'note').click())
+    expect(topOf(container)).toBeGreaterThanOrEqual(0)
+  })
+
+  it('keeps the panel inside the reading area for a selection at the very top', () => {
+    const container = render({
+      draft: {
+        annotation: null,
+        cfiRange: 'epubcfi(/6/2!/4/2,/1:0,/1:7)',
+        text: 'running',
+        rect: { left: 0, top: 0, width: 60, height: 18 },
+      },
+    })
+    expect(topOf(container)).toBeGreaterThanOrEqual(0)
+    act(() => action(container, 'note').click())
+    expect(topOf(container)).toBeGreaterThanOrEqual(0)
+  })
+})
+
 describe('HighlightPopover definition area', () => {
   const cases: [string, DefinitionState, string][] = [
     ['the entry it found', { status: 'found', word: 'run', definition: 'To move swiftly.' }, 'To move swiftly.'],
@@ -154,6 +207,60 @@ describe('HighlightPopover definition area', () => {
       )
     })
   }
+})
+
+describe('HighlightPopover across a save', () => {
+  /**
+   * Picking a colour turns a fresh selection into a stored highlight. The
+   * popover is keyed by the passage rather than by the saved row's id, so that
+   * transition does not remount it — which is what lets a colour tap be
+   * followed by writing a note, the thing this popover promises.
+   */
+  it('keeps a note being written when the selection becomes a saved highlight', () => {
+    const cfiRange = 'epubcfi(/6/2!/4/2,/1:0,/1:7)'
+    const rect = { left: 200, top: 300, width: 60, height: 18 }
+    const container = render({ draft: { annotation: null, cfiRange, text: 'running', rect } })
+
+    act(() => action(container, 'note').click())
+    act(() => type(container.querySelector('textarea')!, 'half a thought'))
+    expect(container.querySelector('textarea')!.value).toBe('half a thought')
+
+    // Re-render the same root at the same key, now pointing at the saved row.
+    const saved: Annotation = {
+      id: 'a-new',
+      bookId: 'b1',
+      cfiRange,
+      text: 'running',
+      note: '',
+      color: 'green',
+      chapterTitle: null,
+      source: 'local',
+      createdAt: '2026-08-22T10:00:00.000Z',
+      updatedAt: '2026-08-22T10:00:00.000Z',
+    }
+    act(() => {
+      root!.render(
+        <HighlightPopover
+          key={cfiRange}
+          draft={{ annotation: saved, cfiRange, text: 'running', rect }}
+          bounds={{ width: 900, height: 700 }}
+          definition={{ status: 'found', word: 'running', definition: 'Act of running.' }}
+          vocabulary="none"
+          onApply={() => {}}
+          onDelete={() => {}}
+          onClose={() => {}}
+          onVocabularyChange={() => {}}
+          onSearch={() => {}}
+          onCopy={() => {}}
+        />,
+      )
+    })
+
+    // Still open, still holding what was typed — and delete is live now.
+    expect(container.querySelector('textarea')).not.toBeNull()
+    expect(container.querySelector('textarea')!.value).toBe('half a thought')
+    expect(action(container, 'delete').disabled).toBe(false)
+  })
 })
 
 describe('HighlightPopover as a hub', () => {

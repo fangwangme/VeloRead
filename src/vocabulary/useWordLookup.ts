@@ -60,8 +60,18 @@ export function useWordLookup(bookId: string): WordLookup {
 
   /** stem → the row it is filed under. */
   const savedRef = useRef(new Map<string, VocabularyWord>())
-  /** The selection the popover is currently showing, with its resolved stem. */
-  const pendingRef = useRef<(WordSelection & { stem: string }) | null>(null)
+  /**
+   * The selection the popover is showing.
+   *
+   * `stem` is the rules-only guess, good enough to render with; `settled` is
+   * the promise of the stem once the dictionary has had its say. Anything that
+   * *writes* must await `settled`, because the two can differ — `anopheles`
+   * reduces to `anophele` by rule and is its own headword in fact — and a row
+   * filed under a guess is a row under the wrong word.
+   */
+  const pendingRef = useRef<
+    (WordSelection & { stem: string; settled: Promise<string> }) | null
+  >(null)
   /** Guards against a slow lookup landing after the reader moved on. */
   const tokenRef = useRef(0)
 
@@ -83,7 +93,9 @@ export function useWordLookup(bookId: string): WordLookup {
 
   const remember = useCallback((word: VocabularyWord) => {
     savedRef.current.set(word.stem, word)
-    if (pendingRef.current?.stem === word.stem) setVocabulary(word.status)
+    // The write and the dictionary answer land in either order. Each one
+    // re-reads what the other left behind, so both orderings converge.
+    setVocabulary((current) => (pendingRef.current?.stem === word.stem ? word.status : current))
   }, [])
 
   /**
@@ -104,11 +116,14 @@ export function useWordLookup(bookId: string): WordLookup {
 
     const write = (async () => {
       try {
+        // Waits for the dictionary. Acting on a word the instant the popover
+        // appears must not file it under the rules-only guess.
+        const stem = await pending.settled
         const word = await (await getDict()).recordLookup({
           wordId: newId(),
           lookupId: newId(),
           word: normaliseWord(pending.text),
-          stem: pending.stem,
+          stem,
           lang: LANG,
           bookId,
           locator: pending.locator,
@@ -151,21 +166,33 @@ export function useWordLookup(bookId: string): WordLookup {
       const candidates = lookupCandidates(selection.text)
       const word = candidates[0]
       recordedRef.current = null
-      // Provisional until the dictionary answers, so the word is filed
-      // correctly even if the popover is dismissed before the lookup lands.
-      pendingRef.current = { ...selection, stem: resolveStem(selection.text) }
+
+      const answer = (async () => {
+        const dict = await getDict()
+        const [found, status] = await Promise.all([dict.lookup(candidates), dict.status()])
+        return { found, status }
+      })()
+
+      // The rules-only guess renders immediately; `settled` is what anything
+      // that writes must wait for. Falling back to the guess keeps a word
+      // recordable when the dictionary is missing or broken.
+      const guess = resolveStem(selection.text)
+      const settled = answer
+        .then(({ found }) => resolveStem(selection.text, found.known))
+        .catch(() => guess)
+
+      pendingRef.current = { ...selection, stem: guess, settled }
       setDefinition({ status: 'loading' })
-      setVocabulary(savedRef.current.get(pendingRef.current.stem)?.status ?? 'none')
+      setVocabulary(savedRef.current.get(guess)?.status ?? 'none')
       intent.open(() => void record())
 
       void (async () => {
         try {
-          const dict = await getDict()
-          const [found, status] = await Promise.all([dict.lookup(candidates), dict.status()])
+          const { found, status } = await answer
           if (token !== tokenRef.current) return
 
-          const stem = resolveStem(selection.text, found.known)
-          pendingRef.current = { ...selection, stem }
+          const stem = await settled
+          pendingRef.current = { ...selection, stem, settled }
           setVocabulary(savedRef.current.get(stem)?.status ?? 'none')
           setDefinition(
             found.entry
@@ -198,18 +225,22 @@ export function useWordLookup(bookId: string): WordLookup {
     (next: VocabularyStatus | 'none') => {
       const pending = pendingRef.current
       if (!pending) return
-      const existing = savedRef.current.get(pending.stem)
 
       if (next === 'none') {
-        if (!existing) return
-        savedRef.current.delete(pending.stem)
         setVocabulary('none')
         // Nothing left to record — and the write is re-armed, so pressing save
         // again on the same popover puts the word back rather than reporting a
         // row that is no longer there.
         intent.close()
+        const written = recordedRef.current
         recordedRef.current = null
         void (async () => {
+          // The row to delete is whichever one exists: one this popover just
+          // wrote, or one an earlier session did, found under the settled stem.
+          const stem = await pending.settled
+          const existing = (await written) ?? savedRef.current.get(stem)
+          if (!existing) return
+          savedRef.current.delete(existing.stem)
           try {
             await (await getDict()).deleteWord(existing.id)
           } catch {
@@ -224,9 +255,13 @@ export function useWordLookup(bookId: string): WordLookup {
         // Saving is the strongest evidence of intent there is, so the row goes
         // in now rather than waiting out the dwell — and through the same
         // memoised write, so dwelling first does not make this a second row.
-        const word = (await record()) ?? savedRef.current.get(pending.stem)
+        const stem = await pending.settled
+        const word = (await record()) ?? savedRef.current.get(stem)
         if (!word) return
-        savedRef.current.set(pending.stem, { ...word, status: next })
+        savedRef.current.set(word.stem, { ...word, status: next })
+        // Reinstated after the write: a row is created `learning`, and letting
+        // that land last would silently undo the reader pressing "known".
+        if (pendingRef.current?.stem === word.stem) setVocabulary(next)
         try {
           await (await getDict()).setWordStatus(word.id, next)
         } catch {
