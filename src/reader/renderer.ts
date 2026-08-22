@@ -291,6 +291,8 @@ export async function createReader(
    * up; until then there is no selection to act on.
    */
   let selectionInProgress = false
+  /** When a gesture last produced a selection, so its own click can be ignored. */
+  let lastSelectionAt = 0
   let pendingSelection: { cfiRange: string; contents: Contents } | null = null
   let flushTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -314,6 +316,7 @@ export async function createReader(
       // A malformed CFI must not break selecting text.
     }
     if (!text || !rect) return
+    lastSelectionAt = Date.now()
     onSelection({ cfiRange, text, rect, sentence })
   }
 
@@ -384,8 +387,19 @@ export async function createReader(
           onLinkClick?.()
           return
         }
+        // Selecting text is not tapping the page, and the clicks a selection
+        // gesture emits must not be treated as one. A double click is how you
+        // look a word up: letting it through moves the auto-reading cursor onto
+        // the very word being looked up, and dismisses the popover that is
+        // about to open. Three separate guards, because a click arrives with
+        // the selection in a different state depending on the gesture:
+        //   - a double or triple click says so in its click count;
+        //   - a sweep produces a plain click, but one that lands just after the
+        //     selection was reported;
+        //   - and anything else is caught by the selection still standing.
+        if (event.detail >= 2) return
+        if (Date.now() - lastSelectionAt < SELECTION_CLICK_GRACE_MS) return
         const selection = doc.getSelection()
-        // Preserve ordinary text selection for the future annotation feature.
         if (selection && !selection.isCollapsed) return
         const range = wordRangeAtPoint(doc, event.clientX, event.clientY)
         // `caretRangeFromPoint` snaps to the nearest text position however far
@@ -1014,6 +1028,14 @@ export async function createReader(
  * How far off-screen a box has to sit before it is the hiding trick below
  * rather than a legitimate layout.
  */
+/**
+ * How long after a selection a click still counts as part of that gesture.
+ *
+ * Long enough to cover the click that ends a sweep, short enough that a
+ * deliberate tap right after reading a definition still moves the cursor.
+ */
+const SELECTION_CLICK_GRACE_MS = 300
+
 const OFFSCREEN_THRESHOLD_PX = -2000
 
 /**
