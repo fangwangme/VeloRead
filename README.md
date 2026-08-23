@@ -1,6 +1,6 @@
 # VeloRead
 
-A clean, elegant, local-first macOS desktop reader (EPUB / TXT / PDF) designed for deep focus reading, reading speed training with an auto-advancing Pacer, structured highlights and annotations, and complete data freedom with plain-text export.
+A clean, elegant, local-first cross-platform desktop reader (macOS / Linux) for EPUB, TXT, and PDF — designed for deep focus reading, reading speed training with an auto-advancing Pacer, structured highlights and vocabulary, and complete data freedom with plain-text export.
 
 ## Features
 
@@ -33,17 +33,32 @@ A clean, elegant, local-first macOS desktop reader (EPUB / TXT / PDF) designed f
 
 ## Installation
 
-Download the package for your platform from
-[GitHub Releases](https://github.com/fangwangme/VeloRead/releases):
+Pre-built binaries and packages for **macOS** and **Linux** are available on [GitHub Releases](https://github.com/fangwangme/VeloRead/releases):
 
-- **macOS** (Universal — Intel and Apple Silicon): `VeloRead_<version>_macOS_universal.dmg` —
-  open it and drag `VeloRead.app` into Applications.
-- **Linux**:
-  - `.deb` (Debian/Ubuntu): `sudo apt install ./VeloRead_<version>_linux_x86_64.deb`
-  - `.AppImage` (no install, needs `libfuse2`): `chmod +x VeloRead_<version>_linux_x86_64.AppImage`,
-    then run it
-  - `.tar.gz` (Arch/Omarchy and other distros): extract and run `usr/bin/veloread` directly, or
-    `cp -r usr/* /usr/local/` for menu integration — the layout is also what a PKGBUILD expects
+### macOS
+- **Universal DMG** (Apple Silicon & Intel):
+  Download `VeloRead_<version>_macOS_universal.dmg`, open it, and drag `VeloRead.app` into your Applications folder.
+
+### Linux
+- **Debian / Ubuntu** (`.deb`):
+  ```bash
+  sudo apt install ./VeloRead_<version>_linux_x86_64.deb
+  ```
+- **Arch Linux / Omarchy / Generic Distros** (`.tar.gz` Portable Standalone):
+  Extract and run directly, or copy to `/usr/local` for desktop menu and icon integration:
+  ```bash
+  tar -xzf VeloRead_<version>_linux_x86_64.tar.gz
+  ./usr/bin/veloread
+
+  # Optional: install system-wide (desktop entry & 512x512 icon included)
+  sudo cp -r usr/* /usr/local/
+  ```
+  *(The `usr/` layout is directly compatible with Arch PKGBUILDs)*
+- **AppImage** (Single-file portable executable, requires `libfuse2`):
+  ```bash
+  chmod +x VeloRead_<version>_linux_x86_64.AppImage
+  ./VeloRead_<version>_linux_x86_64.AppImage
+  ```
 
 ## Build & Run
 
