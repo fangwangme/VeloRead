@@ -30,6 +30,10 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Add macOS Universal compilation targets
+        if: matrix.platform == 'macos'
+        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> ../.local/target
