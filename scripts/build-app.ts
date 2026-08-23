@@ -84,6 +84,25 @@ function isCurrentVersionArtifact(name: string): boolean {
   return name.includes(conf.version)
 }
 
+/**
+ * Release file names are renamed away from whatever `tauri build` produced
+ * (Cargo target triples, lowercase-and-arch `.deb` conventions, ...) to one
+ * scheme across platforms — a download picker or a PKGBUILD should not have
+ * to know what `unknown-linux-gnu` means.
+ */
+function macArch(): string {
+  return process.arch === 'arm64' ? 'arm64' : 'x64'
+}
+
+function linuxArch(): string {
+  return process.arch === 'arm64' ? 'aarch64' : 'x86_64'
+}
+
+function canonicalLinuxName(kind: 'deb' | 'rpm' | 'appimage', arch: string): string {
+  const ext = kind === 'appimage' ? 'AppImage' : kind
+  return `${conf.productName}_${conf.version}_linux_${arch}.${ext}`
+}
+
 /** Runs the build and hands back its exit code; the caller decides what a failure means. */
 function runTauriBuild(extra: string[] = []): number {
   const args = ['tauri', 'build', ...extra, ...(noBundle ? ['--no-bundle'] : [])]
@@ -100,10 +119,15 @@ function requestedBundles(): string[] {
   return at !== -1 && process.argv[at + 1] ? ['--bundles', process.argv[at + 1]] : []
 }
 
-function requestedBundleKind(): 'deb' | 'rpm' | 'appimage' | null {
+function requestedBundleKinds(): Set<string> | null {
   const at = process.argv.indexOf('--bundles')
-  const value = at !== -1 ? process.argv[at + 1]?.toLowerCase() : undefined
-  return value === 'deb' || value === 'rpm' || value === 'appimage' ? value : null
+  if (at === -1 || !process.argv[at + 1]) return null
+  const kinds = process.argv[at + 1]
+    .toLowerCase()
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  return kinds.length > 0 ? new Set(kinds) : null
 }
 
 /**
@@ -164,15 +188,17 @@ async function buildMacOS() {
   await cp(appSource, appTarget, { recursive: true, verbatimSymlinks: true })
 
   const dmgDir = join(bundleDir, 'dmg')
-  const dmgName = existsSync(dmgDir)
+  const dmgSource = existsSync(dmgDir)
     ? (await readdir(dmgDir)).find(
         (name) => name.endsWith('.dmg') && isCurrentVersionArtifact(name),
       )
     : undefined
   let dmgTarget: string | undefined
-  if (dmgName) {
+  let dmgName: string | undefined
+  if (dmgSource) {
+    dmgName = `${conf.productName}_${conf.version}_macOS_${universal ? 'universal' : macArch()}.dmg`
     dmgTarget = join(outDir, dmgName)
-    await cp(join(dmgDir, dmgName), dmgTarget)
+    await cp(join(dmgDir, dmgSource), dmgTarget)
   }
 
   const arch = (await $`lipo -archs ${join(appTarget, `Contents/MacOS/${BINARY}`)}`.text()).trim()
@@ -189,7 +215,43 @@ async function buildMacOS() {
 }
 
 /**
- * Linux installers, and the loose executable either way.
+ * A standalone tarball, for the Linux desktops neither installer format
+ * reaches: `.deb`/`.rpm` do not install on Arch, and AppImage needs FUSE a
+ * base install may not have. The `usr/...` layout is not incidental — it is
+ * what a PKGBUILD expects to `cp -r` straight into `$pkgdir`.
+ */
+async function packageLinuxTarball(
+  outDir: string,
+  arch: string,
+  binary: string,
+): Promise<string | undefined> {
+  if (!existsSync(binary)) return undefined
+
+  const stageDir = join(outDir, '.tarball-stage')
+  await rm(stageDir, { recursive: true, force: true })
+  await mkdir(join(stageDir, 'usr/bin'), { recursive: true })
+  await mkdir(join(stageDir, 'usr/share/applications'), { recursive: true })
+  await mkdir(join(stageDir, 'usr/share/icons/hicolor/512x512/apps'), { recursive: true })
+
+  await cp(binary, join(stageDir, 'usr/bin', BINARY))
+  await chmod(join(stageDir, 'usr/bin', BINARY), 0o755)
+  await cp(
+    join(ROOT, 'src-tauri/linux/veloread.desktop'),
+    join(stageDir, 'usr/share/applications', `${BINARY}.desktop`),
+  )
+  await cp(
+    join(ROOT, 'src-tauri/icons/icon.png'),
+    join(stageDir, 'usr/share/icons/hicolor/512x512/apps', `${BINARY}.png`),
+  )
+
+  const tarPath = join(outDir, `${conf.productName}_${conf.version}_linux_${arch}.tar.gz`)
+  await $`tar -czf ${tarPath} -C ${stageDir} usr`.quiet()
+  await rm(stageDir, { recursive: true, force: true })
+  return tarPath
+}
+
+/**
+ * Linux installers, the standalone tarball, and the loose executable either way.
  *
  * `tauri.conf.json` asks for every bundle target, which here means `.deb`,
  * `.rpm` and `.AppImage`. Each needs its own tooling installed, and a machine
@@ -197,6 +259,7 @@ async function buildMacOS() {
  * reported rather than fatal, and the executable is always pointed at.
  */
 async function buildLinux() {
+  const arch = linuxArch()
   const code = runTauriBuild(requestedBundles())
   if (noBundle) {
     if (code !== 0) process.exit(code)
@@ -214,23 +277,26 @@ async function buildLinux() {
   const outDir = await outputDir()
   const collected: string[] = []
 
-  const requestedKind = requestedBundleKind()
+  const requestedKinds = requestedBundleKinds()
   const kinds = (['deb', 'rpm', 'appimage'] as const).filter(
-    (kind) => requestedKind === null || kind === requestedKind,
+    (kind) => requestedKinds === null || requestedKinds.has(kind),
   )
   for (const kind of kinds) {
     const dir = join(bundleDir, kind)
     if (!existsSync(dir)) continue
     for (const name of await readdir(dir)) {
       if (!/\.(AppImage|deb|rpm)$/i.test(name) || !isCurrentVersionArtifact(name)) continue
-      const destination = join(outDir, name)
+      const destination = join(outDir, canonicalLinuxName(kind, arch))
       await cp(join(dir, name), destination)
       // cp keeps the mode, but an AppImage that is not executable is a puzzle
       // rather than an app.
-      if (name.endsWith('.AppImage')) await chmod(destination, 0o755)
+      if (kind === 'appimage') await chmod(destination, 0o755)
       collected.push(destination)
     }
   }
+
+  const tarball = await packageLinuxTarball(outDir, arch, binary)
+  if (tarball) collected.push(tarball)
 
   console.log(`\n▸ ${conf.productName} ${conf.version}`)
   if (existsSync(binary)) {
@@ -242,14 +308,9 @@ async function buildLinux() {
     )
     console.log('  ask for one format with:  bun run app:build -- --bundles deb')
   }
-  if (collected.length === 0) {
-    console.log('\n  no installers were produced — the bundle tooling may be missing.')
-    console.log('  The executable above still runs; see docs/usage/build.md.')
-  } else {
-    console.log(`\n▸ ${outDir}`)
-    for (const file of collected) {
-      console.log(`  ${file.split('/').pop()}   ${await humanSize(file)}`)
-    }
+  console.log(`\n▸ ${outDir}`)
+  for (const file of collected) {
+    console.log(`  ${file.split('/').pop()}   ${await humanSize(file)}`)
   }
 
   const appImage = collected.find((file) => file.endsWith('.AppImage'))

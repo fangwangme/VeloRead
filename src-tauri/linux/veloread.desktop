@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=VeloRead
+Comment=EPUB reader with a speed-reading pacer
+Exec=veloread %U
+Icon=veloread
+Terminal=false
+Categories=Office;Viewer;
+MimeType=application/epub+zip;text/plain;

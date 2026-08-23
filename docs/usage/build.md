@@ -1,6 +1,7 @@
 # 构建与运行
 
-VeloRead 提供 GitHub Releases 自动构建的 `.dmg` 安装包，也可以在本地直接通过源码构建。
+VeloRead 提供 GitHub Releases 自动构建的安装包（macOS Universal `.dmg`、Linux `.deb` /
+`.AppImage` / `.tar.gz`），也可以在本地直接通过源码构建。
 
 ## 前置依赖
 
@@ -56,9 +57,15 @@ bun run app:build:universal        # macOS 专用：Intel + Apple silicon 合一
 
 | 平台 | 产物 |
 | --- | --- |
-| macOS | `VeloRead.app` + `VeloRead_<version>_<arch>.dmg` |
-| Linux | `VeloRead_<version>_amd64.deb`、`VeloRead-<version>-1.x86_64.rpm`、`.AppImage` |
+| macOS | `VeloRead.app` + `VeloRead_<version>_macOS_<arch\|universal>.dmg` |
+| Linux | `VeloRead_<version>_linux_<arch>.deb` / `.rpm` / `.AppImage` / `.tar.gz` |
 | Windows | `.msi` / `.exe` |
+
+文件名是固定命名方案，而不是各打包工具各自的产物名——不会出现 `unknown-linux-gnu` 这类裸
+target triple。`<arch>` 是 `x86_64` / `aarch64`（Linux）或 `x64` / `arm64`（macOS 非
+universal 构建）。`.tar.gz` 是脚本自己打的，不依赖任何打包工具：`usr/bin` + 
+`usr/share/applications` + `usr/share/icons` 布局，可直接用于免安装运行，或被 PKGBUILD
+`cp -r` 进 `$pkgdir`。
 
 不管哪个平台，可执行文件本身都在 `.local/target/release/veloread`，脚本最后会把
 「怎么运行它」那行路径直接打出来。
@@ -74,23 +81,26 @@ bun run app:build -- --no-bundle
 
 打完整安装包时要知道两件事：
 
-- **`.deb` / `.rpm` 在 Arch 上装不了。** 想要能从应用菜单启动的东西，只有 AppImage 有意义。
+- **`.deb` / `.rpm` 在 Arch 上装不了。** 想要能从应用菜单启动的东西，AppImage 或
+  `.tar.gz`（解压后把 `usr/` 下的内容拷进 `/usr` 或 `~/.local`）都可以；`.tar.gz` 打包脚本
+  自己做，不依赖 `linuxdeploy` / FUSE，Arch / Omarchy 上最省事，也是 PKGBUILD 的取材来源。
 - **AppImage 需要 `libfuse2`。** Arch 默认只有 fuse3，缺它时 `linuxdeploy` 会失败并报
   `failed to run linuxdeploy`。这不会让整次构建作废——脚本会把已经成功的格式收好、
-  把失败说清楚，可执行文件照常可用。装上 `libfuse2` 之后 AppImage 就能出。
+  把失败说清楚，可执行文件和 `.tar.gz` 照常可用。装上 `libfuse2` 之后 AppImage 就能出。
 
 这条「部分失败不算失败」是刻意的：Rust release 编译已经付出了，不该因为最后一个
 打包格式缺个系统库就全部丢掉。
 
-脚本是 [`scripts/build-app.ts`](../../scripts/build-app.ts)，它在 `tauri build` 之外做四件事：
+脚本是 [`scripts/build-app.ts`](../../scripts/build-app.ts)，它在 `tauri build` 之外做五件事：
 
 1. **先卸载残留的磁盘映像。** 被中断的 `bundle_dmg.sh` 会把它的临时卷留在 `/Volumes/dmg.*`，
    下一次打包会在最后一步失败，而且只给你一句 `failed to run bundle_dmg.sh`——
    此时整个 Rust release 编译已经白跑了。
-2. **把产物从四层深的目录复制出来。** `tauri build` 的输出路径还会随 `--target` 变化，
-   `.local/release/<version>/` 不会。
+2. **把产物从四层深的目录复制出来，并按固定命名方案重命名。** `tauri build` 的输出路径还会随
+   `--target` 变化，`.local/release/<version>/` 不会；文件名也不再是各打包工具各自的产物名。
 3. **报告架构和签名状态**（macOS），因为这两条决定了产物能不能给别人。
 4. **按平台分支**，并在 Linux 上容忍单个打包格式失败——见上一节。
+5. **在 Linux 上额外打一份 `.tar.gz`**，不依赖任何打包工具，见上表。
 
 `bun run clean` 清掉 `dist/` 和 `release/`；`bun run clean:all` 连 `target/` 一起（4 GB 左右）。
 
