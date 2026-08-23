@@ -254,6 +254,20 @@ describe('useWordLookup', () => {
     expect(hook.vocabulary).toBe('known')
   })
 
+  it('keeps vocabulary status as none when removed mid-write', async () => {
+    act(() => hook.begin(selection))
+    await settle()
+
+    // Intent dwell begins recording
+    act(() => hook.act())
+    // User immediately removes the word before write finishes settling
+    act(() => hook.setStatus('none'))
+    await settle()
+
+    expect(hook.vocabulary).toBe('none')
+    expect(deleted).toHaveLength(1)
+  })
+
   it('starts a fresh write for the next word', async () => {
     act(() => hook.begin(selection))
     await settle()

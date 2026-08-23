@@ -297,7 +297,7 @@ export async function createReader(
   let pendingSelection: { cfiRange: string; contents: Contents } | null = null
   let flushTimer: ReturnType<typeof setTimeout> | null = null
 
-  function emitSelection(cfiRange: string, contents: Contents) {
+  function emitSelection(cfiRange: string, contents: Contents, liveRange?: Range) {
     if (!onSelection) return
     pendingSelection = null
     if (flushTimer !== null) {
@@ -308,7 +308,7 @@ export async function createReader(
     let rect: SelectionInfo['rect'] | null = null
     let sentence = ''
     try {
-      const range = contents.range(cfiRange)
+      const range = liveRange ?? contents.range(cfiRange)
       text = range?.toString().trim() ?? ''
       const bounds = range?.getBoundingClientRect()
       if (bounds) rect = toContainerRect(bounds)
@@ -349,7 +349,9 @@ export async function createReader(
       const range = selection.getRangeAt(0)
       if (!range || range.collapsed) return
       if (range.toString().trim().length === 0) return
-      emitSelection(contents.cfiFromRange(range), contents)
+      const cfiRange = contents.cfiFromRange(range)
+      if (!cfiRange) return
+      emitSelection(cfiRange, contents, range)
     } catch {
       // A range epub.js cannot express as a CFI is not a selection we can keep.
     }
@@ -405,6 +407,11 @@ export async function createReader(
         pendingSelection = null
       })
       doc.addEventListener('mouseup', () => endSelectionGesture(contents))
+      doc.addEventListener('dblclick', () => {
+        selectionInProgress = false
+        if (flushTimer !== null) clearTimeout(flushTimer)
+        readSelectionFrom(contents)
+      })
       // Keyboard selection (shift + arrows) ends on key up, and needs the same
       // treatment for the same reason.
       doc.addEventListener('keyup', (event: KeyboardEvent) => {

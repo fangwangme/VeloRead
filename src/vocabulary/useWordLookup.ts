@@ -239,6 +239,7 @@ export function useWordLookup(bookId: string): WordLookup {
           // wrote, or one an earlier session did, found under the settled stem.
           const stem = await pending.settled
           const existing = (await written) ?? savedRef.current.get(stem)
+          if (pendingRef.current?.stem === stem) setVocabulary('none')
           if (!existing) return
           savedRef.current.delete(existing.stem)
           try {
