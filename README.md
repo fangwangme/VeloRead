@@ -31,9 +31,21 @@ A clean, elegant, local-first macOS desktop reader (EPUB / TXT / PDF) designed f
   <img src="docs/images/reading-stats.png" alt="Reading Activity & Statistics" width="800" />
 </p>
 
-## Build & Run
+## Installation
 
-Pre-compiled `.dmg` packages are available on [GitHub Releases](https://github.com/fangwangme/VeloRead/releases).
+Download the package for your platform from
+[GitHub Releases](https://github.com/fangwangme/VeloRead/releases):
+
+- **macOS** (Universal — Intel and Apple Silicon): `VeloRead_<version>_macOS_universal.dmg` —
+  open it and drag `VeloRead.app` into Applications.
+- **Linux**:
+  - `.deb` (Debian/Ubuntu): `sudo apt install ./VeloRead_<version>_linux_x86_64.deb`
+  - `.AppImage` (no install, needs `libfuse2`): `chmod +x VeloRead_<version>_linux_x86_64.AppImage`,
+    then run it
+  - `.tar.gz` (Arch/Omarchy and other distros): extract and run `usr/bin/veloread` directly, or
+    `cp -r usr/* /usr/local/` for menu integration — the layout is also what a PKGBUILD expects
+
+## Build & Run
 
 ### Building from Source
 
@@ -41,7 +53,7 @@ Pre-compiled `.dmg` packages are available on [GitHub Releases](https://github.c
 bun install
 bun run dev        # frontend only (http://localhost:5174) — fast UI iteration
 bun run app:dev    # full desktop app (Tauri v2 + SQLite)
-bun run app:build  # build macOS app & dmg into .local/release/<version>/
+bun run app:build  # package the host platform's app into .local/release/<version>/
 bun run lint       # eslint
 bun run test       # vitest unit tests
 bun run build      # tsc -b && vite build
@@ -50,7 +62,9 @@ bun run build      # tsc -b && vite build
 **Prerequisites:**
 - [bun](https://bun.sh)
 - Rust toolchain ([rustup](https://rustup.rs))
-- Xcode Command Line Tools (`xcode-select --install`)
+- **macOS**: Xcode Command Line Tools (`xcode-select --install`)
+- **Linux**: see [`docs/usage/build.md`](docs/usage/build.md#前置依赖) for the WebKitGTK/GTK
+  packages the build needs
 
 ## Tech Stack
 

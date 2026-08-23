@@ -9,6 +9,26 @@ and `src-tauri/Cargo.toml` follow it. Build and release instructions live in
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-08-23
+
+### Changed
+
+- **Release CI now builds macOS and Linux.** It was a single `macos-latest`
+  runner producing one DMG; a matrix now adds an `ubuntu-22.04` job, so a
+  tagged release ships a macOS Universal DMG alongside a Linux `.deb`,
+  `.AppImage` and standalone `.tar.gz` — one GitHub Release, from one push.
+- **Release file names are a fixed scheme, not whatever the packaging tool
+  called them.** `VeloRead_<version>_macOS_universal.dmg`,
+  `VeloRead_<version>_linux_x86_64.deb`,
+  `VeloRead_<version>_linux_x86_64.AppImage`,
+  `VeloRead_<version>_linux_x86_64.tar.gz` — no bare Cargo target triples
+  (`unknown-linux-gnu`) or per-tool arch conventions leak into a download.
+- **`bun run app:build` also produces a standalone Linux tarball.** Neither
+  `.deb` nor `.rpm` installs on Arch, and AppImage needs FUSE a base install
+  may not have; the tarball's `usr/bin` + `usr/share/applications` +
+  `usr/share/icons` layout is what a PKGBUILD expects to `cp -r` into
+  `$pkgdir`, and it needs no packaging tool beyond `tar`.
+
 ## [0.3.0] — 2026-08-23
 
 ### Added
@@ -211,6 +231,7 @@ and nothing exports yet.
 - **Unsigned and un-notarized**, and built for the host architecture only.
 - The main JS chunk is ~813 kB (~250 kB gzipped); no code splitting yet.
 
+[0.3.1]: https://github.com/fangwangme/VeloRead/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/fangwangme/VeloRead/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/fangwangme/VeloRead/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/fangwangme/VeloRead/releases/tag/v0.1.0

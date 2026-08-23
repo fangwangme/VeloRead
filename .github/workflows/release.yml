@@ -10,9 +10,17 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Build & Release macOS DMG
-    runs-on: macos-latest
+  build:
+    name: Build (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            os: macos-latest
+          - platform: linux
+            os: ubuntu-22.04
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
 
@@ -26,17 +34,54 @@ jobs:
         with:
           workspaces: src-tauri -> ../.local/target
 
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libgtk-3-dev \
+            libfuse2 \
+            patchelf \
+            file
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
       - name: Build frontend bundle
         run: bun run build
 
-      - name: Build macOS desktop app
-        run: bun run app:build
+      - name: Build macOS universal app
+        if: matrix.platform == 'macos'
+        run: bun run app:build:universal
 
-      - name: Create GitHub Release and upload DMG
+      - name: Build Linux app
+        if: matrix.platform == 'linux'
+        run: bun run app:build -- --bundles deb,appimage
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: .local/release/*/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+
+      - name: Create GitHub Release and upload artifacts
         uses: softprops/action-gh-release@v2
         with:
-          files: .local/release/*/*.dmg
+          files: dist/*
           generate_release_notes: true
