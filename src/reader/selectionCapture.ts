@@ -73,28 +73,41 @@ export class SelectionCaptureQueue<T> {
 /**
  * Last-resort selection observation for WebKit ports which paint native text
  * selection but omit the DOM events epub.js listens for.
+ *
+ * Browser callers use it as a bounded, gesture-specific fallback. Tauri can
+ * opt into continuous observation because its packaged WebView may omit both
+ * selection and pointer notifications. In that mode the caller must keep
+ * already-observed CFIs idempotent across empty polls.
  */
 export class SelectionPoller<T> {
   private timer: ReturnType<typeof setInterval> | null = null
+  private attempts = 0
   private readonly sources: () => readonly T[]
   private readonly read: (source: T) => boolean
-  private readonly onEmpty: () => void
+  private readonly onExhausted: () => void
   private readonly intervalMs: number
+  private readonly maxAttempts: number | null
+  private readonly stopOnSelection: boolean
 
   constructor(
     sources: () => readonly T[],
     read: (source: T) => boolean,
-    onEmpty: () => void,
+    onExhausted: () => void,
     intervalMs: number,
+    maxAttempts: number | null = SELECTION_POLL_ATTEMPTS,
+    stopOnSelection = true,
   ) {
     this.sources = sources
     this.read = read
-    this.onEmpty = onEmpty
+    this.onExhausted = onExhausted
     this.intervalMs = intervalMs
+    this.maxAttempts = maxAttempts
+    this.stopOnSelection = stopOnSelection
   }
 
   start() {
-    if (this.timer !== null) return
+    this.stop()
+    this.attempts = 0
     this.timer = setInterval(() => this.poll(), this.intervalMs)
   }
 
@@ -106,11 +119,22 @@ export class SelectionPoller<T> {
 
   private poll() {
     for (const source of this.sources()) {
-      if (this.read(source)) return
+      if (this.read(source)) {
+        if (this.stopOnSelection) this.stop()
+        return
+      }
     }
-    this.onEmpty()
+    if (this.maxAttempts === null) return
+    this.attempts += 1
+    if (this.attempts >= this.maxAttempts) {
+      this.stop()
+      this.onExhausted()
+    }
   }
 }
 
 /** Total wait stays below a third of a second, while spanning WebKit's commit. */
 export const SELECTION_CAPTURE_DELAYS_MS = [24, 64, 140] as const
+
+/** One further second for ports whose native selection commits unusually late. */
+export const SELECTION_POLL_ATTEMPTS = 10

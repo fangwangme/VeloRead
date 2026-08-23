@@ -80,14 +80,16 @@ describe('SelectionPoller', () => {
 
   it('finds a native WebKit selection even when no DOM selection event fires', () => {
     const read = vi.fn(() => true)
-    const onEmpty = vi.fn()
-    const poller = new SelectionPoller(() => ['iframe'], read, onEmpty, 100)
+    const exhausted = vi.fn()
+    const poller = new SelectionPoller(() => ['iframe'], read, exhausted, 100, 10)
 
     poller.start()
     vi.advanceTimersByTime(100)
 
     expect(read).toHaveBeenCalledWith('iframe')
-    expect(onEmpty).not.toHaveBeenCalled()
+    expect(exhausted).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(500)
+    expect(read).toHaveBeenCalledOnce()
     poller.stop()
   })
 
@@ -110,17 +112,40 @@ describe('SelectionPoller', () => {
     poller.stop()
   })
 
-  it('reports a cleared selection and stops observing after teardown', () => {
+  it('gives up after a bounded number of attempts and stops observing', () => {
     const read = vi.fn(() => false)
-    const onEmpty = vi.fn()
-    const poller = new SelectionPoller(() => ['iframe'], read, onEmpty, 100)
+    const exhausted = vi.fn()
+    const poller = new SelectionPoller(() => ['iframe'], read, exhausted, 100, 3)
+
+    poller.start()
+    vi.advanceTimersByTime(300)
+    expect(exhausted).toHaveBeenCalledOnce()
+    expect(read).toHaveBeenCalledTimes(3)
+
+    vi.advanceTimersByTime(500)
+    expect(read).toHaveBeenCalledTimes(3)
+  })
+
+  it('restarts a fresh bounded window for a later gesture', () => {
+    const read = vi.fn(() => false)
+    const poller = new SelectionPoller(() => ['iframe'], read, vi.fn(), 100, 2)
 
     poller.start()
     vi.advanceTimersByTime(100)
-    expect(onEmpty).toHaveBeenCalledOnce()
+    poller.start()
+    vi.advanceTimersByTime(200)
 
-    poller.stop()
+    expect(read).toHaveBeenCalledTimes(3)
+  })
+
+  it('can continuously observe only a runtime that needs a native fallback', () => {
+    const read = vi.fn(() => true)
+    const poller = new SelectionPoller(() => ['tauri iframe'], read, vi.fn(), 100, null, false)
+
+    poller.start()
     vi.advanceTimersByTime(500)
-    expect(read).toHaveBeenCalledOnce()
+
+    expect(read).toHaveBeenCalledTimes(5)
+    poller.stop()
   })
 })

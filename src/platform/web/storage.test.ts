@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { createWebStorage } from './storage'
+import { createWebStorage, openVeloreadDb } from './storage'
 import { buildFixtureEpub } from '../../test/fixture-epub'
 import type { Annotation, Collection, BookRecord, StoragePort } from '../types'
 
@@ -479,5 +479,36 @@ describe('web storage port', () => {
       totalBooksRead: 0,
       dailyStats: {},
     })
+  })
+})
+
+describe('web database lifecycle', () => {
+  it('closes an old connection when a newer schema requests versionchange', async () => {
+    const name = `veloread-versionchange-${crypto.randomUUID()}`
+    await openVeloreadDb(name)
+
+    const upgraded = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(name, 999)
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+      request.onblocked = () => reject(new Error('the VeloRead connection blocked its upgrade'))
+    })
+
+    expect(upgraded.version).toBe(999)
+    upgraded.close()
+    indexedDB.deleteDatabase(name)
+  })
+
+  it('reports when an upgrade is blocked by a foreign open connection', async () => {
+    const name = `veloread-blocked-${crypto.randomUUID()}`
+    const blocker = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(name, 1)
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+
+    await expect(openVeloreadDb(name)).rejects.toThrow('blocked by another open VeloRead tab')
+    blocker.close()
+    indexedDB.deleteDatabase(name)
   })
 })

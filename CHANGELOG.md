@@ -75,6 +75,26 @@ and `src-tauri/Cargo.toml` follow it. Build and release instructions live in
   definition nor Highlight actions. The reader now retries after the gesture,
   observes rendered EPUB frames as a fallback, de-duplicates by CFI, and anchors
   the popover to the iframe that owns the selection.
+- **Selection fallback no longer polls forever or reopens a standing word.** It
+  is persistent only inside Tauri, whose WebView can omit both selection and
+  pointer notifications; Chromium keeps its event-driven path. A transient
+  empty read cannot reopen the standing word, while a fresh gesture can select
+  the same word again without an arbitrary cooldown.
+- **Dictionary installation keeps its progress visible while you keep reading.**
+  Selecting another word or opening the vocabulary list no longer turns an
+  active download into “dictionary unavailable,” and a failure reports its real
+  cause instead of assuming the network is at fault.
+- Reopening an existing highlight no longer records a duplicate lookup; rapid
+  remove/re-add vocabulary actions are applied in click order; and the Copy
+  action shows a checkmark only after the clipboard write succeeds.
+- Quoted words such as `'hello'` and `‘running’` now shed both surrounding
+  quotes while apostrophes inside `don't` remain intact.
+- Numbered dictionary senses now start on separate lines, while citation
+  numbers such as `Col. iii. 2.` remain inline.
+- Browser database upgrades close older IndexedDB connections instead of
+  hanging behind them, and the cross-platform build wrapper resolves Windows
+  paths and artifact sizes without Unix-only path or `du` assumptions. Rebuilds
+  also stop reporting stale installers left in Tauri's bundle cache.
 - **A note being written no longer disappears when you pick a colour.** The
   popover was rebuilt from scratch the moment a selection became a saved
   highlight, which threw away whatever was in the note editor and replayed the

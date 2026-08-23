@@ -37,10 +37,14 @@ describe('normaliseWord', () => {
     expect(normaliseWord('“word”')).toBe('word')
     expect(normaliseWord('(run)')).toBe('run')
     expect(normaliseWord('don’t')).toBe("don't")
+    expect(normaliseWord("'hello'")).toBe('hello')
+    expect(normaliseWord('‘running’')).toBe('running')
   })
 
   it('leaves an internal apostrophe alone', () => {
     expect(normaliseWord("Ada's")).toBe("ada's")
+    expect(normaliseWord("don't")).toBe("don't")
+    expect(normaliseWord("users'")).toBe('users')
   })
 })
 

@@ -4,6 +4,7 @@ import { HIGHLIGHT_COLORS } from './colors'
 import { IconCheck, IconCopy, IconNote, IconSearch, IconTrash, IconVocabulary } from '../../ui/icons'
 import { useT } from '../../i18n/useT'
 import type { MessageKey } from '../../i18n/types'
+import { formatDefinition } from '../../vocabulary/formatDefinition'
 
 export interface HighlightDraft {
   /** Present when editing a stored highlight, absent for a fresh selection. */
@@ -49,7 +50,8 @@ interface HighlightPopoverProps {
   onVocabularyChange: (next: VocabularyStatus | 'none') => void
   /** Search the whole book for this selection. */
   onSearch: () => void
-  onCopy: () => void
+  /** Returns true only when the clipboard write actually succeeded. */
+  onCopy: () => Promise<boolean>
   /** Install the offline dictionary, when the desktop offers one. */
   onDownloadDictionary: () => void
 }
@@ -103,6 +105,7 @@ export function HighlightPopover({
   const [note, setNote] = useState(existing?.note ?? '')
   const [noteOpen, setNoteOpen] = useState(Boolean(existing?.note))
   const [copied, setCopied] = useState(false)
+  const copiedTimerRef = useRef<number | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const noteRef = useRef<HTMLTextAreaElement>(null)
 
@@ -122,6 +125,13 @@ export function HighlightPopover({
     document.addEventListener('keydown', onKeyDown, true)
     return () => document.removeEventListener('keydown', onKeyDown, true)
   }, [onClose])
+
+  useEffect(
+    () => () => {
+      if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current)
+    },
+    [],
+  )
 
   // Anchor above the selection when there is room, otherwise below it, and keep
   // the panel inside the reading area on both axes.
@@ -164,10 +174,14 @@ export function HighlightPopover({
         ? 'vocab.remove'
         : 'vocab.add'
 
-  const copy = () => {
-    onCopy()
+  const copy = async () => {
+    if (!(await onCopy())) return
     setCopied(true)
-    window.setTimeout(() => setCopied(false), 1200)
+    if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current)
+    copiedTimerRef.current = window.setTimeout(() => {
+      copiedTimerRef.current = null
+      setCopied(false)
+    }, 1200)
   }
 
   return (
@@ -312,8 +326,8 @@ function Definition({
       {state.status === 'found' ? (
         <>
           <p className="text-[13px] font-semibold tracking-tight">{state.word}</p>
-          <p className="mt-1 text-[11px] leading-relaxed text-neutral-600 dark:text-neutral-300">
-            {state.definition}
+          <p className="mt-1 whitespace-pre-line text-[11px] leading-relaxed text-neutral-600 dark:text-neutral-300">
+            {formatDefinition(state.definition)}
           </p>
         </>
       ) : state.status === 'unavailable' ? (
@@ -332,9 +346,12 @@ function Definition({
           ) : (
             <>
               {state.download?.status === 'failed' && (
-                <p className="mt-1 text-red-600 dark:text-red-400">
-                  {t('vocab.dictionaryDownloadFailed')}
-                </p>
+                <div className="mt-1 text-red-600 dark:text-red-400">
+                  <p>{t('vocab.dictionaryDownloadFailed')}</p>
+                  <p className="mt-0.5 break-words text-[10px] opacity-80">
+                    {t('vocab.dictionaryErrorDetails', { message: state.download.message })}
+                  </p>
+                </div>
               )}
               {state.download && (
                 <button

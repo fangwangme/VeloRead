@@ -1013,7 +1013,7 @@ export function Reader({
               text,
               sentence,
               locator: JSON.stringify({ format: 'epub', cfi: cfiRange }),
-            })
+            }, { recordOnDwell: !existing })
           },
           onHighlightClick(annotationId) {
             pingActivity()
@@ -1035,7 +1035,7 @@ export function Reader({
               // own text is the word, which is no context at all.
               sentence: handleRef.current?.sentenceForCfiRange(annotation.cfiRange) ?? '',
               locator: JSON.stringify({ format: 'epub', cfi: annotation.cfiRange }),
-            })
+            }, { recordOnDwell: false })
           },
           onLocation(loc) {
             if (cancelled) return
@@ -1327,13 +1327,19 @@ export function Reader({
     closeHighlightDraft()
   }
 
-  const copySelection = () => {
+  const copySelection = async (): Promise<boolean> => {
     const draft = highlightDraft
-    if (!draft) return
+    if (!draft) return false
     lookup.act()
-    // Best effort: the clipboard is permissioned, and failing to copy must not
-    // take the popover down with it.
-    void navigator.clipboard?.writeText(draft.text).catch(() => undefined)
+    // The popover stays open either way, but only a confirmed clipboard write
+    // earns the checkmark.
+    if (!navigator.clipboard) return false
+    try {
+      await navigator.clipboard.writeText(draft.text)
+      return true
+    } catch {
+      return false
+    }
   }
 
   const applyHighlight = async (color: HighlightColor, note: string) => {

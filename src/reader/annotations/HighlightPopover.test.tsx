@@ -2,6 +2,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Annotation } from '../../platform/types'
+import { formatDefinition } from '../../vocabulary/formatDefinition'
 import { HighlightPopover, type DefinitionState, type HighlightDraft } from './HighlightPopover'
 
 /**
@@ -38,7 +39,7 @@ function render(props: Partial<Parameters<typeof HighlightPopover>[0]> = {}) {
         onClose={() => {}}
         onVocabularyChange={() => {}}
         onSearch={() => {}}
-        onCopy={() => {}}
+        onCopy={async () => true}
         onDownloadDictionary={() => {}}
         {...props}
       />,
@@ -252,13 +253,50 @@ describe('HighlightPopover definition area', () => {
           onClose={() => {}}
           onVocabularyChange={() => {}}
           onSearch={() => {}}
-          onCopy={() => {}}
+          onCopy={async () => true}
           onDownloadDictionary={onDownloadDictionary}
         />,
       )
     })
     expect(container.textContent).toContain('50%')
     expect(container.querySelector('[data-testid="dictionary-download"]')).toBeNull()
+  })
+
+  it('shows the actual installation failure instead of blaming the network', () => {
+    const container = render({
+      definition: {
+        status: 'unavailable',
+        download: {
+          status: 'failed',
+          sizeBytes: 27_324_416,
+          message: 'HTTP status client error (404 Not Found)',
+        },
+      },
+    })
+
+    expect(container.textContent).toContain('词典安装失败')
+    expect(container.textContent).toContain('404 Not Found')
+    expect(container.textContent).not.toContain('检查网络')
+  })
+
+  it('starts each numbered dictionary sense on a new line', () => {
+    expect(
+      formatDefinition(
+        '1. First sense. Gen. vii. 17. John iii. 30. 2. Second sense. 3. Third sense.',
+      ),
+    ).toBe('1. First sense. Gen. vii. 17. John iii. 30.\n2. Second sense.\n3. Third sense.')
+  })
+
+  it('does not treat a numbered Bible citation as the next sense', () => {
+    expect(
+      formatDefinition('1. First. Col. iii. 2. The quotation continues. 2. Actual second sense.'),
+    ).toBe('1. First. Col. iii. 2. The quotation continues.\n2. Actual second sense.')
+  })
+
+  it('preserves separate dictionary paragraphs', () => {
+    expect(formatDefinition('One form.\n\n            1. Another form. 2. Next sense.')).toBe(
+      'One form.\n\n1. Another form.\n2. Next sense.',
+    )
   })
 })
 
@@ -304,7 +342,7 @@ describe('HighlightPopover across a save', () => {
           onClose={() => {}}
           onVocabularyChange={() => {}}
           onSearch={() => {}}
-          onCopy={() => {}}
+          onCopy={async () => true}
           onDownloadDictionary={() => {}}
         />,
       )
@@ -338,14 +376,14 @@ describe('HighlightPopover as a hub', () => {
     expect(onVocabularyChange).toHaveBeenLastCalledWith('none')
   })
 
-  it('hands searching and copying to the reader without closing', () => {
+  it('hands searching and copying to the reader without closing', async () => {
     const onSearch = vi.fn()
-    const onCopy = vi.fn()
+    const onCopy = vi.fn(async () => true)
     const onClose = vi.fn()
 
     const container = render({ onSearch, onCopy, onClose })
     act(() => action(container, 'search').click())
-    act(() => action(container, 'copy').click())
+    await act(async () => action(container, 'copy').click())
 
     expect(onSearch).toHaveBeenCalledTimes(1)
     expect(onCopy).toHaveBeenCalledTimes(1)
@@ -353,11 +391,25 @@ describe('HighlightPopover as a hub', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
-  it('still saves a highlight from the colour swatches', () => {
+  it('shows copied only after the clipboard write succeeds', async () => {
+    const failed = render({ onCopy: async () => false })
+    await act(async () => action(failed, 'copy').click())
+    expect(action(failed, 'copy').getAttribute('aria-label')).toContain('复制')
+
+    act(() => root?.unmount())
+    host?.remove()
+    const succeeded = render({ onCopy: async () => true })
+    await act(async () => action(succeeded, 'copy').click())
+    expect(action(succeeded, 'copy').getAttribute('aria-label')).toContain('已复制')
+  })
+
+  it('does not save a highlight until a colour is explicitly chosen', () => {
     const onApply = vi.fn()
     const container = render({ onApply })
     const swatches = container.querySelectorAll<HTMLButtonElement>('button[aria-pressed]')
 
+    // Opening the dictionary/action popover is only a transient selection.
+    expect(onApply).not.toHaveBeenCalled()
     act(() => swatches[1].click())
 
     expect(onApply).toHaveBeenCalledWith('green', '')

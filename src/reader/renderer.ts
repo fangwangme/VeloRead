@@ -10,6 +10,7 @@ import { columnPitchFromLayout } from './pacer/geometry'
 import { createSwipeTracker, isHorizontalWheel } from './swipe'
 import { sentenceAt } from './sentence'
 import { SelectionCaptureQueue, SelectionPoller } from './selectionCapture'
+import { isTauri } from '../platform'
 
 export interface ReaderLocation {
   /** CFI of the first visible position on the current page. */
@@ -299,9 +300,10 @@ export async function createReader(
   let selectionInProgress = false
   /** When a gesture last produced a selection, so its own click can be ignored. */
   let lastSelectionAt = 0
-  let lastCfiRange = ''
   let pendingSelection: { cfiRange: string; contents: Contents } | null = null
   let selectionCapture: SelectionCaptureQueue<Contents> | null = null
+  let selectionPoller: SelectionPoller<Contents> | null = null
+  const needsPersistentSelectionObservation = isTauri()
   let lastSelectionCaptureFailure: unknown = null
   let observedSelectionCfiRange = ''
 
@@ -323,13 +325,9 @@ export async function createReader(
       if (import.meta.env.DEV) console.warn('[VeloRead] Could not read a selected EPUB range.', cause)
     }
     if (!text || !rect) return
-    const now = Date.now()
-    // Both paths below can report the same selection; whichever gets there
-    // first wins and the other is a no-op.
-    if (cfiRange === lastCfiRange && now - lastSelectionAt < SELECTION_REPEAT_MS) return
-    lastCfiRange = cfiRange
-    lastSelectionAt = now
+    lastSelectionAt = Date.now()
     observedSelectionCfiRange = cfiRange
+    if (!needsPersistentSelectionObservation) selectionPoller?.stop()
     onSelection({ cfiRange, text, rect, sentence })
   }
 
@@ -361,14 +359,15 @@ export async function createReader(
         lastSelectionCaptureFailure = new Error('epub.js returned no CFI for a live selection')
         return false
       }
-      // Polling is deliberately frequent because it replaces a WebKit event,
-      // but one standing native selection is still only one user gesture.
+      // The queue and the platform-specific observer can both see the result
+      // of one gesture. A CFI remains observed until a new gesture explicitly
+      // replaces it, so a transient empty read cannot re-open the same word.
       if (cfiRange === observedSelectionCfiRange) return true
       emitSelection(cfiRange, contents, range)
       lastSelectionCaptureFailure = null
       return true
     } catch (cause) {
-      // The range may still be settling. The bounded queue will try it again.
+      // The range may still be settling. The capture queue will try it again.
       lastSelectionCaptureFailure = cause
       return false
     }
@@ -382,33 +381,35 @@ export async function createReader(
         emitSelection(held.cfiRange, held.contents)
         return
       }
-      if (lastSelectionCaptureFailure && import.meta.env.DEV) {
-        console.warn(
-          '[VeloRead] A native selection never produced a stable EPUB CFI.',
-          lastSelectionCaptureFailure,
-        )
-      }
-      lastSelectionCaptureFailure = null
+      if (!needsPersistentSelectionObservation) selectionPoller?.start()
     },
   )
 
   /**
-   * WebKit can paint a native selection without dispatching any of the DOM
-   * notifications epub.js relies on. Polling the currently rendered contents
-   * is the final fallback: it reads no book data and stops at the first live
-   * range, while the observed CFI makes a standing selection idempotent.
+   * Web builds get a bounded last chance after each gesture. Tauri keeps the
+   * observer alive because the packaged WebView was measured omitting both the
+   * selection notification and iframe pointer events; CFI idempotency prevents
+   * its standing selection from being emitted again.
    */
-  const selectionPoller = onSelection
+  selectionPoller = onSelection
     ? new SelectionPoller(
         () => (rendition.getContents() as unknown as Contents[]) ?? [],
         readSelectionFrom,
         () => {
-          observedSelectionCfiRange = ''
+          if (lastSelectionCaptureFailure && import.meta.env.DEV) {
+            console.warn(
+              '[VeloRead] A native selection never produced a stable EPUB CFI.',
+              lastSelectionCaptureFailure,
+            )
+          }
+          lastSelectionCaptureFailure = null
         },
         SELECTION_POLL_MS,
+        needsPersistentSelectionObservation ? null : undefined,
+        !needsPersistentSelectionObservation,
       )
     : null
-  selectionPoller?.start()
+  if (needsPersistentSelectionObservation) selectionPoller?.start()
 
   /** The drag is over: read the final native selection after WebKit commits it. */
   function endSelectionGesture(contents: Contents | null) {
@@ -438,7 +439,11 @@ export async function createReader(
         pendingSelection = { cfiRange, contents }
         return
       }
-      observedSelectionCfiRange = cfiRange
+      if (cfiRange === observedSelectionCfiRange) {
+        selectionCapture?.resolved()
+        if (!needsPersistentSelectionObservation) selectionPoller?.stop()
+        return
+      }
       emitSelection(cfiRange, contents)
     })
   }
@@ -455,8 +460,12 @@ export async function createReader(
     if (onSelection) {
       doc.addEventListener('mousedown', () => {
         selectionInProgress = true
+        if (!needsPersistentSelectionObservation) selectionPoller?.stop()
         selectionCapture?.begin()
         lastSelectionCaptureFailure = null
+        // A new gesture may intentionally select the same word again. Gesture
+        // identity, not an arbitrary 700 ms timer, is the deduplication boundary.
+        observedSelectionCfiRange = ''
         // Whatever was held back belonged to the selection being replaced.
         pendingSelection = null
       })
@@ -1128,10 +1137,6 @@ export async function createReader(
 }
 
 /**
- * How far off-screen a box has to sit before it is the hiding trick below
- * rather than a legitimate layout.
- */
-/**
  * How long after a selection a click still counts as part of that gesture.
  *
  * Long enough to cover the click that ends a sweep, short enough that a
@@ -1142,9 +1147,10 @@ const SELECTION_CLICK_GRACE_MS = 300
 /** Fast enough to feel immediate, slow enough to be negligible beside layout. */
 const SELECTION_POLL_MS = 100
 
-/** How long the same selection is treated as already reported. */
-const SELECTION_REPEAT_MS = 700
-
+/**
+ * How far off-screen a box has to sit before it is the hiding trick below
+ * rather than a legitimate layout.
+ */
 const OFFSCREEN_THRESHOLD_PX = -2000
 
 /**

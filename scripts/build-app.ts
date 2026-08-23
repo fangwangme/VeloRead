@@ -19,10 +19,11 @@
  */
 import { $ } from 'bun'
 import { existsSync } from 'node:fs'
-import { chmod, mkdir, readdir, readFile, rm, stat, cp } from 'node:fs/promises'
+import { chmod, mkdir, readdir, readFile, rm, stat, cp, lstat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const ROOT = new URL('..', import.meta.url).pathname
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const TAURI_CONF = join(ROOT, 'src-tauri/tauri.conf.json')
 const TARGET_DIR = join(ROOT, '.local/target')
 const RELEASE_DIR = join(ROOT, '.local/release')
@@ -45,15 +46,42 @@ if (universal && platform !== 'darwin') {
 }
 
 async function humanSize(path: string): Promise<string> {
-  const output = await $`du -sh ${path}`.text()
-  return output.split('\t')[0].trim()
+  const bytes = await byteSize(path)
+  const units = ['B', 'KB', 'MB', 'GB'] as const
+  let value = bytes
+  let unit = 0
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000
+    unit += 1
+  }
+  const digits = value >= 10 || unit === 0 ? 0 : 1
+  return `${value.toFixed(digits)} ${units[unit]}`
 }
 
-/** One directory per version, so an older build is still there to fall back to. */
+/** Cross-platform replacement for `du`: also works in Windows build shells. */
+async function byteSize(path: string): Promise<number> {
+  const info = await lstat(path)
+  if (!info.isDirectory()) return info.size
+  const entries = await readdir(path, { withFileTypes: true })
+  const sizes = await Promise.all(entries.map((entry) => byteSize(join(path, entry.name))))
+  return sizes.reduce((total, size) => total + size, 0)
+}
+
+/**
+ * One clean directory per version. Older versions keep their own directories,
+ * while rebuilding this version cannot leave stale installers from an earlier
+ * run mixed into the result.
+ */
 async function outputDir(): Promise<string> {
   const dir = join(RELEASE_DIR, conf.version)
+  await rm(dir, { recursive: true, force: true })
   await mkdir(dir, { recursive: true })
   return dir
+}
+
+/** Bundle directories can retain artifacts from earlier versions. */
+function isCurrentVersionArtifact(name: string): boolean {
+  return name.includes(conf.version)
 }
 
 /** Runs the build and hands back its exit code; the caller decides what a failure means. */
@@ -70,6 +98,12 @@ function runTauriBuild(extra: string[] = []): number {
 function requestedBundles(): string[] {
   const at = process.argv.indexOf('--bundles')
   return at !== -1 && process.argv[at + 1] ? ['--bundles', process.argv[at + 1]] : []
+}
+
+function requestedBundleKind(): 'deb' | 'rpm' | 'appimage' | null {
+  const at = process.argv.indexOf('--bundles')
+  const value = at !== -1 ? process.argv[at + 1]?.toLowerCase() : undefined
+  return value === 'deb' || value === 'rpm' || value === 'appimage' ? value : null
 }
 
 /**
@@ -131,7 +165,9 @@ async function buildMacOS() {
 
   const dmgDir = join(bundleDir, 'dmg')
   const dmgName = existsSync(dmgDir)
-    ? (await readdir(dmgDir)).find((name) => name.endsWith('.dmg'))
+    ? (await readdir(dmgDir)).find(
+        (name) => name.endsWith('.dmg') && isCurrentVersionArtifact(name),
+      )
     : undefined
   let dmgTarget: string | undefined
   if (dmgName) {
@@ -178,11 +214,15 @@ async function buildLinux() {
   const outDir = await outputDir()
   const collected: string[] = []
 
-  for (const kind of ['deb', 'rpm', 'appimage'] as const) {
+  const requestedKind = requestedBundleKind()
+  const kinds = (['deb', 'rpm', 'appimage'] as const).filter(
+    (kind) => requestedKind === null || kind === requestedKind,
+  )
+  for (const kind of kinds) {
     const dir = join(bundleDir, kind)
     if (!existsSync(dir)) continue
     for (const name of await readdir(dir)) {
-      if (!/\.(AppImage|deb|rpm)$/i.test(name)) continue
+      if (!/\.(AppImage|deb|rpm)$/i.test(name) || !isCurrentVersionArtifact(name)) continue
       const destination = join(outDir, name)
       await cp(join(dir, name), destination)
       // cp keeps the mode, but an AppImage that is not executable is a puzzle
@@ -230,7 +270,7 @@ async function buildWindows() {
     const dir = join(bundleDir, kind)
     if (!existsSync(dir)) continue
     for (const name of await readdir(dir)) {
-      if (!/\.(msi|exe)$/i.test(name)) continue
+      if (!/\.(msi|exe)$/i.test(name) || !isCurrentVersionArtifact(name)) continue
       await cp(join(dir, name), join(outDir, name))
       collected.push(join(outDir, name))
     }

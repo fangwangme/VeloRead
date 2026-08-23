@@ -63,6 +63,7 @@ function done(tx: IDBTransaction): Promise<void> {
 
 function open(databaseName: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
+    let settled = false
     const req = indexedDB.open(databaseName, DB_VERSION)
     req.onupgradeneeded = (event) => {
       const db = req.result
@@ -119,8 +120,29 @@ function open(databaseName: string): Promise<IDBDatabase> {
       }
 
     }
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error ?? new Error('Failed to open IndexedDB'))
+    req.onsuccess = () => {
+      const db = req.result
+      // A newer tab/build must be able to upgrade. This connection no longer
+      // matches the active schema once versionchange arrives, so keeping it
+      // alive would only block the upgrade and serve stale object stores.
+      db.onversionchange = () => db.close()
+      if (settled) {
+        db.close()
+        return
+      }
+      settled = true
+      resolve(db)
+    }
+    req.onerror = () => {
+      if (settled) return
+      settled = true
+      reject(req.error ?? new Error('Failed to open IndexedDB'))
+    }
+    req.onblocked = () => {
+      if (settled) return
+      settled = true
+      reject(new Error('IndexedDB upgrade is blocked by another open VeloRead tab'))
+    }
   })
 }
 

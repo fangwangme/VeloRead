@@ -32,6 +32,15 @@ export interface WordSelection {
   locator: string | null
 }
 
+export interface WordLookupBeginOptions {
+  /**
+   * Existing highlights may be reopened to edit or read their definition, but
+   * that navigation alone is not a new vocabulary lookup. Explicitly saving
+   * the word still records it.
+   */
+  recordOnDwell?: boolean
+}
+
 export interface WordLookup {
   /**
    * What to show in the popover's definition area, or null when the selection
@@ -41,7 +50,7 @@ export interface WordLookup {
   /** Whether this word is already in the vocabulary list, and how. */
   vocabulary: VocabularyStatus | 'none'
   /** A selection opened the popover. */
-  begin: (selection: WordSelection) => void
+  begin: (selection: WordSelection, options?: WordLookupBeginOptions) => void
   /** The popover closed. */
   end: () => void
   /** The reader did something further with the word — evidence of intent. */
@@ -80,12 +89,23 @@ export function useWordLookup(bookId: string): WordLookup {
    * filed under a guess is a row under the wrong word.
    */
   const pendingRef = useRef<
-    (WordSelection & { stem: string; settled: Promise<string> }) | null
+    (WordSelection & { stem: string; settled: Promise<string>; recordOnDwell: boolean }) | null
   >(null)
   /** Guards against a slow lookup landing after the reader moved on. */
   const tokenRef = useRef(0)
   const downloadRef = useRef<Promise<void> | null>(null)
   const downloadStateRef = useRef<DictionaryDownloadState | null>(null)
+  /** Every vocabulary mutation is applied in the order the reader requested it. */
+  const mutationRef = useRef<Promise<void>>(Promise.resolve())
+
+  const enqueueMutation = useCallback(<T,>(task: () => Promise<T>): Promise<T> => {
+    const result = mutationRef.current.then(task, task)
+    mutationRef.current = result.then(
+      () => undefined,
+      () => undefined,
+    )
+    return result
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -126,7 +146,7 @@ export function useWordLookup(bookId: string): WordLookup {
     const pending = pendingRef.current
     if (!pending) return Promise.resolve(null)
 
-    const write = (async () => {
+    const write = enqueueMutation(async () => {
       try {
         // Waits for the dictionary. Acting on a word the instant the popover
         // appears must not file it under the rules-only guess.
@@ -148,10 +168,10 @@ export function useWordLookup(bookId: string): WordLookup {
         // Non-fatal: the definition was still read, which is what mattered.
         return null
       }
-    })()
+    })
     recordedRef.current = write
     return write
-  }, [bookId, remember])
+  }, [bookId, enqueueMutation, remember])
 
   // Built once and never rebuilt: what happens when the evidence lands is
   // decided at `open()`, in an event handler, not here during render.
@@ -161,8 +181,9 @@ export function useWordLookup(bookId: string): WordLookup {
   useEffect(() => () => intent.close(), [intent])
 
   const begin = useCallback(
-    (selection: WordSelection) => {
+    (selection: WordSelection, options: WordLookupBeginOptions = {}) => {
       const token = ++tokenRef.current
+      const recordOnDwell = options.recordOnDwell ?? true
 
       if (!isSingleWord(selection.text)) {
         // A sentence has no dictionary entry: the definition area is not
@@ -181,7 +202,13 @@ export function useWordLookup(bookId: string): WordLookup {
 
       const answer = (async () => {
         const dict = await getDict()
-        const [found, status] = await Promise.all([dict.lookup(candidates), dict.status()])
+        const status = await dict.status()
+        // During an install the old file is closed so it can be atomically
+        // replaced on Windows. Status remains available, while lookup waits
+        // until the verified replacement is ready.
+        const found = status.ready
+          ? await dict.lookup(candidates)
+          : { known: [], entry: null }
         return { found, status }
       })()
 
@@ -193,10 +220,11 @@ export function useWordLookup(bookId: string): WordLookup {
         .then(({ found }) => resolveStem(selection.text, found.known))
         .catch(() => guess)
 
-      pendingRef.current = { ...selection, stem: guess, settled }
+      pendingRef.current = { ...selection, stem: guess, settled, recordOnDwell }
       setDefinition({ status: 'loading' })
       setVocabulary(savedRef.current.get(guess)?.status ?? 'none')
-      intent.open(() => void record())
+      if (recordOnDwell) intent.open(() => void record())
+      else intent.close()
 
       void (async () => {
         try {
@@ -204,7 +232,7 @@ export function useWordLookup(bookId: string): WordLookup {
           if (token !== tokenRef.current) return
 
           const stem = await settled
-          pendingRef.current = { ...selection, stem, settled }
+          pendingRef.current = { ...selection, stem, settled, recordOnDwell }
           setVocabulary(savedRef.current.get(stem)?.status ?? 'none')
           const offeredDownload =
             !found.entry && !status.ready
@@ -251,7 +279,7 @@ export function useWordLookup(bookId: string): WordLookup {
         intent.close()
         const written = recordedRef.current
         recordedRef.current = null
-        void (async () => {
+        void enqueueMutation(async () => {
           // The row to delete is whichever one exists: one this popover just
           // wrote, or one an earlier session did, found under the settled stem.
           const stem = await pending.settled
@@ -264,17 +292,21 @@ export function useWordLookup(bookId: string): WordLookup {
           } catch {
             // Non-fatal; the row reappears on the next read.
           }
-        })()
+        })
         return
       }
 
       setVocabulary(next)
-      void (async () => {
+      // Queue both the record and the status change synchronously, before a
+      // later click can enqueue deletion. This makes none → learning and
+      // learning → none converge to the final click even when SQLite is slow.
+      const write = record()
+      void enqueueMutation(async () => {
         // Saving is the strongest evidence of intent there is, so the row goes
         // in now rather than waiting out the dwell — and through the same
         // memoised write, so dwelling first does not make this a second row.
         const stem = await pending.settled
-        const word = (await record()) ?? savedRef.current.get(stem)
+        const word = (await write) ?? savedRef.current.get(stem)
         if (!word) return
         savedRef.current.set(word.stem, { ...word, status: next })
         // Reinstated after the write: a row is created `learning`, and letting
@@ -285,9 +317,9 @@ export function useWordLookup(bookId: string): WordLookup {
         } catch {
           // Non-fatal.
         }
-      })()
+      })
     },
-    [intent, record],
+    [enqueueMutation, intent, record],
   )
 
   const downloadDictionary = useCallback(() => {
@@ -320,7 +352,10 @@ export function useWordLookup(bookId: string): WordLookup {
         // word is still open, and never resurrect a popover the reader closed.
         const pending = pendingRef.current
         if (pending) {
-          begin({ text: pending.text, sentence: pending.sentence, locator: pending.locator })
+          begin(
+            { text: pending.text, sentence: pending.sentence, locator: pending.locator },
+            { recordOnDwell: pending.recordOnDwell },
+          )
         }
       } catch (cause) {
         publish({

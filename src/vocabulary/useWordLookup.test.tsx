@@ -9,11 +9,16 @@ import { useWordLookup, type WordLookup } from './useWordLookup'
 const recorded: VocabularyLookupInput[] = []
 const deleted: string[] = []
 const statuses: [string, string][] = []
+const mutationEvents: string[] = []
 
 /** Held open by a test that needs to act while the lookup is still in flight. */
 let releaseLookup: (() => void) | null = null
 let dictionaryReady = true
 let downloads = 0
+let holdDownload = false
+let releaseDownload: (() => void) | null = null
+let holdDelete = false
+let releaseDelete: (() => void) | null = null
 
 const dictionaryStatus = () =>
   dictionaryReady
@@ -30,6 +35,11 @@ const dict: DictPort = {
   download: async (onProgress) => {
     downloads += 1
     onProgress({ downloadedBytes: 13_662_208, totalBytes: 27_324_416 })
+    if (holdDownload) {
+      await new Promise<void>((resolve) => {
+        releaseDownload = resolve
+      })
+    }
     onProgress({ downloadedBytes: 27_324_416, totalBytes: 27_324_416 })
     dictionaryReady = true
     return dictionaryStatus()
@@ -52,6 +62,7 @@ const dict: DictPort = {
   },
   listVocabulary: async () => [],
   recordLookup: async (input: VocabularyLookupInput): Promise<VocabularyWord> => {
+    mutationEvents.push(`record:${input.word}`)
     recorded.push(input)
     return {
       id: input.wordId,
@@ -66,7 +77,14 @@ const dict: DictPort = {
     statuses.push([id, status])
   },
   deleteWord: async (id) => {
+    mutationEvents.push(`delete:start:${id}`)
+    if (holdDelete) {
+      await new Promise<void>((resolve) => {
+        releaseDelete = resolve
+      })
+    }
     deleted.push(id)
+    mutationEvents.push(`delete:done:${id}`)
   },
 }
 
@@ -106,9 +124,14 @@ beforeEach(async () => {
   releaseLookup = null
   dictionaryReady = true
   downloads = 0
+  holdDownload = false
+  releaseDownload = null
+  holdDelete = false
+  releaseDelete = null
   recorded.length = 0
   deleted.length = 0
   statuses.length = 0
+  mutationEvents.length = 0
   vi.useFakeTimers()
   host = document.createElement('div')
   document.body.append(host)
@@ -173,6 +196,36 @@ describe('useWordLookup', () => {
     })
   })
 
+  it('keeps download progress visible when another word is selected mid-install', async () => {
+    dictionaryReady = false
+    holdDownload = true
+    act(() => hook.begin(selection))
+    await settle()
+
+    act(() => hook.downloadDictionary())
+    await settle()
+    expect(hook.definition).toEqual({
+      status: 'unavailable',
+      download: {
+        status: 'downloading',
+        downloadedBytes: 13_662_208,
+        totalBytes: 27_324_416,
+      },
+    })
+
+    act(() => hook.begin({ ...selection, text: 'runs', sentence: 'She runs.' }))
+    await settle()
+    expect(hook.definition).toMatchObject({
+      status: 'unavailable',
+      download: { status: 'downloading' },
+    })
+
+    act(() => releaseDownload?.())
+    await settle()
+    await settle()
+    expect(hook.definition).toMatchObject({ status: 'found', word: 'run' })
+  })
+
   it('does not render a definition area for a sentence, and records nothing', async () => {
     act(() => hook.begin({ ...selection, text: 'He kept running until it was dark.' }))
     await settle()
@@ -194,6 +247,17 @@ describe('useWordLookup', () => {
 
     // A double-click that put the caret somewhere is not a lookup.
     expect(recorded).toEqual([])
+  })
+
+  it('does not record when an existing highlight is merely reopened', async () => {
+    act(() => hook.begin(selection, { recordOnDwell: false }))
+    await settle()
+    act(() => vi.advanceTimersByTime(LOOKUP_INTENT_DWELL_MS * 2))
+    act(() => hook.act())
+    await settle()
+
+    expect(recorded).toEqual([])
+    expect(hook.definition).toMatchObject({ status: 'found', word: 'running' })
   })
 
   it('records at once when the reader acts on the word', async () => {
@@ -250,6 +314,32 @@ describe('useWordLookup', () => {
     await settle()
     expect(recorded).toHaveLength(2)
     expect(hook.vocabulary).toBe('learning')
+  })
+
+  it('serialises a slow delete before immediately adding the word back', async () => {
+    act(() => hook.begin(selection))
+    await settle()
+    act(() => hook.setStatus('learning'))
+    await settle()
+
+    holdDelete = true
+    act(() => hook.setStatus('none'))
+    await settle()
+    expect(mutationEvents.some((event) => event.startsWith('delete:start:'))).toBe(true)
+
+    act(() => hook.setStatus('learning'))
+    await settle()
+    expect(recorded).toHaveLength(1)
+
+    act(() => releaseDelete?.())
+    await settle()
+    await settle()
+
+    expect(recorded).toHaveLength(2)
+    expect(hook.vocabulary).toBe('learning')
+    expect(mutationEvents.findIndex((event) => event.startsWith('delete:done:'))).toBeLessThan(
+      mutationEvents.lastIndexOf('record:running'),
+    )
   })
 
   /**

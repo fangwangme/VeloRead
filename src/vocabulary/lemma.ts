@@ -139,7 +139,7 @@ export function normaliseWord(raw: string): string {
     .trim()
     .toLowerCase()
     .replace(/^[^\p{L}]+/u, '')
-    .replace(/[^\p{L}']+$/u, '')
+    .replace(/[^\p{L}]+$/u, '')
 }
 
 /**

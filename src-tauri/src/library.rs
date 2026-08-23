@@ -879,9 +879,9 @@ mod store {
         Ok(word)
     }
 
-    /// Newest word first. Mirrored by `compareVocabulary()` in
-    /// `src/vocabulary/sort.ts`, which the browser implementation uses — the two
-    /// must return the same order for the same data.
+    /// Newest word first. The browser implementation mirrors this ordering in
+    /// `src/platform/web/dict.ts`; both ports must return the same rows for the
+    /// same data.
     pub fn list_vocabulary(connection: &Connection) -> rusqlite::Result<Vec<VocabularyEntry>> {
         let mut statement = connection.prepare(
             "SELECT id, word, stem, lang, status, created_at
