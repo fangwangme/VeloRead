@@ -15,6 +15,7 @@
     "app:dev": "tauri dev",
     "app:build": "bun run scripts/build-app.ts",
     "app:build:universal": "bun run scripts/build-app.ts -- --universal",
+    "app:install": "bun run scripts/install-app.ts",
     "clean": "rm -rf .local/dist .local/release",
     "clean:all": "rm -rf .local/dist .local/release .local/target"
   },

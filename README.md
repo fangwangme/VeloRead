@@ -66,12 +66,13 @@ Pre-built binaries and packages for **macOS** and **Linux** are available on [Gi
 
 ```bash
 bun install
-bun run dev        # frontend only (http://localhost:5174) — fast UI iteration
-bun run app:dev    # full desktop app (Tauri v2 + SQLite)
-bun run app:build  # package the host platform's app into .local/release/<version>/
-bun run lint       # eslint
-bun run test       # vitest unit tests
-bun run build      # tsc -b && vite build
+bun run app:install  # build & install to ~/.local/ (Linux) or ~/Applications (macOS)
+bun run dev          # frontend only (http://localhost:5174) — fast UI iteration
+bun run app:dev      # full desktop app (Tauri v2 + SQLite)
+bun run app:build    # package the host platform's app into .local/release/<version>/
+bun run lint         # eslint
+bun run test         # vitest unit tests
+bun run build        # tsc -b && vite build
 ```
 
 **Prerequisites:**

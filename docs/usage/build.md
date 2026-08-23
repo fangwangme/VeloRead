@@ -43,16 +43,21 @@ CI 跑的就是这一组：前端 job 在 Linux，Rust job 在 macOS（外壳链
 > 仍需在 macOS 上复验，反之亦然。Rust job 会先构建前端产物，
 因为 `generate_context!` 要读 `frontendDist`。
 
-## 打包
+## 打包与本地安装
 
 ```bash
+bun run app:install                # 一键编译并安装到 ~/.local/（Linux，类似 cargo install）
 bun run app:build                  # 本机系统、本机架构
 bun run app:build -- --no-bundle   # 只要可执行文件，跳过安装包（最快）
 bun run app:build -- --bundles deb # 只打某一种格式
 bun run app:build:universal        # macOS 专用：Intel + Apple silicon 合一
 ```
 
-**脚本按 `process.platform` 分支**，产出各平台该有的东西，都落在
+`bun run app:install` 为个人本地使用设计：
+- 在 **Linux** 下编译并将 `veloread` 可执行程序装入 `~/.local/bin/`，并将 `.desktop` 启动项和 512×512 高清图标分别安装到 `~/.local/share/applications/` 与 `~/.local/share/icons/`，无需 `sudo`，完成后直接在终端输入 `veloread` 或从桌面启动器（Rofi / Wofi / 应用菜单）启动。
+- 在 **macOS** 下编译并将 `VeloRead.app` 安装至 `~/Applications/`。
+
+**打包脚本按 `process.platform` 分支**，产出各平台该有的东西，都落在
 `.local/release/<version>/`，一个版本一个目录：
 
 | 平台 | 产物 |
