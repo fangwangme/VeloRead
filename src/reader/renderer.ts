@@ -9,6 +9,7 @@ import { tokenizeText } from './pacer/tokenizer'
 import { columnPitchFromLayout } from './pacer/geometry'
 import { createSwipeTracker, isHorizontalWheel } from './swipe'
 import { sentenceAt } from './sentence'
+import { SelectionCaptureQueue, SelectionPoller } from './selectionCapture'
 
 export interface ReaderLocation {
   /** CFI of the first visible position on the current page. */
@@ -65,9 +66,7 @@ export interface SelectionInfo {
 export interface ReaderOptions {
   onLocation?: (location: ReaderLocation) => void
   onKeyDown?: (event: KeyboardEvent) => void
-  onClickText?: (target: {
-    text: string
-    range?: Range
+  onPageClick?: (target: {
     /**
      * Set when the click landed on blank space inside the page rather than on a
      * word — epub.js's own column gutters, the area below the last line. Which
@@ -246,7 +245,7 @@ export async function createReader(
   }
 
   const onKeyDown = options.onKeyDown
-  const onClickText = options.onClickText
+  const onPageClick = options.onPageClick
   const onLinkClick = options.onLinkClick
   const onSelection = options.onSelection
   const onHighlightClick = options.onHighlightClick
@@ -268,8 +267,15 @@ export async function createReader(
   }
 
   /** Translate an iframe-relative rect into the parent container's box. */
-  function toContainerRect(rect: DOMRect): SelectionInfo['rect'] | null {
-    const iframe = getIframe()
+  function toContainerRect(
+    rect: DOMRect,
+    ownerDocument?: Document | null,
+  ): SelectionInfo['rect'] | null {
+    const iframe = ownerDocument
+      ? Array.from(container.querySelectorAll('iframe')).find(
+          (candidate) => candidate.contentDocument === ownerDocument,
+        ) ?? null
+      : getIframe()
     if (!iframe) return null
     const iframeRect = iframe.getBoundingClientRect()
     const containerRect = container.getBoundingClientRect()
@@ -295,15 +301,14 @@ export async function createReader(
   let lastSelectionAt = 0
   let lastCfiRange = ''
   let pendingSelection: { cfiRange: string; contents: Contents } | null = null
-  let flushTimer: ReturnType<typeof setTimeout> | null = null
+  let selectionCapture: SelectionCaptureQueue<Contents> | null = null
+  let lastSelectionCaptureFailure: unknown = null
+  let observedSelectionCfiRange = ''
 
   function emitSelection(cfiRange: string, contents: Contents, liveRange?: Range) {
     if (!onSelection) return
     pendingSelection = null
-    if (flushTimer !== null) {
-      clearTimeout(flushTimer)
-      flushTimer = null
-    }
+    selectionCapture?.resolved()
     let text = ''
     let rect: SelectionInfo['rect'] | null = null
     let sentence = ''
@@ -311,10 +316,11 @@ export async function createReader(
       const range = liveRange ?? contents.range(cfiRange)
       text = range?.toString().trim() ?? ''
       const bounds = range?.getBoundingClientRect()
-      if (bounds) rect = toContainerRect(bounds)
+      if (bounds) rect = toContainerRect(bounds, range?.startContainer.ownerDocument)
       if (range) sentence = sentenceAroundRange(range)
-    } catch {
+    } catch (cause) {
       // A malformed CFI must not break selecting text.
+      if (import.meta.env.DEV) console.warn('[VeloRead] Could not read a selected EPUB range.', cause)
     }
     if (!text || !rect) return
     const now = Date.now()
@@ -323,6 +329,7 @@ export async function createReader(
     if (cfiRange === lastCfiRange && now - lastSelectionAt < SELECTION_REPEAT_MS) return
     lastCfiRange = cfiRange
     lastSelectionAt = now
+    observedSelectionCfiRange = cfiRange
     onSelection({ cfiRange, text, rect, sentence })
   }
 
@@ -341,33 +348,77 @@ export async function createReader(
    * of it. `getSelection()` itself works everywhere; only the notification is
    * missing.
    */
-  function readSelectionFrom(contents: Contents) {
+  function readSelectionFrom(contents: Contents): boolean {
     try {
       const win = contents.document?.defaultView
       const selection = win?.getSelection()
-      if (!selection || selection.rangeCount === 0) return
+      if (!selection || selection.rangeCount === 0) return false
       const range = selection.getRangeAt(0)
-      if (!range || range.collapsed) return
-      if (range.toString().trim().length === 0) return
+      if (!range || range.collapsed) return false
+      if (range.toString().trim().length === 0) return false
       const cfiRange = contents.cfiFromRange(range)
-      if (!cfiRange) return
+      if (!cfiRange) {
+        lastSelectionCaptureFailure = new Error('epub.js returned no CFI for a live selection')
+        return false
+      }
+      // Polling is deliberately frequent because it replaces a WebKit event,
+      // but one standing native selection is still only one user gesture.
+      if (cfiRange === observedSelectionCfiRange) return true
       emitSelection(cfiRange, contents, range)
-    } catch {
-      // A range epub.js cannot express as a CFI is not a selection we can keep.
+      lastSelectionCaptureFailure = null
+      return true
+    } catch (cause) {
+      // The range may still be settling. The bounded queue will try it again.
+      lastSelectionCaptureFailure = cause
+      return false
     }
   }
 
-  /** The drag is over: read what was selected, or show whatever was held back. */
+  selectionCapture = new SelectionCaptureQueue(
+    readSelectionFrom,
+    () => {
+      const held = pendingSelection
+      if (held) {
+        emitSelection(held.cfiRange, held.contents)
+        return
+      }
+      if (lastSelectionCaptureFailure && import.meta.env.DEV) {
+        console.warn(
+          '[VeloRead] A native selection never produced a stable EPUB CFI.',
+          lastSelectionCaptureFailure,
+        )
+      }
+      lastSelectionCaptureFailure = null
+    },
+  )
+
+  /**
+   * WebKit can paint a native selection without dispatching any of the DOM
+   * notifications epub.js relies on. Polling the currently rendered contents
+   * is the final fallback: it reads no book data and stops at the first live
+   * range, while the observed CFI makes a standing selection idempotent.
+   */
+  const selectionPoller = onSelection
+    ? new SelectionPoller(
+        () => (rendition.getContents() as unknown as Contents[]) ?? [],
+        readSelectionFrom,
+        () => {
+          observedSelectionCfiRange = ''
+        },
+        SELECTION_POLL_MS,
+      )
+    : null
+  selectionPoller?.start()
+
+  /** The drag is over: read the final native selection after WebKit commits it. */
   function endSelectionGesture(contents: Contents | null) {
     selectionInProgress = false
-    if (flushTimer !== null) clearTimeout(flushTimer)
-    // A short beat, so the engine has settled on the final selection.
-    flushTimer = setTimeout(() => {
-      flushTimer = null
-      if (contents) readSelectionFrom(contents)
-      const held = pendingSelection
-      if (held) emitSelection(held.cfiRange, held.contents)
-    }, 60)
+    if (contents) {
+      selectionCapture?.queue(contents)
+      return
+    }
+    const held = pendingSelection
+    if (held) emitSelection(held.cfiRange, held.contents)
   }
 
   // A sweep that runs off the edge of the page is released over the app, not
@@ -387,6 +438,7 @@ export async function createReader(
         pendingSelection = { cfiRange, contents }
         return
       }
+      observedSelectionCfiRange = cfiRange
       emitSelection(cfiRange, contents)
     })
   }
@@ -403,19 +455,26 @@ export async function createReader(
     if (onSelection) {
       doc.addEventListener('mousedown', () => {
         selectionInProgress = true
+        selectionCapture?.begin()
+        lastSelectionCaptureFailure = null
         // Whatever was held back belonged to the selection being replaced.
         pendingSelection = null
       })
-      doc.addEventListener('mouseup', () => endSelectionGesture(contents))
+      doc.addEventListener('mouseup', () => {
+        endSelectionGesture(contents)
+      })
       doc.addEventListener('dblclick', () => {
-        selectionInProgress = false
-        if (flushTimer !== null) clearTimeout(flushTimer)
-        readSelectionFrom(contents)
+        // Do not read synchronously here. WebKit can commit its native word
+        // selection only after the dblclick handler has returned.
+        endSelectionGesture(contents)
       })
       // Keyboard selection (shift + arrows) ends on key up, and needs the same
       // treatment for the same reason.
       doc.addEventListener('keyup', (event: KeyboardEvent) => {
-        if (event.shiftKey || event.key === 'Shift') readSelectionFrom(contents)
+        if (event.shiftKey || event.key === 'Shift') {
+          selectionCapture?.begin()
+          endSelectionGesture(contents)
+        }
       })
     }
     if (onKeyDown) {
@@ -426,7 +485,7 @@ export async function createReader(
       // WKWebView reads it as the "go back" swipe.
       doc.addEventListener('wheel', handleWheel as EventListener, { passive: false })
     }
-    if (onClickText) {
+    if (onPageClick) {
       doc.addEventListener('click', (event: MouseEvent) => {
         const target = event.target as Element | null
         // epub.js owns hyperlink navigation. Treating the same click as a
@@ -435,12 +494,10 @@ export async function createReader(
           onLinkClick?.()
           return
         }
-        // Selecting text is not tapping the page, and the clicks a selection
-        // gesture emits must not be treated as one. A double click is how you
-        // look a word up: letting it through moves the auto-reading cursor onto
-        // the very word being looked up, and dismisses the popover that is
-        // about to open. Three separate guards, because a click arrives with
-        // the selection in a different state depending on the gesture:
+        // Selecting text is not an ordinary page click, and the clicks a
+        // selection gesture emits must not dismiss the popover being opened.
+        // Three separate guards, because a click arrives with the selection in
+        // a different state depending on the gesture:
         //   - a double or triple click says so in its click count;
         //   - a sweep produces a plain click, but one that lands just after the
         //     selection was reported;
@@ -454,11 +511,7 @@ export async function createReader(
         // away it is, so a click in the page margin still resolves to a word.
         // Only the geometry can tell a real word hit from a snapped one.
         const onWord = range ? pointHitsRange(range, event.clientX, event.clientY) : false
-        onClickText({
-          text: onWord ? (range as Range).toString() : '',
-          range: onWord ? (range as Range) : undefined,
-          blankSide: onWord ? null : blankSideOfPage(event.clientX),
-        })
+        onPageClick({ blankSide: onWord ? null : blankSideOfPage(event.clientX) })
       })
     }
   })
@@ -978,7 +1031,7 @@ export async function createReader(
         const range = rendition.getRange(cfiRange)
         const bounds = range?.getBoundingClientRect()
         if (!bounds || (bounds.width === 0 && bounds.height === 0)) return null
-        return toContainerRect(bounds)
+        return toContainerRect(bounds, range?.startContainer.ownerDocument)
       } catch {
         return null
       }
@@ -988,6 +1041,7 @@ export async function createReader(
       return Boolean(selection && !selection.isCollapsed && selection.toString().trim().length > 0)
     },
     clearSelection: () => {
+      observedSelectionCfiRange = ''
       getIframe()?.contentWindow?.getSelection()?.removeAllRanges()
     },
     searchBook: async (query, searchOptions = {}) => {
@@ -1065,7 +1119,8 @@ export async function createReader(
     destroy() {
       destroyed = true
       document.removeEventListener('mouseup', onWindowMouseUp)
-      if (flushTimer !== null) clearTimeout(flushTimer)
+      selectionPoller?.stop()
+      selectionCapture?.cancel()
       rendition.destroy()
       book.destroy()
     },
@@ -1083,6 +1138,9 @@ export async function createReader(
  * deliberate tap right after reading a definition still moves the cursor.
  */
 const SELECTION_CLICK_GRACE_MS = 300
+
+/** Fast enough to feel immediate, slow enough to be negligible beside layout. */
+const SELECTION_POLL_MS = 100
 
 /** How long the same selection is treated as already reported. */
 const SELECTION_REPEAT_MS = 700

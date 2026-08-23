@@ -472,7 +472,6 @@ export function Reader({
   const showTocRef = useRef(showToc)
   const showSearchRef = useRef(showSearch)
   const showPacerControlsRef = useRef(showPacerControls)
-  const clickToPositionRef = useRef(true)
   const pacerPopoverRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -483,7 +482,6 @@ export function Reader({
     showTocRef.current = showToc
     showSearchRef.current = showSearch
     showPacerControlsRef.current = showPacerControls
-    clickToPositionRef.current = appSettings.clickToPositionPacer ?? true
     jumpOriginRef.current = jumpOrigin
     errorRef.current = error
   })
@@ -703,8 +701,6 @@ export function Reader({
     let cursorTimer: ReturnType<typeof setTimeout> | undefined
     let unsaved: ReadingProgress | null = null
     let lastKnownPercentage: number | null = 0
-    let cursorRestored = false
-    const restoreTimers: ReturnType<typeof setTimeout>[] = []
 
     readerTrackableRef.current = false
     currentPageCfiRef.current = null
@@ -956,7 +952,7 @@ export function Reader({
           minSpreadWidth: minSpreadWidthRef.current,
           style: initialResolved,
           onKeyDown,
-          onClickText({ range, blankSide }) {
+          onPageClick({ blankSide }) {
             pingActivity()
             const panelWasOpen =
               showPacerControlsRef.current ||
@@ -970,10 +966,6 @@ export function Reader({
             setShowToc(false)
             // The first click after a panel was open only dismisses it.
             if (panelWasOpen) return
-            if (range) {
-              if (clickToPositionRef.current) pacerRef.current.seekToRange(range)
-              return
-            }
             // Blank space inside the page turns it, same as the margin beside
             // it, so the whole non-text area behaves as one target.
             if (blankSide && !pacerRef.current.isPlaying) {
@@ -1121,22 +1113,9 @@ export function Reader({
         setReady(true)
         pingActivity()
 
-        // The stored position is now the word auto-reading was on, not just the
-        // page, so put the cursor back on it. The page has to have settled and
-        // been chunked first, hence the retries; failing all of them simply
-        // leaves the cursor at the top of the restored page, as before.
-        const savedCfi = savedProgress?.cfi
-        if (savedCfi) {
-          for (const delay of CURSOR_RESTORE_DELAYS_MS) {
-            restoreTimers.push(
-              setTimeout(() => {
-                if (cancelled || cursorRestored) return
-                const range = handleRef.current?.rangeFromCfi(savedCfi)
-                if (range && pacerRef.current.seekToChunkRange(range)) cursorRestored = true
-              }, delay),
-            )
-          }
-        }
+        // `display(savedProgress.cfi)` restores the page containing the saved
+        // reading position. Pacer deliberately starts at that visible page's
+        // first chunk; only Pacer playback may move its own cursor within it.
       } catch (cause) {
         if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause))
       }
@@ -1151,7 +1130,6 @@ export function Reader({
       window.removeEventListener('blur', flushOnLeaving)
       document.removeEventListener('visibilitychange', flushOnLeaving)
       recordCursorPositionRef.current = null
-      for (const timer of restoreTimers) clearTimeout(timer)
       if (hideChromeTimerRef.current) clearTimeout(hideChromeTimerRef.current)
       if (layoutSuppressionTimerRef.current) clearTimeout(layoutSuppressionTimerRef.current)
       if (highlightFlashRef.current) clearTimeout(highlightFlashRef.current)
@@ -1804,6 +1782,7 @@ export function Reader({
                 onVocabularyChange={lookup.setStatus}
                 onSearch={searchSelection}
                 onCopy={copySelection}
+                onDownloadDictionary={lookup.downloadDictionary}
               />
             )}
           </div>

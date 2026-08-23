@@ -102,11 +102,6 @@ export interface AppSettings {
   dailyReadingGoalMinutes?: number
   /** Paginated or scrolling, for every book — not a per-script choice. */
   flow?: 'paginated' | 'scrolled-doc'
-  /**
-   * Whether clicking a word moves the auto-reading cursor to it. On by default;
-   * off for readers who want a click in the text to do nothing at all.
-   */
-  clickToPositionPacer?: boolean
   /** Pacer highlight appearance. A hex colour, or `auto` to follow the reading style accent. */
   pacerHighlightColor?: string
   pacerHighlightOpacity?: number
@@ -391,6 +386,18 @@ export interface DictLookup {
 export interface DictStatus {
   ready: boolean
   entries: number
+  /** Versioned offline asset offered by the desktop; null in a browser. */
+  download: DictDownload | null
+}
+
+export interface DictDownload {
+  version: string
+  sizeBytes: number
+}
+
+export interface DictDownloadProgress {
+  downloadedBytes: number
+  totalBytes: number
 }
 
 /**
@@ -406,9 +413,11 @@ export interface DictStatus {
  * as highlights do. `listVocabulary()` is what feeds it.
  */
 export interface DictPort {
-  /** Open the dictionary, importing the source once if one is waiting. */
+  /** Open the installed dictionary and report whether the desktop can download it. */
   init(): Promise<DictStatus>
   status(): Promise<DictStatus>
+  /** Download, validate and atomically install the desktop dictionary. */
+  download(onProgress: (progress: DictDownloadProgress) => void): Promise<DictStatus>
   /**
    * Look one word up. `candidates` is the word as selected followed by its
    * reductions, and the answer says which of them the dictionary knows.

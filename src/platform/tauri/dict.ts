@@ -1,5 +1,6 @@
-import { invoke } from '@tauri-apps/api/core'
+import { Channel, invoke } from '@tauri-apps/api/core'
 import type {
+  DictDownloadProgress,
   DictLookup,
   DictPort,
   DictStatus,
@@ -26,6 +27,11 @@ export function createTauriDict(): DictPort {
 
     status() {
       return invoke<DictStatus>('dict_status')
+    },
+
+    download(onProgress: (progress: DictDownloadProgress) => void) {
+      const onProgressChannel = new Channel<DictDownloadProgress>(onProgress)
+      return invoke<DictStatus>('dict_download', { onProgress: onProgressChannel })
     },
 
     lookup(candidates: string[]) {

@@ -69,6 +69,7 @@ interface LifecyclePort {
 interface DictPort {
   init(): Promise<DictStatus>
   status(): Promise<DictStatus>
+  download(onProgress: (progress: DictDownloadProgress) => void): Promise<DictStatus>
   lookup(candidates: string[]): Promise<DictLookup>
   listVocabulary(): Promise<VocabularyEntry[]>
   recordLookup(input: VocabularyLookupInput): Promise<VocabularyWord>
@@ -84,8 +85,11 @@ interface DictPort {
   释义取第一个，`stem` 取第一个还原形。见 [vocabulary §5](vocabulary.md#5-词形还原)。
 - **导出不是 `DictPort` 的方法**：数据由 `listVocabulary()` 供，格式在
   `src/vocabulary/export.ts`，落盘走 `FsPort.exportTextFiles()` —— 与划线导出同构。
-- **`init()` 在这里而不是首次查词时**：桌面端第一次启动要把等待中的 `dictionary.json`
-  折进 SQLite，这件事该发生一次，而不是挡在某个人选中的第一个单词前面。
+- **`init()` 只打开已经安装的 SQLite**。未安装时，`status().download` 在 Tauri 端给出版本与大小，
+  浏览器端为 `null`。用户从第一次查词浮层显式确认后，`download()` 才从固定 GitHub Release
+  地址流式下载；进度通过回调返回，完成后自动重试仍然打开的单词。
+- **下载不经过前端内存**：Rust 写入 `dictionary.db.part`，严格校验固定大小、SHA-256、schema、
+  词条数与 SQLite 完整性，最后才原子替换 `dictionary.db`。失败只删除临时文件，不碰用户数据。
 - **Tauri 实现横跨两个数据库**（只读的 `dictionary.db` 与用户自己的 `veloread.db`）。
   那是存储层的划分，不是接口的划分。
 - **web 实现是降级版**：`status().ready` 为 false，`lookup()` 明说自己什么都不知道
@@ -129,7 +133,7 @@ SQLite 的 `ORDER BY name` 是 UTF-8 字节序，等价于码点序；JS 的 `<`
 `themeMode` / `language` / `defaultStyleId` / `flow` /
 `pacerWpm` `pacerCpm` `pacerChunkSize` `pacerCjkCharCount` /
 `pacerHighlightColor` `pacerHighlightOpacity` `pacerHighlightShape` `pacerCursorMode` /
-`typography`（按脚本分的排版档案）/ `clickToPositionPacer` /
+`typography`（按脚本分的排版档案）/
 `dailyReadingGoalMinutes`。缺省一律由读取处补全，**存储层不写默认值**，
 这样改默认值不需要迁移已存的行。
 

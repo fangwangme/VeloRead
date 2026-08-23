@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getDict } from '../platform'
 import { newId } from '../platform/ids'
-import type { VocabularyStatus, VocabularyWord } from '../platform/types'
-import type { DefinitionState } from '../reader/annotations/HighlightPopover'
+import type {
+  DictDownloadProgress,
+  DictStatus,
+  VocabularyStatus,
+  VocabularyWord,
+} from '../platform/types'
+import type {
+  DefinitionState,
+  DictionaryDownloadState,
+} from '../reader/annotations/HighlightPopover'
 import { createLookupIntent } from './intent'
 import { isSingleWord, lookupCandidates, normaliseWord, resolveStem } from './lemma'
 
@@ -40,6 +48,8 @@ export interface WordLookup {
   act: () => void
   /** Cycle the word's place in the vocabulary list. */
   setStatus: (next: VocabularyStatus | 'none') => void
+  /** Download the desktop dictionary and retry the current word. */
+  downloadDictionary: () => void
 }
 
 /**
@@ -74,6 +84,8 @@ export function useWordLookup(bookId: string): WordLookup {
   >(null)
   /** Guards against a slow lookup landing after the reader moved on. */
   const tokenRef = useRef(0)
+  const downloadRef = useRef<Promise<void> | null>(null)
+  const downloadStateRef = useRef<DictionaryDownloadState | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -194,16 +206,21 @@ export function useWordLookup(bookId: string): WordLookup {
           const stem = await settled
           pendingRef.current = { ...selection, stem, settled }
           setVocabulary(savedRef.current.get(stem)?.status ?? 'none')
+          const offeredDownload =
+            !found.entry && !status.ready
+              ? downloadState(status, downloadStateRef.current)
+              : null
+          if (offeredDownload) downloadStateRef.current = offeredDownload
           setDefinition(
             found.entry
               ? { status: 'found', word: found.entry.word, definition: found.entry.definition }
               : status.ready
                 ? { status: 'missing', word }
-                : { status: 'unavailable' },
+                : { status: 'unavailable', download: offeredDownload },
           )
         } catch {
           if (token !== tokenRef.current) return
-          setDefinition({ status: 'unavailable' })
+          setDefinition({ status: 'unavailable', download: null })
         }
       })()
     },
@@ -273,5 +290,59 @@ export function useWordLookup(bookId: string): WordLookup {
     [intent, record],
   )
 
-  return { definition, vocabulary, begin, end, act, setStatus }
+  const downloadDictionary = useCallback(() => {
+    if (downloadRef.current) return
+
+    const current = downloadStateRef.current
+    if (!current) return
+    const sizeBytes =
+      current.status === 'downloading' ? current.totalBytes : current.sizeBytes
+
+    const publish = (next: DictionaryDownloadState) => {
+      downloadStateRef.current = next
+      setDefinition((state) =>
+        state?.status === 'unavailable' ? { status: 'unavailable', download: next } : state,
+      )
+    }
+    const progress = ({ downloadedBytes, totalBytes }: DictDownloadProgress) => {
+      publish({ status: 'downloading', downloadedBytes, totalBytes })
+    }
+
+    const install = (async () => {
+      try {
+        publish({ status: 'downloading', downloadedBytes: 0, totalBytes: sizeBytes })
+        const dict = await getDict()
+        const status = await dict.download(progress)
+        if (!status.ready) throw new Error('The downloaded dictionary did not become ready')
+        downloadStateRef.current = null
+
+        // The selection may have changed during the download. Retry whichever
+        // word is still open, and never resurrect a popover the reader closed.
+        const pending = pendingRef.current
+        if (pending) {
+          begin({ text: pending.text, sentence: pending.sentence, locator: pending.locator })
+        }
+      } catch (cause) {
+        publish({
+          status: 'failed',
+          sizeBytes,
+          message: cause instanceof Error ? cause.message : String(cause),
+        })
+      } finally {
+        downloadRef.current = null
+      }
+    })()
+    downloadRef.current = install
+  }, [begin])
+
+  return { definition, vocabulary, begin, end, act, setStatus, downloadDictionary }
+}
+
+function downloadState(
+  status: DictStatus,
+  current: DictionaryDownloadState | null,
+): DictionaryDownloadState | null {
+  if (!status.download) return null
+  if (current) return current
+  return { status: 'available', sizeBytes: status.download.sizeBytes }
 }

@@ -32,7 +32,7 @@ export function createWebDict(): DictPort {
     return db
   }
 
-  const unavailable: DictStatus = { ready: false, entries: 0 }
+  const unavailable: DictStatus = { ready: false, entries: 0, download: null }
 
   return {
     async init() {
@@ -42,6 +42,10 @@ export function createWebDict(): DictPort {
 
     async status() {
       return unavailable
+    },
+
+    async download() {
+      throw new Error('The browser build cannot install a native SQLite dictionary')
     },
 
     async lookup() {

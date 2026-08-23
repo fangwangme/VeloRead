@@ -39,6 +39,7 @@ function render(props: Partial<Parameters<typeof HighlightPopover>[0]> = {}) {
         onVocabularyChange={() => {}}
         onSearch={() => {}}
         onCopy={() => {}}
+        onDownloadDictionary={() => {}}
         {...props}
       />,
     )
@@ -196,7 +197,11 @@ describe('HighlightPopover definition area', () => {
     ['the entry it found', { status: 'found', word: 'run', definition: 'To move swiftly.' }, 'To move swiftly.'],
     ['that it is still looking', { status: 'loading' }, '查询中'],
     ['that there is no entry', { status: 'missing', word: 'zzz' }, 'zzz'],
-    ['that there is no dictionary', { status: 'unavailable' }, '此版本没有词典'],
+    [
+      'that this target cannot install a dictionary',
+      { status: 'unavailable', download: null },
+      '此版本没有词典',
+    ],
   ]
 
   for (const [name, state, expected] of cases) {
@@ -207,6 +212,54 @@ describe('HighlightPopover definition area', () => {
       )
     })
   }
+
+  it('offers one explicit download and reports its progress', () => {
+    const onDownloadDictionary = vi.fn()
+    const container = render({
+      definition: {
+        status: 'unavailable',
+        download: { status: 'available', sizeBytes: 27_324_416 },
+      },
+      onDownloadDictionary,
+    })
+
+    const button = container.querySelector<HTMLButtonElement>('[data-testid="dictionary-download"]')!
+    expect(button.textContent).toContain('27.3 MB')
+    act(() => button.click())
+    expect(onDownloadDictionary).toHaveBeenCalledOnce()
+
+    act(() => {
+      root!.render(
+        <HighlightPopover
+          draft={{
+            annotation: null,
+            cfiRange: 'epubcfi(/6/2!/4/2,/1:0,/1:7)',
+            text: 'running',
+            rect: { left: 200, top: 300, width: 60, height: 18 },
+          }}
+          bounds={{ width: 900, height: 700 }}
+          definition={{
+            status: 'unavailable',
+            download: {
+              status: 'downloading',
+              downloadedBytes: 13_662_208,
+              totalBytes: 27_324_416,
+            },
+          }}
+          vocabulary="none"
+          onApply={() => {}}
+          onDelete={() => {}}
+          onClose={() => {}}
+          onVocabularyChange={() => {}}
+          onSearch={() => {}}
+          onCopy={() => {}}
+          onDownloadDictionary={onDownloadDictionary}
+        />,
+      )
+    })
+    expect(container.textContent).toContain('50%')
+    expect(container.querySelector('[data-testid="dictionary-download"]')).toBeNull()
+  })
 })
 
 describe('HighlightPopover across a save', () => {
@@ -252,6 +305,7 @@ describe('HighlightPopover across a save', () => {
           onVocabularyChange={() => {}}
           onSearch={() => {}}
           onCopy={() => {}}
+          onDownloadDictionary={() => {}}
         />,
       )
     })

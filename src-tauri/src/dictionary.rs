@@ -14,14 +14,28 @@
 //! and every later lookup is a single indexed SELECT.
 
 use std::fs;
-use std::io::BufReader;
+use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex,
+};
+use std::time::Duration;
 
 use rusqlite::Connection;
-use tauri::{AppHandle, Manager, State};
+use sha2::{Digest, Sha256};
+use tauri::{ipc::Channel, AppHandle, Manager, State};
+use tokio::io::AsyncWriteExt;
 
-pub use store::{DictEntry, DictLookup, DictStatus};
+pub use store::{DictDownload, DictDownloadProgress, DictEntry, DictLookup, DictStatus};
+
+const DICTIONARY_ASSET_VERSION: &str = "dictionary-v1";
+const DICTIONARY_ASSET_URL: &str =
+    "https://github.com/fangwangme/VeloRead/releases/download/dictionary-v1/dictionary.db";
+const DICTIONARY_ASSET_BYTES: u64 = 27_324_416;
+const DICTIONARY_ASSET_ENTRIES: i64 = 102_217;
+const DICTIONARY_ASSET_SHA256: &str =
+    "a1a35b05a3367dd0b58f73dcb69109f8a014db8219917a242fb455f58058a6fa";
 
 /// Dictionary storage, free of any Tauri types so the tests can drive it with
 /// an in-memory connection.
@@ -55,6 +69,24 @@ pub mod store {
         /// True once there is a dictionary to query.
         pub ready: bool,
         pub entries: i64,
+        /// The optional asset a desktop reader can install. Browser builds
+        /// return null because they cannot open the downloaded SQLite file.
+        #[serde(default)]
+        pub download: Option<DictDownload>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct DictDownload {
+        pub version: String,
+        pub size_bytes: u64,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct DictDownloadProgress {
+        pub downloaded_bytes: u64,
+        pub total_bytes: u64,
     }
 
     /// `entries` is a plain rowid table with a unique index on the headword
@@ -90,6 +122,7 @@ pub mod store {
         Ok(DictStatus {
             ready: entries > 0,
             entries,
+            download: None,
         })
     }
 
@@ -254,9 +287,18 @@ pub mod store {
 
 /// Opened lazily, like the library database: a missing dictionary is a feature
 /// that is unavailable, never a window that fails to appear.
-#[derive(Default)]
 pub struct DictionaryState {
     connection: Mutex<Option<Connection>>,
+    installing: AtomicBool,
+}
+
+impl Default for DictionaryState {
+    fn default() -> Self {
+        Self {
+            connection: Mutex::new(None),
+            installing: AtomicBool::new(false),
+        }
+    }
 }
 
 impl DictionaryState {
@@ -265,6 +307,9 @@ impl DictionaryState {
         app: &AppHandle,
         body: impl FnOnce(&Connection) -> rusqlite::Result<T>,
     ) -> Result<T, String> {
+        if self.installing.load(Ordering::Acquire) {
+            return Err("dictionary download is in progress".to_string());
+        }
         let mut guard = self
             .connection
             .lock()
@@ -275,6 +320,23 @@ impl DictionaryState {
         }
         let connection = guard.as_ref().expect("connection opened above");
         body(connection).map_err(|error| error.to_string())
+    }
+
+    fn begin_install(&self) -> Result<InstallLease<'_>, String> {
+        self.installing
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map_err(|_| "dictionary download is already in progress".to_string())?;
+        Ok(InstallLease { state: self })
+    }
+}
+
+struct InstallLease<'a> {
+    state: &'a DictionaryState,
+}
+
+impl Drop for InstallLease<'_> {
+    fn drop(&mut self) {
+        self.state.installing.store(false, Ordering::Release);
     }
 }
 
@@ -304,42 +366,21 @@ fn open_at(path: &Path) -> Result<Connection, String> {
     Ok(connection)
 }
 
-/// Where a user drops the source to have it imported on next start.
-fn source_path(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(data_dir(app)?.join("dictionary.json"))
+fn downloadable(mut status: DictStatus) -> DictStatus {
+    if !status.ready {
+        status.download = Some(DictDownload {
+            version: DICTIONARY_ASSET_VERSION.to_string(),
+            size_bytes: DICTIONARY_ASSET_BYTES,
+        });
+    }
+    status
 }
 
-/// Open the dictionary, importing the source once if one is waiting.
-///
-/// The import is here rather than in a build step because the source is not
-/// part of the bundle: the app is under 30 MB precisely because it does not
-/// carry 22 MB of prose around, so the dictionary arrives beside the database
-/// and is folded in the first time the app looks for it. See
-/// `docs/usage/dictionary.md`.
+/// Open the dictionary. A missing asset is offered from the first lookup rather
+/// than requiring the reader to find an application-data directory themselves.
 #[tauri::command]
 pub fn dict_init(app: AppHandle, state: State<'_, DictionaryState>) -> Result<DictStatus, String> {
-    let current = state.with_db(&app, store::status)?;
-    if current.ready {
-        return Ok(current);
-    }
-
-    let source = source_path(&app)?;
-    if !source.exists() {
-        return Ok(current);
-    }
-
-    let mut guard = state
-        .connection
-        .lock()
-        .map_err(|_| "dictionary lock was poisoned".to_string())?;
-    let connection = guard.as_mut().ok_or("dictionary was not opened")?;
-    let file = fs::File::open(&source)
-        .map_err(|error| format!("could not read {}: {error}", source.display()))?;
-    let entries = store::import_from_json(connection, BufReader::with_capacity(1 << 20, file))?;
-    Ok(DictStatus {
-        ready: entries > 0,
-        entries,
-    })
+    state.with_db(&app, store::status).map(downloadable)
 }
 
 #[tauri::command]
@@ -347,7 +388,226 @@ pub fn dict_status(
     app: AppHandle,
     state: State<'_, DictionaryState>,
 ) -> Result<DictStatus, String> {
-    state.with_db(&app, store::status)
+    state.with_db(&app, store::status).map(downloadable)
+}
+
+/// Download and atomically install the versioned, pre-indexed dictionary.
+///
+/// The URL and digest are compiled into the app. A truncated response, a
+/// replaced GitHub asset, a corrupt SQLite file, or a schema/count mismatch is
+/// rejected before `dictionary.db` is touched.
+#[tauri::command]
+pub async fn dict_download(
+    app: AppHandle,
+    state: State<'_, DictionaryState>,
+    on_progress: Channel<DictDownloadProgress>,
+) -> Result<DictStatus, String> {
+    let _lease = state.begin_install()?;
+
+    {
+        let mut guard = state
+            .connection
+            .lock()
+            .map_err(|_| "dictionary lock was poisoned".to_string())?;
+        if guard.is_none() {
+            *guard = Some(open_database(&app)?);
+        }
+        let current = store::status(guard.as_ref().expect("opened above"))
+            .map_err(|error| error.to_string())?;
+        if current.ready {
+            return Ok(current);
+        }
+        // No command may re-open it while the install lease is alive. Closing
+        // it here also makes replacement work on Windows.
+        *guard = None;
+    }
+
+    let dir = data_dir(&app)?;
+    fs::create_dir_all(&dir)
+        .map_err(|error| format!("could not create {}: {error}", dir.display()))?;
+    let target = dir.join("dictionary.db");
+    let partial = dir.join("dictionary.db.part");
+    let _ = fs::remove_file(&partial);
+
+    let result = async {
+        download_asset(&partial, &on_progress).await?;
+        validate_asset(&partial)?;
+        replace_database(&partial, &target)?;
+        let connection = open_database(&app)?;
+        let status = store::status(&connection).map_err(|error| error.to_string())?;
+        *state
+            .connection
+            .lock()
+            .map_err(|_| "dictionary lock was poisoned".to_string())? = Some(connection);
+        Ok(status)
+    }
+    .await;
+
+    if result.is_err() {
+        let _ = fs::remove_file(&partial);
+    }
+    result
+}
+
+async fn download_asset(
+    destination: &Path,
+    on_progress: &Channel<DictDownloadProgress>,
+) -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(10 * 60))
+        .user_agent(concat!("VeloRead/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|error| format!("could not prepare the dictionary download: {error}"))?;
+    let mut response = client
+        .get(DICTIONARY_ASSET_URL)
+        .send()
+        .await
+        .map_err(|error| format!("could not download the dictionary: {error}"))?
+        .error_for_status()
+        .map_err(|error| format!("could not download the dictionary: {error}"))?;
+
+    if let Some(length) = response.content_length() {
+        if length != DICTIONARY_ASSET_BYTES {
+            return Err(format!(
+                "dictionary download announced {length} bytes; expected {DICTIONARY_ASSET_BYTES}"
+            ));
+        }
+    }
+
+    let mut file = tokio::fs::File::create(destination)
+        .await
+        .map_err(|error| format!("could not create {}: {error}", destination.display()))?;
+    let mut downloaded = 0_u64;
+    let mut last_reported = 0_u64;
+    let _ = on_progress.send(DictDownloadProgress {
+        downloaded_bytes: 0,
+        total_bytes: DICTIONARY_ASSET_BYTES,
+    });
+
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| format!("dictionary download stopped early: {error}"))?
+    {
+        downloaded += chunk.len() as u64;
+        if downloaded > DICTIONARY_ASSET_BYTES {
+            return Err("dictionary download was larger than expected".to_string());
+        }
+        file.write_all(&chunk)
+            .await
+            .map_err(|error| format!("could not write {}: {error}", destination.display()))?;
+        if downloaded - last_reported >= 256 * 1024 || downloaded == DICTIONARY_ASSET_BYTES {
+            last_reported = downloaded;
+            let _ = on_progress.send(DictDownloadProgress {
+                downloaded_bytes: downloaded,
+                total_bytes: DICTIONARY_ASSET_BYTES,
+            });
+        }
+    }
+    file.flush()
+        .await
+        .map_err(|error| format!("could not finish {}: {error}", destination.display()))?;
+
+    if downloaded != DICTIONARY_ASSET_BYTES {
+        return Err(format!(
+            "dictionary download ended at {downloaded} bytes; expected {DICTIONARY_ASSET_BYTES}"
+        ));
+    }
+    Ok(())
+}
+
+fn sha256_file(path: &Path) -> Result<String, String> {
+    let file = fs::File::open(path)
+        .map_err(|error| format!("could not read {}: {error}", path.display()))?;
+    let mut reader = BufReader::with_capacity(1 << 20, file);
+    let mut digest = Sha256::new();
+    let mut buffer = [0_u8; 1 << 20];
+    loop {
+        let read = reader
+            .read(&mut buffer)
+            .map_err(|error| format!("could not read {}: {error}", path.display()))?;
+        if read == 0 {
+            break;
+        }
+        digest.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+fn validate_asset(path: &Path) -> Result<(), String> {
+    let size = fs::metadata(path)
+        .map_err(|error| format!("could not inspect {}: {error}", path.display()))?
+        .len();
+    if size != DICTIONARY_ASSET_BYTES {
+        return Err(format!(
+            "downloaded dictionary is {size} bytes; expected {DICTIONARY_ASSET_BYTES}"
+        ));
+    }
+
+    let digest = sha256_file(path)?;
+    if digest != DICTIONARY_ASSET_SHA256 {
+        return Err("downloaded dictionary failed its SHA-256 check".to_string());
+    }
+
+    let connection = Connection::open_with_flags(
+        path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|error| format!("downloaded dictionary is not SQLite: {error}"))?;
+    let version: i32 = connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(|error| format!("could not read the dictionary schema: {error}"))?;
+    if version != store::DICTIONARY_SCHEMA_VERSION {
+        return Err(format!(
+            "dictionary schema is {version}; expected {}",
+            store::DICTIONARY_SCHEMA_VERSION
+        ));
+    }
+    let entries: i64 = connection
+        .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))
+        .map_err(|error| format!("could not count downloaded dictionary entries: {error}"))?;
+    if entries != DICTIONARY_ASSET_ENTRIES {
+        return Err(format!(
+            "dictionary has {entries} entries; expected {DICTIONARY_ASSET_ENTRIES}"
+        ));
+    }
+    let integrity: String = connection
+        .query_row("PRAGMA quick_check", [], |row| row.get(0))
+        .map_err(|error| format!("could not verify the dictionary: {error}"))?;
+    if integrity != "ok" {
+        return Err(format!(
+            "downloaded dictionary failed SQLite validation: {integrity}"
+        ));
+    }
+    Ok(())
+}
+
+fn replace_database(partial: &Path, target: &Path) -> Result<(), String> {
+    // SQLite may have left companions beside the empty placeholder database.
+    // They belong to that old inode and must never be replayed beside the
+    // verified replacement.
+    for suffix in ["-wal", "-shm"] {
+        let mut name = target.as_os_str().to_os_string();
+        name.push(suffix);
+        let path = PathBuf::from(name);
+        if path.exists() {
+            fs::remove_file(&path)
+                .map_err(|error| format!("could not replace {}: {error}", path.display()))?;
+        }
+    }
+
+    // Unix rename replaces the old database atomically, which covers the
+    // macOS product and Linux development builds. Windows cannot rename over
+    // an existing file, so its already-closed empty placeholder is removed
+    // first; losing that derived placeholder on a crash loses no user data.
+    #[cfg(windows)]
+    if target.exists() {
+        fs::remove_file(target)
+            .map_err(|error| format!("could not replace {}: {error}", target.display()))?;
+    }
+    fs::rename(partial, target)
+        .map_err(|error| format!("could not install {}: {error}", target.display()))
 }
 
 #[tauri::command]
@@ -437,7 +697,8 @@ mod tests {
             status(&connection).unwrap(),
             DictStatus {
                 ready: false,
-                entries: 0
+                entries: 0,
+                download: None,
             }
         );
         assert!(lookup(&connection, &["run".to_string()])
@@ -462,6 +723,30 @@ mod tests {
             .entry
             .unwrap();
         assert_eq!(entry.definition, "First.");
+    }
+
+    #[test]
+    fn installing_an_asset_replaces_the_placeholder_and_its_wal_files() {
+        let directory = std::env::temp_dir().join(format!(
+            "veloread-dict-replace-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let target = directory.join("dictionary.db");
+        let partial = directory.join("dictionary.db.part");
+        std::fs::write(&target, b"placeholder").unwrap();
+        std::fs::write(directory.join("dictionary.db-wal"), b"wal").unwrap();
+        std::fs::write(directory.join("dictionary.db-shm"), b"shm").unwrap();
+        std::fs::write(&partial, b"verified asset").unwrap();
+
+        super::replace_database(&partial, &target).unwrap();
+
+        assert_eq!(std::fs::read(&target).unwrap(), b"verified asset");
+        assert!(!partial.exists());
+        assert!(!directory.join("dictionary.db-wal").exists());
+        assert!(!directory.join("dictionary.db-shm").exists());
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     /// The real acceptance number from the issue: the full 102,217-entry
@@ -489,6 +774,7 @@ mod tests {
         let started = std::time::Instant::now();
         let entries = super::import_file(std::path::Path::new(&source), &target).expect("import");
         let import_seconds = started.elapsed().as_secs_f64();
+        super::validate_asset(&target).expect("the release dictionary is reproducible and valid");
 
         let connection = Connection::open(&target).expect("open imported dictionary");
 

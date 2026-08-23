@@ -12,10 +12,28 @@ const statuses: [string, string][] = []
 
 /** Held open by a test that needs to act while the lookup is still in flight. */
 let releaseLookup: (() => void) | null = null
+let dictionaryReady = true
+let downloads = 0
+
+const dictionaryStatus = () =>
+  dictionaryReady
+    ? { ready: true, entries: 3, download: null }
+    : {
+        ready: false,
+        entries: 0,
+        download: { version: 'dictionary-v1', sizeBytes: 27_324_416 },
+      }
 
 const dict: DictPort = {
-  init: async () => ({ ready: true, entries: 3 }),
-  status: async () => ({ ready: true, entries: 3 }),
+  init: async () => dictionaryStatus(),
+  status: async () => dictionaryStatus(),
+  download: async (onProgress) => {
+    downloads += 1
+    onProgress({ downloadedBytes: 13_662_208, totalBytes: 27_324_416 })
+    onProgress({ downloadedBytes: 27_324_416, totalBytes: 27_324_416 })
+    dictionaryReady = true
+    return dictionaryStatus()
+  },
   // Three words is enough for every case the stem rule turns on: `running` has
   // its own entry *and* reduces to `run`, and `anopheles` is its own headword
   // whose rule-guessed reduction `anophele` is not a word at all.
@@ -25,6 +43,7 @@ const dict: DictPort = {
         releaseLookup = resolve
       })
     }
+    if (!dictionaryReady) return { known: [], entry: null }
     const known = candidates.filter((word) => ['running', 'run', 'anopheles'].includes(word))
     return {
       known,
@@ -85,6 +104,8 @@ const selection = {
 
 beforeEach(async () => {
   releaseLookup = null
+  dictionaryReady = true
+  downloads = 0
   recorded.length = 0
   deleted.length = 0
   statuses.length = 0
@@ -128,6 +149,28 @@ describe('useWordLookup', () => {
     expect(recorded[0].word).toBe('running')
     expect(recorded[0].sentence).toBe('He kept running.')
     expect(recorded[0].bookId).toBe('book-a')
+  })
+
+  it('downloads a missing desktop dictionary and retries the word still open', async () => {
+    dictionaryReady = false
+
+    act(() => hook.begin(selection))
+    await settle()
+    expect(hook.definition).toEqual({
+      status: 'unavailable',
+      download: { status: 'available', sizeBytes: 27_324_416 },
+    })
+
+    act(() => hook.downloadDictionary())
+    await settle()
+    await settle()
+
+    expect(downloads).toBe(1)
+    expect(hook.definition).toEqual({
+      status: 'found',
+      word: 'running',
+      definition: 'To move swiftly.',
+    })
   })
 
   it('does not render a definition area for a sentence, and records nothing', async () => {

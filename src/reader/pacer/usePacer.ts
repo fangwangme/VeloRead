@@ -28,10 +28,10 @@ interface UsePacerOptions {
   canAdvancePage?: () => boolean
   canCreditPage?: () => boolean
   /**
-   * The reading cursor moved because the reader moved it — playback advanced, or
-   * they seeked. Not called when the cursor is only re-attached to the same
-   * words after a reflow or a page turn, so a paused reader's stored position is
-   * never overwritten (docs/specs/pacer.md §8).
+   * The reading cursor moved because playback advanced or the reader explicitly
+   * skipped a chunk with an arrow/swipe. Not called when the cursor is only
+   * re-attached to the same words after a reflow or a page turn, so a paused
+   * reader's stored position is never overwritten (docs/specs/pacer.md §8).
    */
   onCursorMove?: (chunk: PacerChunk) => void
 }
@@ -304,14 +304,11 @@ export function usePacer({
     engineRef.current?.invalidatePageConsumption()
   }, [])
 
-  const seek = useCallback((index: number) => {
-    engineRef.current?.seek(index)
-  }, [])
-
   /**
-   * Put the cursor back on a word identified by a live range, e.g. the position
-   * a previous session ended on. Returns false when that word is not among the
-   * chunks currently paced, so the caller can retry once the page has settled.
+   * Re-attach the cursor to its current word after typography reflows the same
+   * visible page. This never restores a previous session or handles a click.
+   * Returns false while the rebuilt chunks are not ready, so the caller can
+   * retry after layout settles.
    */
   const seekToChunkRange = useCallback((range: Range) => {
     const engine = engineRef.current
@@ -331,36 +328,6 @@ export function usePacer({
     engineRef.current?.prevChunk()
   }, [])
 
-  /**
-   * Move the reading cursor to the clicked text without changing whether the
-   * Pacer is running. Seeking and playing are separate decisions: a click while
-   * paused repositions the highlight and stays paused, a click while playing
-   * keeps playing from the new position. Starting playback remains an explicit
-   * user action (the play button or Space).
-   */
-  const seekToRange = useCallback((range: Range) => {
-    const engine = engineRef.current
-    const chunks = engine?.getChunks() ?? []
-    if (!engine || chunks.length === 0) return false
-
-    // The chunk that literally contains the clicked word first; geometry is the
-    // fallback for a click that landed between two of them.
-    const contained = chunkIndexContainingRange(chunks, range)
-    if (contained !== null) {
-      engine.seek(contained)
-      return true
-    }
-
-    const target = range.getClientRects()[0] ?? range.getBoundingClientRect()
-    if (!target || (target.width === 0 && target.height === 0)) return false
-
-    const bestIndex = nearestChunkIndex(chunks, target)
-    if (bestIndex === null) return false
-
-    engine.seek(bestIndex)
-    return true
-  }, [])
-
   return {
     state: pacerState,
     isPlaying: pacerState === 'playing',
@@ -375,10 +342,8 @@ export function usePacer({
     pause,
     toggle,
     invalidatePageConsumption,
-    seek,
     nextChunk,
     prevChunk,
-    seekToRange,
     seekToChunkRange,
     recalculateGeometry,
   }

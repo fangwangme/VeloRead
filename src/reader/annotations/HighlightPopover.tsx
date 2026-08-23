@@ -23,7 +23,12 @@ export type DefinitionState =
   | { status: 'loading' }
   | { status: 'found'; word: string; definition: string }
   | { status: 'missing'; word: string }
-  | { status: 'unavailable' }
+  | { status: 'unavailable'; download: DictionaryDownloadState | null }
+
+export type DictionaryDownloadState =
+  | { status: 'available'; sizeBytes: number }
+  | { status: 'downloading'; downloadedBytes: number; totalBytes: number }
+  | { status: 'failed'; sizeBytes: number; message: string }
 
 interface HighlightPopoverProps {
   draft: HighlightDraft
@@ -45,6 +50,8 @@ interface HighlightPopoverProps {
   /** Search the whole book for this selection. */
   onSearch: () => void
   onCopy: () => void
+  /** Install the offline dictionary, when the desktop offers one. */
+  onDownloadDictionary: () => void
 }
 
 const POPOVER_WIDTH = 288
@@ -56,7 +63,7 @@ const GAP = 10
  * dictionary paragraph can run for hundreds of words.
  */
 const BASE_HEIGHT = 132
-const DEFINITION_HEIGHT = 104
+const DEFINITION_HEIGHT = 208
 const NOTE_HEIGHT = 108
 
 /**
@@ -88,6 +95,7 @@ export function HighlightPopover({
   onVocabularyChange,
   onSearch,
   onCopy,
+  onDownloadDictionary,
 }: HighlightPopoverProps) {
   const t = useT()
   const existing = draft.annotation
@@ -172,7 +180,7 @@ export function HighlightPopover({
       onMouseDown={(event) => event.stopPropagation()}
     >
       {definition ? (
-        <Definition state={definition} />
+        <Definition state={definition} onDownload={onDownloadDictionary} />
       ) : (
         <p className="line-clamp-2 border-b border-black/[0.10] pb-2 text-[11px] leading-relaxed text-neutral-500 dark:border-white/[0.06] dark:text-neutral-400">
           {draft.text}
@@ -281,15 +289,25 @@ export function HighlightPopover({
 
 /**
  * The definition area. Always the top of the popover when it is rendered at
- * all, and it scrolls rather than grows: a GCIDE entry can run for a page, and
+ * all, and it scrolls rather than grows: a Webster entry can run for a page, and
  * a popover that changes height with the word would move the actions under it.
  */
-function Definition({ state }: { state: DefinitionState }) {
+function Definition({
+  state,
+  onDownload,
+}: {
+  state: DefinitionState
+  onDownload: () => void
+}) {
   const t = useT()
+  const progress =
+    state.status === 'unavailable' && state.download?.status === 'downloading'
+      ? Math.min(100, Math.round((state.download.downloadedBytes / state.download.totalBytes) * 100))
+      : null
   return (
     <div
       data-testid="popover-definition"
-      className="max-h-24 overflow-y-auto border-b border-black/[0.10] pb-2 dark:border-white/[0.06]"
+      className="max-h-48 overflow-y-auto border-b border-black/[0.10] pb-2 dark:border-white/[0.06]"
     >
       {state.status === 'found' ? (
         <>
@@ -298,17 +316,57 @@ function Definition({ state }: { state: DefinitionState }) {
             {state.definition}
           </p>
         </>
+      ) : state.status === 'unavailable' ? (
+        <div className="text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
+          <p>{t(state.download ? 'vocab.dictionaryDownloadHint' : 'vocab.noDictionary')}</p>
+          {state.download?.status === 'downloading' ? (
+            <div className="mt-2" aria-live="polite">
+              <div className="h-1.5 overflow-hidden rounded-full bg-black/[0.08] dark:bg-white/[0.10]">
+                <div
+                  className="h-full rounded-full bg-blue-600 transition-[width]"
+                  style={{ width: `${progress ?? 0}%` }}
+                />
+              </div>
+              <p className="mt-1">{t('vocab.dictionaryDownloading', { n: progress ?? 0 })}</p>
+            </div>
+          ) : (
+            <>
+              {state.download?.status === 'failed' && (
+                <p className="mt-1 text-red-600 dark:text-red-400">
+                  {t('vocab.dictionaryDownloadFailed')}
+                </p>
+              )}
+              {state.download && (
+                <button
+                  type="button"
+                  data-testid="dictionary-download"
+                  onClick={onDownload}
+                  className="mt-2 rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white transition hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                >
+                  {t(
+                    state.download.status === 'failed'
+                      ? 'vocab.dictionaryRetry'
+                      : 'vocab.dictionaryDownload',
+                    { size: formatMegabytes(state.download.sizeBytes) },
+                  )}
+                </button>
+              )}
+            </>
+          )}
+        </div>
       ) : (
         <p className="text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
           {state.status === 'loading'
             ? t('vocab.looking')
-            : state.status === 'missing'
-              ? t('vocab.notFound', { word: state.word })
-              : t('vocab.noDictionary')}
+            : t('vocab.notFound', { word: state.word })}
         </p>
       )}
     </div>
   )
+}
+
+function formatMegabytes(bytes: number): string {
+  return `${(bytes / 1_000_000).toFixed(1)} MB`
 }
 
 function Action({

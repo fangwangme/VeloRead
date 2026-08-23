@@ -54,11 +54,9 @@ let dict: Promise<DictPort> | null = null
  * The dictionary and vocabulary implementation for the current runtime,
  * initialised once.
  *
- * `init()` is where the desktop folds a waiting `dictionary.json` into its
- * SQLite file, which can take a moment the first time and never again — so it
- * happens here, once, rather than on the first word anybody selects. A failure
- * is not cached: the browser has no dictionary to begin with, and the reader
- * must not lose the vocabulary list because one import went wrong.
+ * `init()` opens a previously installed SQLite file. A missing desktop asset is
+ * offered from the first word lookup; the browser has no downloadable SQLite
+ * target but keeps the same vocabulary-list contract.
  */
 export function getDict(): Promise<DictPort> {
   if (!dict) {
@@ -101,6 +99,8 @@ export type {
   BookRecord,
   BookImport,
   DictEntry,
+  DictDownload,
+  DictDownloadProgress,
   DictLookup,
   DictPort,
   DictStatus,

@@ -43,6 +43,7 @@ pub fn run() {
             library::library_delete_vocabulary,
             dictionary::dict_init,
             dictionary::dict_status,
+            dictionary::dict_download,
             dictionary::dict_lookup,
             exports::export_text_files,
             exports::reveal_path,

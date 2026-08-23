@@ -234,6 +234,12 @@ export const en: Messages = {
   'vocab.notFound': 'No entry for \u201c{word}\u201d.',
   'vocab.noDictionary':
     'No dictionary in this build. Everything else here still works, and the word can still be saved.',
+  'vocab.dictionaryDownloadHint':
+    'The offline English dictionary is not installed. Download it once to look words up offline.',
+  'vocab.dictionaryDownload': 'Download dictionary ({size})',
+  'vocab.dictionaryDownloading': 'Downloading dictionary\u2026 {n}%',
+  'vocab.dictionaryDownloadFailed': 'Download failed. Check your connection and try again.',
+  'vocab.dictionaryRetry': 'Retry download ({size})',
   'vocab.wordCount.one': '{n} word',
   'vocab.wordCount.other': '{n} words',
   'vocab.lookupCount.one': '{n} lookup',
@@ -256,7 +262,7 @@ export const en: Messages = {
   'vocab.exportFailed': 'Export failed: {message}',
   'vocab.failed': 'Could not open the vocabulary list: {message}',
   'vocab.dictionaryReady': '{n} dictionary entries',
-  'vocab.dictionaryMissing': 'No dictionary installed \u2014 see docs/usage/dictionary.md',
+  'vocab.dictionaryMissing': 'No dictionary installed \u2014 download it from your first word lookup',
 
 
   'typography.titleLatin': 'Typography · English books',
@@ -349,9 +355,6 @@ export const en: Messages = {
   'settings.highlight.previewAfter': ' far out at sea.',
   'settings.controls': 'Reader controls',
   'settings.controlsHint': 'Keys and gestures the page responds to. Nothing on screen announces them, so they are listed here.',
-  'settings.clickToPosition': 'Click a word to set where auto-reading starts',
-  'settings.clickToPositionHint':
-    'Moves the cursor to the word you clicked. It does not start playing — Space does that. Turn this off and clicking the text does nothing.',
   'shortcut.space': 'Start / pause auto-reading',
   'shortcut.arrows': 'Turn the page; step a chunk while auto-reading',
   'shortcut.toc': 'Contents, bookmarks and highlights',
@@ -359,11 +362,9 @@ export const en: Messages = {
   'shortcut.search': 'Search in book',
   'shortcut.escape': 'Close the open panel, or leave for the library',
   'gesture.swipe': 'Swipe sideways',
-  'gesture.clickText': 'Click the text',
   'gesture.clickBlank': 'Click blank space',
   'gesture.select': 'Select a passage',
   'shortcut.swipe': 'Turn the page, on a trackpad or Magic Mouse (not in scrolling flow)',
-  'shortcut.clickText': 'Move the auto-reading cursor to that word',
   'shortcut.clickBlank': 'Turn the page — margins and gaps inside it both count',
   'shortcut.select': 'Highlight it, and attach a note',
   'settings.goal': 'Daily reading goal',

@@ -36,9 +36,21 @@ Kindle 有生词本，会自动记录你查过的词和**所在句子**。
 Apple Books 走 macOS 通用文本菜单、Look Up 要多一步，**明确不采纳** ——
 那把最高频的动作放进了第二层。
 
+浏览器与桌面 App 必须走同一结果契约，但不能假设它们派发相同事件：Chromium 可由
+`selectionchange` 通知，WebKitGTK / WKWebView 必须在 `mouseup` / `dblclick` 手势结束后延迟读取
+已经稳定的原生 `Selection`。`dblclick` 不得取消延迟读取后只做一次同步读取；那一刻 WebKit 可能
+还没有提交选区，词典与划线会一起静默失效。部分 WebKit 端口会画出原生选区却完全不派发这些
+DOM 通知，因此渲染器还必须轻量轮询当前 EPUB iframe 的 `Selection` 作为兜底，并按 CFI 去重。
+一次手势只能打开一个浮层，持续存在的同一选区不得重复查询或反复打开浮层。
+
 弹出的浮层是**枢纽而不是终点**：查完可以直接收进生词本 / 标已掌握、划线（复用已有颜色与笔记）、
 全书搜这个词、复制，全程不需要重新选中。这条继承划线浮层已有的原则 ——
 选颜色会保存但不关闭浮层，好让笔记接着写。
+
+桌面端第一次查词而词典尚未安装时，释义区原地提供一次明确的下载确认，显示资产大小；不能因为
+双击了一个词就静默消耗网络。下载显示进度，成功后自动重试当前仍然打开的单词。失败可重试，且
+不得影响同一浮层里的划线、笔记、搜索、复制和生词本动作。浏览器端没有原生 SQLite 安装目标，
+继续显示不可用说明，不展示一个注定失败的下载按钮。
 
 ### 3.2 桌面端的入库门槛
 
@@ -61,8 +73,8 @@ Apple Books 走 macOS 通用文本菜单、Look Up 要多一步，**明确不采
 - **操作行的按钮在两种情况下完全一致**：同样的按钮、同样的顺序，不因选中长度重排。
   位置一飘，肌肉记忆就建立不起来。因此**不适用的按钮是原地置灰，而不是移除** ——
   「删除划线」也因此从「有划线才出现」改成常驻、无划线时禁用。
-- 释义区高度封顶并自行滚动：GCIDE 的一条释义可以长达数百词，浮层高度随词变化会让
-  它下面的操作行跟着动。
+- 释义区高度封顶并自行滚动：当前上限为 `12rem`（原 `6rem` 的两倍）。Webster 的一条释义可以
+  长达数百词，浮层高度随词变化会让它下面的操作行跟着动。
 
 操作行顺序（由组件测试锁定）：`vocabulary` · `note` · `search` · `copy` · `delete`。
 
@@ -126,7 +138,8 @@ CREATE INDEX vocab_lookups_word ON vocabulary_lookups(vocabulary_id, created_at 
 
 ## 6. 词典
 
-- 数据源：`.local/data/dictionary.json`（22 MB / 102,217 条，GCIDE 风格英英词典），**不入库**
+- 数据源：`.local/data/dictionary.json`（22 MB / 102,217 条，Project Gutenberg 的 Webster
+  英英词典 JSON 输出），**不入库**
 - **必须导入 SQLite 并建索引，不整包载入内存**（旧实现是整包 fetch，首屏和内存压力都大）
 - 查询响应目标 < 50 ms
 - 词典导入是一次性的构建步骤，产物落在应用数据目录
@@ -144,16 +157,25 @@ CREATE INDEX vocab_lookups_word ON vocabulary_lookups(vocabulary_id, created_at 
 在 `WITHOUT ROWID` 表里这些散文会挤在主键 B-tree 里、溢出到 overflow page，
 每次查询要走的树反而更大。把正文留在表里、只检索一份纯词头的索引，被搜的那部分才够小。
 
-### 6.2 导入时机
+### 6.2 构建与按需安装
 
 源文件不进安装包（安装体积目标 < 30 MB，见 [overview §8](overview.md#8-非功能要求)）。
-两条入口共用同一份实现：
+维护者用同一份流式导入实现生成预建 SQLite：
 
-- **应用内**：把 `dictionary.json` 放到应用数据目录，下次启动 `dict_init` 自动流式导入一次。
-- **命令行**：`bun run dict:import -- <source.json> <dictionary.db>`，用于本机构建与延迟实测。
+- **构建入口**：`bun run dict:import -- <source.json> <dictionary.db>`。
+- **发布位置**：独立的 GitHub Release `dictionary-v1`，不提交进 Git，也不随每个应用版本重复上传。
+- **用户入口**：第一次查词浮层中的「下载词典」。应用下载预建 `dictionary.db`，不下载 JSON，
+  不要求用户操作隐藏目录。
 
 导入用 serde 的 map visitor **流式**写入，而不是先反序列化成 `HashMap` ——
 否则「词典不进内存」这条规矩会恰好在导入那一刻被自己破坏。
+
+下载资产契约固定为 `dictionary-v1`：102,217 条、27,324,416 bytes、schema 1、SHA-256
+`a1a35b05a3367dd0b58f73dcb69109f8a014db8219917a242fb455f58058a6fa`。Rust 端流式写入
+`.part`，依次验证大小、摘要、schema、真实词条数与 `PRAGMA quick_check`，通过后才替换正式库。
+本地源文件的 SHA-256 与上游 `matthewreagan/WebstersEnglishDictionary` 的
+`dictionary_compact.json` 完全一致；其 JSON 输出按 GPL-2.0-only 分发。Release 必须随
+`dictionary.db` 提供完整许可证、上游来源及源文件/数据库摘要。
 
 ## 7. 从 Kindle 导入
 

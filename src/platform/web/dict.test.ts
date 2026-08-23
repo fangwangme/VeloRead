@@ -47,8 +47,9 @@ describe('the browser dictionary', () => {
   it('says plainly that it has none, rather than that the word is unknown', async () => {
     // 22 MB cannot be indexed on disk in a page, and loading it into memory is
     // the regression the desktop build exists to avoid.
-    expect(await dict.status()).toEqual({ ready: false, entries: 0 })
+    expect(await dict.status()).toEqual({ ready: false, entries: 0, download: null })
     expect(await dict.lookup(['running', 'run'])).toEqual({ known: [], entry: null })
+    await expect(dict.download(() => {})).rejects.toThrow('cannot install')
   })
 })
 

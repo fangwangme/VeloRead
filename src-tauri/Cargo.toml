@@ -1,6 +1,6 @@
 [package]
 name = "veloread"
-version = "0.1.0"
+version = "0.3.0"
 description = "EPUB reader with a speed-reading pacer"
 authors = ["fangwang"]
 license = "MIT"
@@ -27,3 +27,6 @@ base64 = "0.22"
 # `bundled` compiles SQLite in, so the app never depends on the host's copy.
 rusqlite = { version = "0.37", features = ["bundled"] }
 tauri-plugin-window-state = "2"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+sha2 = "0.10"
+tokio = { version = "1", features = ["fs", "io-util"] }
