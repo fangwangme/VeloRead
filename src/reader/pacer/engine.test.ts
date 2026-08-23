@@ -91,7 +91,7 @@ describe('PacerEngine', () => {
     expect(engine.getCurrentIndex()).toBe(0)
   })
 
-  it('maps a clicked word rectangle to the corresponding chunk', () => {
+  it('maps a previous chunk rectangle onto rebuilt geometry after reflow', () => {
     expect(
       nearestChunkIndex(
         [chunk(0, 0), chunk(1, 100), chunk(2, 200)],
@@ -100,12 +100,12 @@ describe('PacerEngine', () => {
     ).toBe(1)
   })
 
-  it('keeps the engine paused when a click seeks the cursor to another chunk', () => {
+  it('keeps the engine paused when a manual chunk skip seeks the cursor', () => {
     const onStateChange = vi.fn()
     const engine = new PacerEngine({ onStateChange })
     engine.setChunks([chunk(0), chunk(1), chunk(2)])
 
-    // A click while idle repositions the cursor. It must never start playback:
+    // Arrow/swipe chunk navigation while idle must never start playback:
     // starting is an explicit user action (play button or Space).
     engine.seek(2)
 
@@ -119,7 +119,7 @@ describe('PacerEngine', () => {
     expect(engine.getState()).toBe('paused')
   })
 
-  it('keeps running from the new position when a click seeks while playing', async () => {
+  it('keeps running from the new position after a manual chunk skip', async () => {
     vi.useFakeTimers()
     const engine = new PacerEngine({})
     engine.setChunks([chunk(0), chunk(1), chunk(2), chunk(3)])

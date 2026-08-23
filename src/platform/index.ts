@@ -1,4 +1,4 @@
-import type { FsPort, LifecyclePort, StoragePort } from './types'
+import type { DictPort, FsPort, LifecyclePort, StoragePort } from './types'
 
 /**
  * True inside the Tauri webview. Tauri v2 injects `__TAURI_INTERNALS__` before
@@ -48,6 +48,32 @@ export function getFs(): Promise<FsPort> {
   return fs
 }
 
+let dict: Promise<DictPort> | null = null
+
+/**
+ * The dictionary and vocabulary implementation for the current runtime,
+ * initialised once.
+ *
+ * `init()` opens a previously installed SQLite file. A missing desktop asset is
+ * offered from the first word lookup; the browser has no downloadable SQLite
+ * target but keeps the same vocabulary-list contract.
+ */
+export function getDict(): Promise<DictPort> {
+  if (!dict) {
+    dict = (isTauri()
+      ? import('./tauri/dict').then((m) => m.createTauriDict())
+      : import('./web/dict').then((m) => m.createWebDict())
+    ).then(async (port) => {
+      await port.init()
+      return port
+    })
+    dict.catch(() => {
+      dict = null
+    })
+  }
+  return dict
+}
+
 let lifecycle: Promise<LifecyclePort> | null = null
 
 /**
@@ -72,10 +98,21 @@ export function getLifecycle(): Promise<LifecyclePort> {
 export type {
   BookRecord,
   BookImport,
+  DictEntry,
+  DictDownload,
+  DictDownloadProgress,
+  DictLookup,
+  DictPort,
+  DictStatus,
   ExportFile,
   ExportResult,
   FsPort,
   LifecyclePort,
   ReadingProgress,
   StoragePort,
+  VocabularyEntry,
+  VocabularyLookup,
+  VocabularyLookupInput,
+  VocabularyStatus,
+  VocabularyWord,
 } from './types'

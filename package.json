@@ -1,7 +1,7 @@
 {
   "name": "veloread",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "fixture": "bun run scripts/make-fixture-epub.ts",
+    "dict:import": "cargo run --release --manifest-path src-tauri/Cargo.toml --example dict-import --",
     "tauri": "tauri",
     "app:dev": "tauri dev",
     "app:build": "bun run scripts/build-app.ts",

@@ -102,11 +102,6 @@ export interface AppSettings {
   dailyReadingGoalMinutes?: number
   /** Paginated or scrolling, for every book — not a per-script choice. */
   flow?: 'paginated' | 'scrolled-doc'
-  /**
-   * Whether clicking a word moves the auto-reading cursor to it. On by default;
-   * off for readers who want a click in the text to do nothing at all.
-   */
-  clickToPositionPacer?: boolean
   /** Pacer highlight appearance. A hex colour, or `auto` to follow the reading style accent. */
   pacerHighlightColor?: string
   pacerHighlightOpacity?: number
@@ -308,4 +303,131 @@ export interface StoragePort {
   deleteAnnotation(id: string): Promise<void>
   recordReadingSession(session: ReadingSession): Promise<void>
   getReadingStats(): Promise<OverallReadingStats>
+}
+
+/** Status of a word in the vocabulary list. */
+export type VocabularyStatus = 'learning' | 'known'
+
+/**
+ * One word the reader looked up.
+ *
+ * `word` keeps the form it was first met in, `stem` is what makes it one row:
+ * meeting `ran` after `running` adds a sentence to the entry that is already
+ * there rather than starting a third one. See docs/specs/vocabulary.md §5.
+ */
+export interface VocabularyWord {
+  id: string
+  word: string
+  stem: string
+  lang: string
+  status: VocabularyStatus
+  createdAt: string
+}
+
+/**
+ * One occasion a word was looked up, with the sentence it was in.
+ *
+ * Its own record, as on a Kindle: the same word met in three books is three
+ * sentences worth keeping. `bookId` is null once the book has been removed from
+ * the library — the sentence outlives its source, because the sentence is the
+ * value.
+ */
+export interface VocabularyLookup {
+  id: string
+  vocabularyId: string
+  bookId: string | null
+  /** JSON Locator of where the word was, or null when it cannot be anchored. */
+  locator: string | null
+  sentence: string
+  createdAt: string
+}
+
+export interface VocabularyEntry {
+  word: VocabularyWord
+  lookups: VocabularyLookup[]
+}
+
+/** Everything one lookup needs recorded. Both ids are minted by the caller. */
+export interface VocabularyLookupInput {
+  wordId: string
+  lookupId: string
+  word: string
+  stem: string
+  lang: string
+  bookId: string | null
+  locator: string | null
+  sentence: string
+  createdAt: string
+}
+
+/** A dictionary entry: one headword, one paragraph of prose. */
+export interface DictEntry {
+  /**
+   * The headword that matched, which is not always what was selected — a
+   * lookup asks about the word and its reductions.
+   */
+  word: string
+  definition: string
+}
+
+/**
+ * What the dictionary knows about one selected word.
+ *
+ * `known` is every candidate that has an entry. The definition comes from the
+ * first, the stem from the most reduced — two different questions, answered
+ * from one pass. See `src/vocabulary/lemma.ts`.
+ */
+export interface DictLookup {
+  known: string[]
+  entry: DictEntry | null
+}
+
+/** Whether there is a dictionary to query at all. */
+export interface DictStatus {
+  ready: boolean
+  entries: number
+  /** Versioned offline asset offered by the desktop; null in a browser. */
+  download: DictDownload | null
+}
+
+export interface DictDownload {
+  version: string
+  sizeBytes: number
+}
+
+export interface DictDownloadProgress {
+  downloadedBytes: number
+  totalBytes: number
+}
+
+/**
+ * Looking words up, and the vocabulary list that comes of it.
+ *
+ * Third of the three capability ports named in AGENTS.md. Both halves are here
+ * because they are one feature: a lookup is what creates a vocabulary row, and
+ * a component that could reach one but not the other would have to know which
+ * platform it was on to do the obvious thing.
+ *
+ * Export is deliberately *not* a method: the list leaves through
+ * `FsPort.exportTextFiles()`, formatted by `src/vocabulary/export.ts`, exactly
+ * as highlights do. `listVocabulary()` is what feeds it.
+ */
+export interface DictPort {
+  /** Open the installed dictionary and report whether the desktop can download it. */
+  init(): Promise<DictStatus>
+  status(): Promise<DictStatus>
+  /** Download, validate and atomically install the desktop dictionary. */
+  download(onProgress: (progress: DictDownloadProgress) => void): Promise<DictStatus>
+  /**
+   * Look one word up. `candidates` is the word as selected followed by its
+   * reductions, and the answer says which of them the dictionary knows.
+   */
+  lookup(candidates: string[]): Promise<DictLookup>
+  /** Newest word first. */
+  listVocabulary(): Promise<VocabularyEntry[]>
+  /** Adds the sentence to the word's entry, creating the word if it is new. */
+  recordLookup(input: VocabularyLookupInput): Promise<VocabularyWord>
+  setWordStatus(id: string, status: VocabularyStatus): Promise<void>
+  /** Removes the word and every sentence recorded for it. */
+  deleteWord(id: string): Promise<void>
 }

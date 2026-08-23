@@ -4,8 +4,102 @@ Notable changes, newest first. Follows [Keep a Changelog](https://keepachangelog
 and [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 `version` in `src-tauri/tauri.conf.json` is the source of truth; `package.json`
-follows it. There are no published binaries — see
-[`docs/usage/build.md`](docs/usage/build.md) for why and how to build.
+and `src-tauri/Cargo.toml` follow it. Build and release instructions live in
+[`docs/usage/build.md`](docs/usage/build.md).
+
+## [Unreleased]
+
+## [0.3.0] — 2026-08-23
+
+### Added
+
+- **Select a word and see what it means.** One word, no second click — a
+  definition from a local English dictionary, right where you selected it. The
+  popover it appears in is a hub rather than a dead end: save the word, mark it
+  known, highlight the passage, write a note, search the whole book for it, or
+  copy it, all without reselecting.
+- **A vocabulary list, in the library beside reading stats.** Every word you
+  looked up with the sentence it was in, one row per word and one sentence per
+  time you met it — so the same word found in three books keeps all three.
+  Filter by book, remove what you have learned, and **export the lot as plain
+  text**: a Kindle records exactly this and will not give it back, which is the
+  whole reason the feature exists.
+- **The dictionary is 102,217 entries in its own indexed SQLite file**, next to
+  the library database and never inside it. It is built streaming and never
+  loaded into memory: a lookup measures 0.022 ms at the median and 0.118 ms at
+  worst against the full dictionary, where the target was 50 ms.
+- **The desktop installs that dictionary from the first word lookup.** The
+  reader explicitly confirms a 27.3 MB GitHub Release download, sees progress,
+  and gets the current word retried automatically. Size, SHA-256, schema, entry
+  count and SQLite integrity are checked before an atomic install; the browser
+  keeps its no-dictionary fallback. See
+  [`docs/usage/dictionary.md`](docs/usage/dictionary.md).
+- **`bun run dict:import`**, to build that file from the command line.
+
+### Changed
+
+- **The selection popover has a fixed structure.** The definition area is
+  always at the top and is simply absent for a selection that is not a single
+  word; the actions below it are the same buttons in the same order either way,
+  disabled in place rather than removed. Deleting a highlight is therefore a
+  permanent button that is sometimes disabled, where it used to appear and
+  disappear — a control that moves with the length of your selection is one you
+  can never learn the position of.
+- **The definition viewport is twice as tall.** Long dictionary entries expose
+  substantially more text before scrolling, while the highlight colours and
+  action row stay fixed below it.
+- **Looking a word up on the desktop does not automatically file it.** Kindle
+  records every lookup because a long press is deliberate; a double-click is
+  how you put the caret somewhere. A definition is free, and the row costs
+  either a moment's attention or any further action on the word — otherwise the
+  list fills with words nobody asked about, and its whole value is its
+  signal-to-noise ratio.
+- Searching in a book can be opened with a term already in it, and runs it
+  straight away.
+- **Auto-reading always starts at the beginning of the visible page.** Clicking
+  ordinary text no longer sets or restores a hidden Pacer cursor; once started,
+  only auto-reading itself advances its position and progress. Blank-page clicks
+  still turn pages.
+- **`bun run app:build` builds for whatever machine you are on.** It was macOS
+  only, which meant anyone developing on Linux could not build or launch what
+  they had just changed. It now produces a `.app`/`.dmg`, a `.deb`/`.rpm`/
+  `.AppImage`, or an `.msi`, and takes `--no-bundle` for just the executable and
+  `--bundles <format>` for one format. On Linux a single failing bundle format
+  no longer throws away the whole run.
+
+### Fixed
+
+- **Selecting a word works in the packaged desktop App.** WebKit can paint a
+  native selection without reliably sending the notifications epub.js expects,
+  leaving only the system `Copy` menu while VeloRead showed neither the
+  definition nor Highlight actions. The reader now retries after the gesture,
+  observes rendered EPUB frames as a fallback, de-duplicates by CFI, and anchors
+  the popover to the iframe that owns the selection.
+- **Selection fallback no longer polls forever or reopens a standing word.** It
+  is persistent only inside Tauri, whose WebView can omit both selection and
+  pointer notifications; Chromium keeps its event-driven path. A transient
+  empty read cannot reopen the standing word, while a fresh gesture can select
+  the same word again without an arbitrary cooldown.
+- **Dictionary installation keeps its progress visible while you keep reading.**
+  Selecting another word or opening the vocabulary list no longer turns an
+  active download into “dictionary unavailable,” and a failure reports its real
+  cause instead of assuming the network is at fault.
+- Reopening an existing highlight no longer records a duplicate lookup; rapid
+  remove/re-add vocabulary actions are applied in click order; and the Copy
+  action shows a checkmark only after the clipboard write succeeds.
+- Quoted words such as `'hello'` and `‘running’` now shed both surrounding
+  quotes while apostrophes inside `don't` remain intact.
+- Numbered dictionary senses now start on separate lines, while citation
+  numbers such as `Col. iii. 2.` remain inline.
+- Browser database upgrades close older IndexedDB connections instead of
+  hanging behind them, and the cross-platform build wrapper resolves Windows
+  paths and artifact sizes without Unix-only path or `du` assumptions. Rebuilds
+  also stop reporting stale installers left in Tauri's bundle cache.
+- **A note being written no longer disappears when you pick a colour.** The
+  popover was rebuilt from scratch the moment a selection became a saved
+  highlight, which threw away whatever was in the note editor and replayed the
+  entrance animation — undoing the one thing the popover promises, that a colour
+  tap can be followed by a note without reselecting.
 
 ## [0.2.0] — 2026-08-22
 
@@ -117,5 +211,6 @@ and nothing exports yet.
 - **Unsigned and un-notarized**, and built for the host architecture only.
 - The main JS chunk is ~813 kB (~250 kB gzipped); no code splitting yet.
 
+[0.3.0]: https://github.com/fangwangme/VeloRead/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/fangwangme/VeloRead/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/fangwangme/VeloRead/releases/tag/v0.1.0

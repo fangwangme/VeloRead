@@ -28,6 +28,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/*.test.ts'],
+    // `.tsx` as well as `.ts`: the popover's structure — which buttons, in
+    // which order — is a behaviour contract, and the only honest way to assert
+    // it is to render the component.
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 })

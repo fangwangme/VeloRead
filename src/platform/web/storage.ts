@@ -10,12 +10,13 @@ import type {
   ReadingProgress,
   ReadingSession,
   StoragePort,
+  VocabularyLookup,
 } from '../types'
 import { compareBooks, compareCollections } from '../sort'
 import { calculateCurrentStreak } from '../../stats/tracking'
 
 const DB_NAME = 'veloread'
-const DB_VERSION = 5
+const DB_VERSION = 6
 
 /**
  * Up to this version the reading counts were a single mixed `wordsRead` that
@@ -37,6 +38,8 @@ const READING_SESSIONS = 'reading_sessions'
 const ANNOTATIONS = 'annotations'
 const COLLECTIONS = 'collections'
 const COLLECTION_BOOKS = 'collection_books'
+export const VOCABULARY = 'vocabulary'
+export const VOCABULARY_LOOKUPS = 'vocabulary_lookups'
 
 function roundedMinutes(seconds: number): number {
   if (seconds <= 0) return 0
@@ -60,6 +63,7 @@ function done(tx: IDBTransaction): Promise<void> {
 
 function open(databaseName: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
+    let settled = false
     const req = indexedDB.open(databaseName, DB_VERSION)
     req.onupgradeneeded = (event) => {
       const db = req.result
@@ -103,11 +107,54 @@ function open(databaseName: string): Promise<IDBDatabase> {
         membership.createIndex('by_bookId', 'bookId', { unique: false })
         membership.createIndex('by_collectionId', 'collectionId', { unique: false })
       }
+      if (!db.objectStoreNames.contains(VOCABULARY)) {
+        const vocabulary = db.createObjectStore(VOCABULARY, { keyPath: 'id' })
+        // Words are deduplicated on the stem, the way `UNIQUE(stem, lang)` does
+        // on the Tauri side. Unique, so a second lookup cannot mint a second row.
+        vocabulary.createIndex('by_stem', ['stem', 'lang'], { unique: true })
+      }
+      if (!db.objectStoreNames.contains(VOCABULARY_LOOKUPS)) {
+        const lookups = db.createObjectStore(VOCABULARY_LOOKUPS, { keyPath: 'id' })
+        lookups.createIndex('by_vocabularyId', 'vocabularyId', { unique: false })
+        lookups.createIndex('by_bookId', 'bookId', { unique: false })
+      }
 
     }
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error ?? new Error('Failed to open IndexedDB'))
+    req.onsuccess = () => {
+      const db = req.result
+      // A newer tab/build must be able to upgrade. This connection no longer
+      // matches the active schema once versionchange arrives, so keeping it
+      // alive would only block the upgrade and serve stale object stores.
+      db.onversionchange = () => db.close()
+      if (settled) {
+        db.close()
+        return
+      }
+      settled = true
+      resolve(db)
+    }
+    req.onerror = () => {
+      if (settled) return
+      settled = true
+      reject(req.error ?? new Error('Failed to open IndexedDB'))
+    }
+    req.onblocked = () => {
+      if (settled) return
+      settled = true
+      reject(new Error('IndexedDB upgrade is blocked by another open VeloRead tab'))
+    }
   })
+}
+
+/**
+ * The one `veloread` database, opened at the current version.
+ *
+ * Shared with the browser `DictPort`: the vocabulary stores live in the same
+ * database as everything else, so deleting a book and nulling out the lookups it
+ * contributed happen in one transaction rather than two that can half-fail.
+ */
+export function openVeloreadDb(databaseName = DB_NAME): Promise<IDBDatabase> {
+  return open(databaseName)
 }
 
 /**
@@ -157,6 +204,7 @@ export function createWebStorage(databaseName = DB_NAME): StoragePort {
           ANNOTATIONS,
           COLLECTION_BOOKS,
           READING_SESSIONS,
+          VOCABULARY_LOOKUPS,
         ],
         'readwrite',
       )
@@ -190,6 +238,16 @@ export function createWebStorage(databaseName = DB_NAME): StoragePort {
       )
       for (const membership of memberships) {
         membershipStore.delete([membership.collectionId, membership.bookId])
+      }
+
+      // Words looked up in this book stay, and only forget where they came
+      // from — `ON DELETE SET NULL` on the Tauri side, the same rule here.
+      // Removing a book must not remove what you learned from it.
+      const lookupsStore = tx.objectStore(VOCABULARY_LOOKUPS)
+      const lookupIndex = lookupsStore.index('by_bookId')
+      const lookups = await request<VocabularyLookup[]>(lookupIndex.getAll(id))
+      for (const lookup of lookups) {
+        lookupsStore.put({ ...lookup, bookId: null })
       }
 
       // Delete sessions for this book

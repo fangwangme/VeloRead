@@ -15,6 +15,7 @@ import { useLibrary } from '../library/store'
 import { newId } from '../platform/ids'
 import { createReader, type ReaderHandle, type ReaderLocation } from './renderer'
 import { HighlightPopover, type HighlightDraft } from './annotations/HighlightPopover'
+import { useWordLookup } from '../vocabulary/useWordLookup'
 import { AnnotationCard } from './annotations/AnnotationCard'
 import { PRESETS } from './styles/presets'
 import type { StyleId, StyleOverride } from './styles/types'
@@ -163,6 +164,12 @@ export function Reader({
   const [showSettings, setShowSettings] = useState(false)
   const [showToc, setShowToc] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
+  /**
+   * A term the search panel opens with, put there by "search the book" in the
+   * selection popover. Cleared when the panel closes, so opening it from the
+   * toolbar is still a blank box.
+   */
+  const [searchSeed, setSearchSeed] = useState('')
   const [toc, setToc] = useState<TocItem[]>([])
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
 
@@ -194,6 +201,17 @@ export function Reader({
   const [highlightDraft, setHighlightDraft] = useState<
     (HighlightDraft & { bounds: { width: number; height: number } }) | null
   >(null)
+
+  /**
+   * Looking the selected word up, and the vocabulary row that may come of it.
+   * Everything about that lives in the hook; this view only says when a
+   * selection started and when it went away.
+   */
+  const lookup = useWordLookup(bookId)
+  const lookupRef = useRef(lookup)
+  useEffect(() => {
+    lookupRef.current = lookup
+  }, [lookup])
 
   // Pacer state
   const [pacerWpm, setPacerWpm] = useState(appSettings.pacerWpm ?? 250)
@@ -454,7 +472,6 @@ export function Reader({
   const showTocRef = useRef(showToc)
   const showSearchRef = useRef(showSearch)
   const showPacerControlsRef = useRef(showPacerControls)
-  const clickToPositionRef = useRef(true)
   const pacerPopoverRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -465,7 +482,6 @@ export function Reader({
     showTocRef.current = showToc
     showSearchRef.current = showSearch
     showPacerControlsRef.current = showPacerControls
-    clickToPositionRef.current = appSettings.clickToPositionPacer ?? true
     jumpOriginRef.current = jumpOrigin
     errorRef.current = error
   })
@@ -685,8 +701,6 @@ export function Reader({
     let cursorTimer: ReturnType<typeof setTimeout> | undefined
     let unsaved: ReadingProgress | null = null
     let lastKnownPercentage: number | null = 0
-    let cursorRestored = false
-    const restoreTimers: ReturnType<typeof setTimeout>[] = []
 
     readerTrackableRef.current = false
     currentPageCfiRef.current = null
@@ -938,7 +952,7 @@ export function Reader({
           minSpreadWidth: minSpreadWidthRef.current,
           style: initialResolved,
           onKeyDown,
-          onClickText({ range, blankSide }) {
+          onPageClick({ blankSide }) {
             pingActivity()
             const panelWasOpen =
               showPacerControlsRef.current ||
@@ -946,15 +960,12 @@ export function Reader({
               showTocRef.current ||
               highlightDraftOpenRef.current
             setHighlightDraft(null)
+            lookupRef.current.end()
             setShowPacerControls(false)
             setShowSettings(false)
             setShowToc(false)
             // The first click after a panel was open only dismisses it.
             if (panelWasOpen) return
-            if (range) {
-              if (clickToPositionRef.current) pacerRef.current.seekToRange(range)
-              return
-            }
             // Blank space inside the page turns it, same as the margin beside
             // it, so the whole non-text area behaves as one target.
             if (blankSide && !pacerRef.current.isPlaying) {
@@ -973,8 +984,9 @@ export function Reader({
             setShowSettings(false)
             setShowToc(false)
             setHighlightDraft(null)
+            lookupRef.current.end()
           },
-          onSelection({ cfiRange, text, rect }) {
+          onSelection({ cfiRange, text, rect, sentence }) {
             pingActivity()
             pacerRef.current.pause()
             setShowPacerControls(false)
@@ -993,6 +1005,15 @@ export function Reader({
               rect,
               bounds: measureContainerBounds(),
             })
+            // Selecting a single word shows what it means, with no second
+            // click: on a Kindle that is what a long press does, and putting it
+            // behind a "look up" button would bury the most frequent action of
+            // the lot one level down.
+            lookupRef.current.begin({
+              text,
+              sentence,
+              locator: JSON.stringify({ format: 'epub', cfi: cfiRange }),
+            }, { recordOnDwell: !existing })
           },
           onHighlightClick(annotationId) {
             pingActivity()
@@ -1008,6 +1029,13 @@ export function Reader({
               rect,
               bounds: measureContainerBounds(),
             })
+            lookupRef.current.begin({
+              text: annotation.text,
+              // From the page, not from the highlight: a one-word highlight's
+              // own text is the word, which is no context at all.
+              sentence: handleRef.current?.sentenceForCfiRange(annotation.cfiRange) ?? '',
+              locator: JSON.stringify({ format: 'epub', cfi: annotation.cfiRange }),
+            }, { recordOnDwell: false })
           },
           onLocation(loc) {
             if (cancelled) return
@@ -1085,22 +1113,9 @@ export function Reader({
         setReady(true)
         pingActivity()
 
-        // The stored position is now the word auto-reading was on, not just the
-        // page, so put the cursor back on it. The page has to have settled and
-        // been chunked first, hence the retries; failing all of them simply
-        // leaves the cursor at the top of the restored page, as before.
-        const savedCfi = savedProgress?.cfi
-        if (savedCfi) {
-          for (const delay of CURSOR_RESTORE_DELAYS_MS) {
-            restoreTimers.push(
-              setTimeout(() => {
-                if (cancelled || cursorRestored) return
-                const range = handleRef.current?.rangeFromCfi(savedCfi)
-                if (range && pacerRef.current.seekToChunkRange(range)) cursorRestored = true
-              }, delay),
-            )
-          }
-        }
+        // `display(savedProgress.cfi)` restores the page containing the saved
+        // reading position. Pacer deliberately starts at that visible page's
+        // first chunk; only Pacer playback may move its own cursor within it.
       } catch (cause) {
         if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause))
       }
@@ -1115,7 +1130,6 @@ export function Reader({
       window.removeEventListener('blur', flushOnLeaving)
       document.removeEventListener('visibilitychange', flushOnLeaving)
       recordCursorPositionRef.current = null
-      for (const timer of restoreTimers) clearTimeout(timer)
       if (hideChromeTimerRef.current) clearTimeout(hideChromeTimerRef.current)
       if (layoutSuppressionTimerRef.current) clearTimeout(layoutSuppressionTimerRef.current)
       if (highlightFlashRef.current) clearTimeout(highlightFlashRef.current)
@@ -1294,7 +1308,38 @@ export function Reader({
 
   function closeHighlightDraft() {
     setHighlightDraft(null)
+    lookupRef.current.end()
     handleRef.current?.clearSelection()
+  }
+
+  /**
+   * Search the whole book for what is selected, without reselecting it.
+   *
+   * The panel is already there and already good at this; the popover's job is
+   * to get you into it with the word already typed.
+   */
+  const searchSelection = () => {
+    const draft = highlightDraft
+    if (!draft) return
+    lookup.act()
+    setSearchSeed(draft.text)
+    setShowSearch(true)
+    closeHighlightDraft()
+  }
+
+  const copySelection = async (): Promise<boolean> => {
+    const draft = highlightDraft
+    if (!draft) return false
+    lookup.act()
+    // The popover stays open either way, but only a confirmed clipboard write
+    // earns the checkmark.
+    if (!navigator.clipboard) return false
+    try {
+      await navigator.clipboard.writeText(draft.text)
+      return true
+    } catch {
+      return false
+    }
   }
 
   const applyHighlight = async (color: HighlightColor, note: string) => {
@@ -1315,6 +1360,10 @@ export function Reader({
           createdAt: now,
           updatedAt: now,
         }
+
+    // Highlighting the word you just looked up is exactly the "further action"
+    // that turns a glance at a definition into a lookup worth keeping.
+    lookup.act()
 
     // Paint first so the highlight appears immediately; a storage failure
     // surfaces below rather than leaving the user staring at nothing.
@@ -1721,12 +1770,25 @@ export function Reader({
                 // seeded from the draft, and re-pointing the same instance at
                 // another passage kept the previous one's note — which the next
                 // colour tap would then save onto the new highlight.
-                key={highlightDraft.annotation?.id ?? highlightDraft.cfiRange}
+                //
+                // The passage, specifically, and not the saved row's id: those
+                // differ for the same passage the moment a colour is picked,
+                // and remounting there threw away the note being written and
+                // replayed the entrance animation — undoing the one thing this
+                // popover promises, that a colour tap can be followed by a note
+                // without reselecting.
+                key={highlightDraft.cfiRange}
                 draft={highlightDraft}
                 bounds={highlightDraft.bounds}
+                definition={lookup.definition}
+                vocabulary={lookup.vocabulary}
                 onApply={(color, note) => void applyHighlight(color, note)}
                 onDelete={() => void deleteHighlight()}
                 onClose={closeHighlightDraft}
+                onVocabularyChange={lookup.setStatus}
+                onSearch={searchSelection}
+                onCopy={copySelection}
+                onDownloadDictionary={lookup.downloadDictionary}
               />
             )}
           </div>
@@ -2004,6 +2066,7 @@ export function Reader({
 
       {showSearch && (
         <SearchPanel
+          initialQuery={searchSeed}
           onSearch={(query, options) =>
             handleRef.current?.searchBook(query, options) ?? Promise.resolve([])
           }
@@ -2011,8 +2074,12 @@ export function Reader({
             if (location?.cfi) setJumpOrigin(location.cfi)
             void handleRef.current?.display(cfi)
             setShowSearch(false)
+            setSearchSeed('')
           }}
-          onClose={() => setShowSearch(false)}
+          onClose={() => {
+            setShowSearch(false)
+            setSearchSeed('')
+          }}
         />
       )}
 

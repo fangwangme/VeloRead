@@ -4,11 +4,12 @@ import { BookCover } from './BookCover'
 import type { AppSettings, BookRecord } from '../platform/types'
 import { StatsModal } from '../stats/StatsModal'
 import { AppSettingsModal } from '../settings/AppSettingsModal'
-import { IconBook, IconClose, IconCollection, IconHighlight, IconImport, IconSettings, IconStats } from '../ui/icons'
+import { IconBook, IconClose, IconCollection, IconHighlight, IconImport, IconSettings, IconStats, IconVocabulary } from '../ui/icons'
 import { ALL_BOOKS, BookCollectionMenu, CollectionBar, UNFILED } from './CollectionBar'
 import { useConfirm } from '../ui/useConfirm'
 import { useT } from '../i18n/useT'
 import { ExportModal } from '../annotations/ExportModal'
+import { VocabularyModal } from '../vocabulary/VocabularyModal'
 
 const TOOLBAR_BUTTON_CLASS =
   'flex items-center gap-1.5 rounded-full border border-black/[0.12] bg-white/80 px-3.5 py-1.5 text-xs font-medium text-neutral-800 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-md transition hover:border-black/20 hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 active:scale-95 disabled:pointer-events-none disabled:opacity-50 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-neutral-200 dark:hover:bg-white/[0.1]'
@@ -37,6 +38,7 @@ export function Library({
   const [showStats, setShowStats] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showExport, setShowExport] = useState(false)
+  const [showVocabulary, setShowVocabulary] = useState(false)
   const [activeCollection, setActiveCollection] = useState<string>(ALL_BOOKS)
   const { confirm, confirmDialog } = useConfirm()
   const t = useT()
@@ -120,6 +122,15 @@ export function Library({
           >
             <IconHighlight className="opacity-75" />
             <span>{t('library.exportClippings')}</span>
+          </button>
+          <button
+            type="button"
+            className={TOOLBAR_BUTTON_CLASS}
+            onClick={() => setShowVocabulary(true)}
+            title={t('library.vocabularyHint')}
+          >
+            <IconVocabulary className="opacity-75" />
+            <span>{t('library.vocabulary')}</span>
           </button>
           <button
             type="button"
@@ -232,6 +243,7 @@ export function Library({
         />
       )}
       {showExport && <ExportModal onClose={() => setShowExport(false)} />}
+      {showVocabulary && <VocabularyModal onClose={() => setShowVocabulary(false)} />}
       {confirmDialog}
     </div>
   )

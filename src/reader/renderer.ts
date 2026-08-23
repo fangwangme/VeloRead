@@ -8,6 +8,9 @@ import type { WordItem } from './pacer/chunker'
 import { tokenizeText } from './pacer/tokenizer'
 import { columnPitchFromLayout } from './pacer/geometry'
 import { createSwipeTracker, isHorizontalWheel } from './swipe'
+import { sentenceAt } from './sentence'
+import { SelectionCaptureQueue, SelectionPoller } from './selectionCapture'
+import { isTauri } from '../platform'
 
 export interface ReaderLocation {
   /** CFI of the first visible position on the current page. */
@@ -53,14 +56,18 @@ export interface SelectionInfo {
   cfiRange: string
   text: string
   rect: { left: number; top: number; width: number; height: number }
+  /**
+   * The sentence the selection sits in, for the vocabulary list. Empty when the
+   * paragraph cannot be read — a word without its sentence is still worth
+   * recording, so this never blocks a lookup.
+   */
+  sentence: string
 }
 
 export interface ReaderOptions {
   onLocation?: (location: ReaderLocation) => void
   onKeyDown?: (event: KeyboardEvent) => void
-  onClickText?: (target: {
-    text: string
-    range?: Range
+  onPageClick?: (target: {
     /**
      * Set when the click landed on blank space inside the page rather than on a
      * word — epub.js's own column gutters, the area below the last line. Which
@@ -89,6 +96,21 @@ export interface ReaderOptions {
    */
   minSpreadWidth?: number
   style?: ResolvedStyle
+}
+
+/** Elements that hold a paragraph of prose rather than a run of inline text. */
+const BLOCK_TAGS = new Set([
+  'P', 'DIV', 'LI', 'BLOCKQUOTE', 'TD', 'TH', 'DD', 'DT', 'FIGCAPTION', 'SECTION',
+  'ARTICLE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BODY',
+])
+
+function closestBlock(node: Node): Element | null {
+  let current: Node | null = node.nodeType === Node.ELEMENT_NODE ? node : node.parentNode
+  while (current && current.nodeType === Node.ELEMENT_NODE) {
+    if (BLOCK_TAGS.has((current as Element).tagName)) return current as Element
+    current = current.parentNode
+  }
+  return null
 }
 
 export interface ReaderHandle {
@@ -141,6 +163,14 @@ export interface ReaderHandle {
   removeHighlight(cfiRange: string): void
   /** Where a stored highlight sits right now, in container coordinates. */
   rectForCfiRange(cfiRange: string): SelectionInfo['rect'] | null
+  /**
+   * The sentence a stored range sits in, read off the live page.
+   *
+   * Reopening a highlight has to get the sentence from the book, not from the
+   * highlight: a one-word highlight's own text *is* the word, and recording
+   * that as its own context would be worthless.
+   */
+  sentenceForCfiRange(cfiRange: string): string
   /** True while text inside the book is selected, so a margin tap can defer. */
   hasTextSelection(): boolean
   clearSelection(): void
@@ -216,14 +246,37 @@ export async function createReader(
   }
 
   const onKeyDown = options.onKeyDown
-  const onClickText = options.onClickText
+  const onPageClick = options.onPageClick
   const onLinkClick = options.onLinkClick
   const onSelection = options.onSelection
   const onHighlightClick = options.onHighlightClick
 
+  /**
+   * The sentence a selection sits in, read out of its own paragraph.
+   *
+   * The block element is the unit: a sentence never spans two paragraphs, and
+   * taking the whole document's text would make finding the offset a walk over
+   * the entire chapter.
+   */
+  function sentenceAroundRange(range: Range): string {
+    const block = closestBlock(range.startContainer)
+    if (!block) return ''
+    const upToWord = range.startContainer.ownerDocument!.createRange()
+    upToWord.setStart(block, 0)
+    upToWord.setEnd(range.startContainer, range.startOffset)
+    return sentenceAt(block.textContent ?? '', upToWord.toString().length)
+  }
+
   /** Translate an iframe-relative rect into the parent container's box. */
-  function toContainerRect(rect: DOMRect): SelectionInfo['rect'] | null {
-    const iframe = getIframe()
+  function toContainerRect(
+    rect: DOMRect,
+    ownerDocument?: Document | null,
+  ): SelectionInfo['rect'] | null {
+    const iframe = ownerDocument
+      ? Array.from(container.querySelectorAll('iframe')).find(
+          (candidate) => candidate.contentDocument === ownerDocument,
+        ) ?? null
+      : getIframe()
     if (!iframe) return null
     const iframeRect = iframe.getBoundingClientRect()
     const containerRect = container.getBoundingClientRect()
@@ -235,20 +288,163 @@ export async function createReader(
     }
   }
 
+  /**
+   * A selection epub.js has told us about but that is not finished yet.
+   *
+   * epub.js reports a selection 250 ms after it last changed, which during a
+   * drag means *mid-drag*: pause for a quarter second while sweeping across a
+   * sentence and the popover appears over the words still being selected, then
+   * jumps as the selection grows. Dragging is one gesture and it ends on mouse
+   * up; until then there is no selection to act on.
+   */
+  let selectionInProgress = false
+  /** When a gesture last produced a selection, so its own click can be ignored. */
+  let lastSelectionAt = 0
+  let pendingSelection: { cfiRange: string; contents: Contents } | null = null
+  let selectionCapture: SelectionCaptureQueue<Contents> | null = null
+  let selectionPoller: SelectionPoller<Contents> | null = null
+  const needsPersistentSelectionObservation = isTauri()
+  let lastSelectionCaptureFailure: unknown = null
+  let observedSelectionCfiRange = ''
+
+  function emitSelection(cfiRange: string, contents: Contents, liveRange?: Range) {
+    if (!onSelection) return
+    pendingSelection = null
+    selectionCapture?.resolved()
+    let text = ''
+    let rect: SelectionInfo['rect'] | null = null
+    let sentence = ''
+    try {
+      const range = liveRange ?? contents.range(cfiRange)
+      text = range?.toString().trim() ?? ''
+      const bounds = range?.getBoundingClientRect()
+      if (bounds) rect = toContainerRect(bounds, range?.startContainer.ownerDocument)
+      if (range) sentence = sentenceAroundRange(range)
+    } catch (cause) {
+      // A malformed CFI must not break selecting text.
+      if (import.meta.env.DEV) console.warn('[VeloRead] Could not read a selected EPUB range.', cause)
+    }
+    if (!text || !rect) return
+    lastSelectionAt = Date.now()
+    observedSelectionCfiRange = cfiRange
+    if (!needsPersistentSelectionObservation) selectionPoller?.stop()
+    onSelection({ cfiRange, text, rect, sentence })
+  }
+
+  /**
+   * Read the selection out of the book ourselves.
+   *
+   * epub.js detects selection purely by listening for `selectionchange` on the
+   * book document — and **WebKitGTK never fires it**. Measured in the packaged
+   * app: set a range programmatically and the selection is really there
+   * (`rangeCount: 1`, not collapsed), while a listener on that very same
+   * document is called zero times. Chromium fires it, which is why this only
+   * ever went wrong on the desktop, where selecting a word did nothing at all —
+   * no definition, no highlight, on a feature that worked in the browser.
+   *
+   * So the gesture is what we listen to, and the selection is read at the end
+   * of it. `getSelection()` itself works everywhere; only the notification is
+   * missing.
+   */
+  function readSelectionFrom(contents: Contents): boolean {
+    try {
+      const win = contents.document?.defaultView
+      const selection = win?.getSelection()
+      if (!selection || selection.rangeCount === 0) return false
+      const range = selection.getRangeAt(0)
+      if (!range || range.collapsed) return false
+      if (range.toString().trim().length === 0) return false
+      const cfiRange = contents.cfiFromRange(range)
+      if (!cfiRange) {
+        lastSelectionCaptureFailure = new Error('epub.js returned no CFI for a live selection')
+        return false
+      }
+      // The queue and the platform-specific observer can both see the result
+      // of one gesture. A CFI remains observed until a new gesture explicitly
+      // replaces it, so a transient empty read cannot re-open the same word.
+      if (cfiRange === observedSelectionCfiRange) return true
+      emitSelection(cfiRange, contents, range)
+      lastSelectionCaptureFailure = null
+      return true
+    } catch (cause) {
+      // The range may still be settling. The capture queue will try it again.
+      lastSelectionCaptureFailure = cause
+      return false
+    }
+  }
+
+  selectionCapture = new SelectionCaptureQueue(
+    readSelectionFrom,
+    () => {
+      const held = pendingSelection
+      if (held) {
+        emitSelection(held.cfiRange, held.contents)
+        return
+      }
+      if (!needsPersistentSelectionObservation) selectionPoller?.start()
+    },
+  )
+
+  /**
+   * Web builds get a bounded last chance after each gesture. Tauri keeps the
+   * observer alive because the packaged WebView was measured omitting both the
+   * selection notification and iframe pointer events; CFI idempotency prevents
+   * its standing selection from being emitted again.
+   */
+  selectionPoller = onSelection
+    ? new SelectionPoller(
+        () => (rendition.getContents() as unknown as Contents[]) ?? [],
+        readSelectionFrom,
+        () => {
+          if (lastSelectionCaptureFailure && import.meta.env.DEV) {
+            console.warn(
+              '[VeloRead] A native selection never produced a stable EPUB CFI.',
+              lastSelectionCaptureFailure,
+            )
+          }
+          lastSelectionCaptureFailure = null
+        },
+        SELECTION_POLL_MS,
+        needsPersistentSelectionObservation ? null : undefined,
+        !needsPersistentSelectionObservation,
+      )
+    : null
+  if (needsPersistentSelectionObservation) selectionPoller?.start()
+
+  /** The drag is over: read the final native selection after WebKit commits it. */
+  function endSelectionGesture(contents: Contents | null) {
+    selectionInProgress = false
+    if (contents) {
+      selectionCapture?.queue(contents)
+      return
+    }
+    const held = pendingSelection
+    if (held) emitSelection(held.cfiRange, held.contents)
+  }
+
+  // A sweep that runs off the edge of the page is released over the app, not
+  // over the book, so the book document never sees the mouse come up.
+  const onWindowMouseUp = () => {
+    if (!selectionInProgress) return
+    const live = rendition.getContents() as unknown as Contents[]
+    endSelectionGesture(live?.length ? live[live.length - 1] : null)
+  }
+  if (onSelection) document.addEventListener('mouseup', onWindowMouseUp)
+
   if (onSelection) {
     rendition.on('selected', (cfiRange: string, contents: Contents) => {
-      let text = ''
-      let rect: SelectionInfo['rect'] | null = null
-      try {
-        const range = contents.range(cfiRange)
-        text = range?.toString().trim() ?? ''
-        const bounds = range?.getBoundingClientRect()
-        if (bounds) rect = toContainerRect(bounds)
-      } catch {
-        // A malformed CFI must not break selecting text.
+      // Still dragging: remember it, but do not put a panel over the text the
+      // reader is in the middle of sweeping across.
+      if (selectionInProgress) {
+        pendingSelection = { cfiRange, contents }
+        return
       }
-      if (!text || !rect) return
-      onSelection({ cfiRange, text, rect })
+      if (cfiRange === observedSelectionCfiRange) {
+        selectionCapture?.resolved()
+        if (!needsPersistentSelectionObservation) selectionPoller?.stop()
+        return
+      }
+      emitSelection(cfiRange, contents)
     })
   }
 
@@ -261,6 +457,35 @@ export async function createReader(
   rendition.hooks.content.register((contents: Contents) => {
     const doc = contents.document
     if (doc.defaultView) neutraliseOffscreenText(doc, doc.defaultView)
+    if (onSelection) {
+      doc.addEventListener('mousedown', () => {
+        selectionInProgress = true
+        if (!needsPersistentSelectionObservation) selectionPoller?.stop()
+        selectionCapture?.begin()
+        lastSelectionCaptureFailure = null
+        // A new gesture may intentionally select the same word again. Gesture
+        // identity, not an arbitrary 700 ms timer, is the deduplication boundary.
+        observedSelectionCfiRange = ''
+        // Whatever was held back belonged to the selection being replaced.
+        pendingSelection = null
+      })
+      doc.addEventListener('mouseup', () => {
+        endSelectionGesture(contents)
+      })
+      doc.addEventListener('dblclick', () => {
+        // Do not read synchronously here. WebKit can commit its native word
+        // selection only after the dblclick handler has returned.
+        endSelectionGesture(contents)
+      })
+      // Keyboard selection (shift + arrows) ends on key up, and needs the same
+      // treatment for the same reason.
+      doc.addEventListener('keyup', (event: KeyboardEvent) => {
+        if (event.shiftKey || event.key === 'Shift') {
+          selectionCapture?.begin()
+          endSelectionGesture(contents)
+        }
+      })
+    }
     if (onKeyDown) {
       doc.addEventListener('keydown', onKeyDown as EventListener)
     }
@@ -269,7 +494,7 @@ export async function createReader(
       // WKWebView reads it as the "go back" swipe.
       doc.addEventListener('wheel', handleWheel as EventListener, { passive: false })
     }
-    if (onClickText) {
+    if (onPageClick) {
       doc.addEventListener('click', (event: MouseEvent) => {
         const target = event.target as Element | null
         // epub.js owns hyperlink navigation. Treating the same click as a
@@ -278,19 +503,24 @@ export async function createReader(
           onLinkClick?.()
           return
         }
+        // Selecting text is not an ordinary page click, and the clicks a
+        // selection gesture emits must not dismiss the popover being opened.
+        // Three separate guards, because a click arrives with the selection in
+        // a different state depending on the gesture:
+        //   - a double or triple click says so in its click count;
+        //   - a sweep produces a plain click, but one that lands just after the
+        //     selection was reported;
+        //   - and anything else is caught by the selection still standing.
+        if (event.detail >= 2) return
+        if (Date.now() - lastSelectionAt < SELECTION_CLICK_GRACE_MS) return
         const selection = doc.getSelection()
-        // Preserve ordinary text selection for the future annotation feature.
         if (selection && !selection.isCollapsed) return
         const range = wordRangeAtPoint(doc, event.clientX, event.clientY)
         // `caretRangeFromPoint` snaps to the nearest text position however far
         // away it is, so a click in the page margin still resolves to a word.
         // Only the geometry can tell a real word hit from a snapped one.
         const onWord = range ? pointHitsRange(range, event.clientX, event.clientY) : false
-        onClickText({
-          text: onWord ? (range as Range).toString() : '',
-          range: onWord ? (range as Range) : undefined,
-          blankSide: onWord ? null : blankSideOfPage(event.clientX),
-        })
+        onPageClick({ blankSide: onWord ? null : blankSideOfPage(event.clientX) })
       })
     }
   })
@@ -797,12 +1027,20 @@ export async function createReader(
         // Already gone.
       }
     },
+    sentenceForCfiRange: (cfiRange) => {
+      try {
+        const range = rendition.getRange(cfiRange)
+        return range ? sentenceAroundRange(range) : ''
+      } catch {
+        return ''
+      }
+    },
     rectForCfiRange: (cfiRange) => {
       try {
         const range = rendition.getRange(cfiRange)
         const bounds = range?.getBoundingClientRect()
         if (!bounds || (bounds.width === 0 && bounds.height === 0)) return null
-        return toContainerRect(bounds)
+        return toContainerRect(bounds, range?.startContainer.ownerDocument)
       } catch {
         return null
       }
@@ -812,6 +1050,7 @@ export async function createReader(
       return Boolean(selection && !selection.isCollapsed && selection.toString().trim().length > 0)
     },
     clearSelection: () => {
+      observedSelectionCfiRange = ''
       getIframe()?.contentWindow?.getSelection()?.removeAllRanges()
     },
     searchBook: async (query, searchOptions = {}) => {
@@ -888,11 +1127,25 @@ export async function createReader(
     },
     destroy() {
       destroyed = true
+      document.removeEventListener('mouseup', onWindowMouseUp)
+      selectionPoller?.stop()
+      selectionCapture?.cancel()
       rendition.destroy()
       book.destroy()
     },
   }
 }
+
+/**
+ * How long after a selection a click still counts as part of that gesture.
+ *
+ * Long enough to cover the click that ends a sweep, short enough that a
+ * deliberate tap right after reading a definition still moves the cursor.
+ */
+const SELECTION_CLICK_GRACE_MS = 300
+
+/** Fast enough to feel immediate, slow enough to be negligible beside layout. */
+const SELECTION_POLL_MS = 100
 
 /**
  * How far off-screen a box has to sit before it is the hiding trick below

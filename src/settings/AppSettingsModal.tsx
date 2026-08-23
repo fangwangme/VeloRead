@@ -57,7 +57,6 @@ const SHORTCUT_KEYS: [string, MessageKey][] = [
 /** Pointer gestures, whose trigger has to be described in words. */
 const SHORTCUT_GESTURES: [MessageKey, MessageKey][] = [
   ['gesture.swipe', 'shortcut.swipe'],
-  ['gesture.clickText', 'shortcut.clickText'],
   ['gesture.clickBlank', 'shortcut.clickBlank'],
   ['gesture.select', 'shortcut.select'],
 ]
@@ -77,7 +76,6 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
   const pacerChunkSize = normaliseChunkSize(settings.pacerChunkSize, 'latin')
   const pacerCjkCharCount = normaliseChunkSize(settings.pacerCjkCharCount, 'cjk')
   const highlight = readHighlightStyle(settings)
-  const clickToPosition = settings.clickToPositionPacer ?? true
   // The preview should look like the page it describes, so it follows the
   // appearance the app is actually showing rather than the OS.
   const previewDark =
@@ -254,23 +252,6 @@ export function AppSettingsModal({ settings, onChange, onClose }: AppSettingsMod
                 onChunkChange={(value) => void save({ pacerCjkCharCount: value })}
               />
             </div>
-            <label className="mt-4 flex cursor-pointer items-start justify-between gap-4 rounded-2xl border border-black/[0.06] bg-black/[0.02] p-3 dark:border-white/[0.07] dark:bg-white/[0.025]">
-              <span>
-                <span className="block text-xs font-medium text-neutral-800 dark:text-neutral-200">
-                  {t('settings.clickToPosition')}
-                </span>
-                <span className="mt-1 block text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
-                  {t('settings.clickToPositionHint')}
-                </span>
-              </span>
-              <input
-                type="checkbox"
-                checked={clickToPosition}
-                onChange={(event) => void save({ clickToPositionPacer: event.target.checked })}
-                className="mt-0.5 size-4 shrink-0 cursor-pointer rounded-md accent-blue-600"
-              />
-            </label>
-
             <div className="mt-4 flex items-center justify-between gap-4 border-t border-black/[0.08] pt-3 text-[11px] text-neutral-500 dark:text-neutral-400 dark:border-white/[0.06]">
               <span>{t('settings.pacerRecommended')}</span>
               <button
