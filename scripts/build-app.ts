@@ -119,10 +119,15 @@ function requestedBundles(): string[] {
   return at !== -1 && process.argv[at + 1] ? ['--bundles', process.argv[at + 1]] : []
 }
 
-function requestedBundleKind(): 'deb' | 'rpm' | 'appimage' | null {
+function requestedBundleKinds(): Set<string> | null {
   const at = process.argv.indexOf('--bundles')
-  const value = at !== -1 ? process.argv[at + 1]?.toLowerCase() : undefined
-  return value === 'deb' || value === 'rpm' || value === 'appimage' ? value : null
+  if (at === -1 || !process.argv[at + 1]) return null
+  const kinds = process.argv[at + 1]
+    .toLowerCase()
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  return kinds.length > 0 ? new Set(kinds) : null
 }
 
 /**
@@ -272,9 +277,9 @@ async function buildLinux() {
   const outDir = await outputDir()
   const collected: string[] = []
 
-  const requestedKind = requestedBundleKind()
+  const requestedKinds = requestedBundleKinds()
   const kinds = (['deb', 'rpm', 'appimage'] as const).filter(
-    (kind) => requestedKind === null || kind === requestedKind,
+    (kind) => requestedKinds === null || requestedKinds.has(kind),
   )
   for (const kind of kinds) {
     const dir = join(bundleDir, kind)
