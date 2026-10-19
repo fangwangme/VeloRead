@@ -50,11 +50,11 @@ bun run lint
 
 ## Development Workflow
 
-1. Before starting feature work, read `AGENTS.md`, `.agents/plans/PROJECT_STATUS.md`, and the relevant `docs/specs/`.
+1. Before starting feature work, read `AGENTS.md`, `.agents/PROJECT_STATUS.md`, `.agents/LESSONS.md`, and the relevant `docs/specs/`.
 2. Use the currently available issue-driven development orchestration skill as the public entry point. Invoke it manually with an explicit action; ordinary conversation never authorizes Issue, worktree, dispatch, PR, or cleanup mutations.
 3. For non-trivial work, an explicit `issue` action creates the executable GitHub issue and stops. A later explicit `worktree` action authorizes rule-derived naming, worktree creation, and its documented dispatch bundle.
 4. Require the executor to self-review and verify its work; the master independently accepts it against the issue before PR preparation. Merge remains a user decision.
 5. Update `docs/specs/` when the current architecture, behavior contract, API, UX, or data shape changes; put usage instructions in `docs/usage/` when needed.
-6. Update `.agents/plans/PROJECT_STATUS.md` when project state, active work, or important decisions change; the issue-driven workflow's actions maintain the per-issue Active Work lines themselves. Use `.agents/notes/` and `.agents/plans/` only for optional temporary multi-agent artifacts, then archive them on request when superseded.
+6. Update `.agents/PROJECT_STATUS.md` when project state, active work, or important decisions change; the issue-driven workflow's actions maintain the per-issue Active Work lines themselves. Use `.agents/notes/` and `.agents/plans/` only for optional temporary multi-agent artifacts, then archive them on request when superseded.
 
-Document placement: current architecture and durable behavior contracts in `docs/specs/`; usage guidance in `docs/usage/`; the executable feature/fix contract in the GitHub issue; its worktree-local authoring file in `.local/issues/`; raw/private requirement inputs in `.local/requirements/`; optional temporary review/research in `.agents/notes/`; optional temporary optimization/implementation alternatives in `.agents/plans/`; current state and active work in `.agents/plans/PROJECT_STATUS.md`.
+Document placement: current architecture and durable behavior contracts in `docs/specs/`; usage guidance in `docs/usage/`; the executable feature/fix contract in the GitHub issue; its worktree-local authoring file in `.local/issues/`; raw/private requirement inputs in `.local/requirements/`; optional temporary review/research in `.agents/notes/`; optional temporary optimization/implementation alternatives in `.agents/plans/`; current state and active work in `.agents/PROJECT_STATUS.md`; lessons from agent mistakes in `.agents/LESSONS.md`.
